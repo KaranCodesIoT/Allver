@@ -597,7 +597,12 @@ const ArchitectProfilePage = () => {
                 <div className="tab-pane-fade">
                   <div className="tab-projects-list">
                     {projectsList.map(proj => (
-                      <div key={proj.id} className="tab-project-row">
+                      <div 
+                        key={proj.id} 
+                        className="tab-project-row clickable-row" 
+                        onClick={() => navigate(`/project/${proj.id}`)}
+                        style={{ cursor: 'pointer' }}
+                      >
                         <img src={proj.img} alt={proj.name} className="tpr-thumb" />
                         <div className="tpr-details">
                           <div className="tpr-title-row">
@@ -610,7 +615,14 @@ const ArchitectProfilePage = () => {
                             <MapPin size={12} /> {proj.location} <span className="sep">•</span> {proj.year}
                           </p>
                         </div>
-                        <button className="tpr-bookmark-btn" title="Save Project">
+                        <button 
+                          className="tpr-bookmark-btn" 
+                          title="Save Project"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // bookmark logic if any
+                          }}
+                        >
                           <Heart size={16} />
                         </button>
                       </div>

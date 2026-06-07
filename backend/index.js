@@ -3,6 +3,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const multer = require('multer');
 const cloudinary = require('cloudinary').v2;
+const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 require('dotenv').config();
 
 // Configure Cloudinary
@@ -22,8 +25,15 @@ const upload = multer({
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Ensure uploads folder exists
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(uploadsDir));
 
 const User = require('./models/User');
 
@@ -176,25 +186,52 @@ app.get('/api/professional/:id', async (req, res) => {
   }
 });
 
-// Cloudinary Image Upload Route
+// Cloudinary Image Upload Route (with local fallback)
 app.post('/api/upload', upload.single('image'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
   }
 
-  // Upload image buffer directly to Cloudinary
-  const uploadStream = cloudinary.uploader.upload_stream(
-    { folder: 'allverhq' },
-    (error, result) => {
-      if (error) {
-        console.error('Cloudinary upload error:', error);
-        return res.status(500).json({ message: 'Image upload failed' });
-      }
-      res.status(200).json({ url: result.secure_url });
-    }
-  );
+  const isCloudinaryConfigured = 
+    process.env.CLOUDINARY_CLOUD_NAME && 
+    process.env.CLOUDINARY_CLOUD_NAME !== 'Root' &&
+    process.env.CLOUDINARY_API_KEY && 
+    process.env.CLOUDINARY_API_SECRET;
 
-  uploadStream.end(req.file.buffer);
+  const saveLocal = () => {
+    try {
+      const ext = path.extname(req.file.originalname) || '.jpg';
+      const filename = `${crypto.randomBytes(16).toString('hex')}${ext}`;
+      const filePath = path.join(uploadsDir, filename);
+
+      fs.writeFileSync(filePath, req.file.buffer);
+      const host = req.get('host') || `localhost:${PORT}`;
+      const fileUrl = `${req.protocol}://${host}/uploads/${filename}`;
+      return res.status(200).json({ url: fileUrl });
+    } catch (err) {
+      console.error('Local upload fallback error:', err);
+      return res.status(500).json({ message: 'Image upload failed locally' });
+    }
+  };
+
+  if (isCloudinaryConfigured) {
+    // Upload image buffer directly to Cloudinary
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { folder: 'allverhq' },
+      (error, result) => {
+        if (error) {
+          console.error('Cloudinary upload error:', error);
+          console.log('Falling back to local storage...');
+          return saveLocal();
+        }
+        return res.status(200).json({ url: result.secure_url });
+      }
+    );
+    uploadStream.end(req.file.buffer);
+  } else {
+    console.log('Cloudinary not configured or using default placeholders. Saving locally...');
+    return saveLocal();
+  }
 });
 
 app.listen(PORT, () => {

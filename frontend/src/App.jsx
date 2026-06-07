@@ -12,6 +12,7 @@ import ContractorsPage from './ContractorsPage';
 import LabourPage from './LabourPage';
 import ArchitectProfilePage from './ArchitectProfilePage';
 import EditProfilePage from './EditProfilePage';
+import ProjectDetailsPage from './ProjectDetailsPage';
 
 const App = () => {
   return (
@@ -30,6 +31,7 @@ const App = () => {
         <Route path="/architect/:id" element={<ArchitectProfilePage />} />
         <Route path="/profile" element={<ArchitectProfilePage />} />
         <Route path="/edit-profile" element={<EditProfilePage />} />
+        <Route path="/project/:id" element={<ProjectDetailsPage />} />
       </Routes>
     </Router>
   );
