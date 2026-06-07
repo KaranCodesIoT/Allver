@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search, MapPin, Star, Briefcase, Users, CheckCircle2,
   SlidersHorizontal, ChevronDown, Phone, X
@@ -123,6 +124,7 @@ const ProfileModal = ({ prof, onClose }) => {
 };
 
 const ContractorsPage = () => {
+  const navigate = useNavigate();
   const [contractors, setContractors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -138,7 +140,7 @@ const ContractorsPage = () => {
       .catch(() => { setContractors([]); setLoading(false); });
   }, []);
 
-  const displayList = contractors.length > 0 ? contractors : MOCK_CONTRACTORS;
+  const displayList = [...contractors, ...MOCK_CONTRACTORS];
 
   const filtered = displayList.filter(p => {
     const nameMatch = (p.fullName || '').toLowerCase().includes(search.toLowerCase());
@@ -225,7 +227,7 @@ const ContractorsPage = () => {
                   <span><Briefcase size={11} /> {prof.projects || '—'} Projects</span>
                   <span><Users size={11} /> {prof.followers || '—'} Followers</span>
                 </div>
-                <button className="lpc-view-btn blue" onClick={() => setSelectedProf(prof)}>View Profile</button>
+                <button className="lpc-view-btn blue" onClick={() => navigate(`/contractor/${prof._id}`)}>View Profile</button>
               </div>
             );
           })}

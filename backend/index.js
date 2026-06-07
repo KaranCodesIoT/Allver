@@ -34,14 +34,14 @@ const platformStats = {
   happyClients: 3200
 };
 
-// Connect to MongoDB
+// Connect to MongoDB Atlas Database
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected successfully'))
   .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
 app.get('/', (req, res) => {
-  res.send('AllverHQ API is running...');
+  res.send('Allver API is running...');
 });
 
 app.get('/api/stats', (req, res) => {

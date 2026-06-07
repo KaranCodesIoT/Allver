@@ -90,7 +90,7 @@ const Register = () => {
           </button>
         </div>
         <img src={welcomeHero} alt="Register Hero" />
-        <h1 style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>Welcome to AllverHQ</h1>
+        <h1 style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>Welcome to Allver</h1>
         <p style={{ maxWidth: '400px', fontSize: '1.1rem', color: 'var(--text-muted)' }}>
           The premium marketplace connecting elite construction professionals with high-value projects.
         </p>

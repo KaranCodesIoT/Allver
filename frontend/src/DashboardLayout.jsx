@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  Construction, Layout, Sparkles, Compass, MessageCircle,
+  Layout, Sparkles, Compass, MessageCircle,
   User, LogOut, Bell, HardHat, Hammer
 } from 'lucide-react';
+import allverLogo from './assets/allver-logo.svg';
 
 const DashboardLayout = ({ children, pageTitle, pageSubtitle, accentColor = '#10b981' }) => {
   const navigate = useNavigate();
@@ -52,8 +53,7 @@ const DashboardLayout = ({ children, pageTitle, pageSubtitle, accentColor = '#10
       {/* ── Left Sidebar ── */}
       <aside className="dashboard-sidebar">
         <div className="sidebar-brand" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
-          <Construction size={28} className="brand-logo-icon" />
-          <span>AllverHQ</span>
+          <img src={allverLogo} alt="Allver" className="brand-logo-svg" />
         </div>
 
         <nav className="sidebar-nav">
@@ -101,7 +101,7 @@ const DashboardLayout = ({ children, pageTitle, pageSubtitle, accentColor = '#10
         {/* Top Header */}
         <header className="dashboard-header">
           <div className="listing-page-title-block">
-            <h2 style={{ color: accentColor }}>{pageTitle}</h2>
+            <h2 style={{ color: 'var(--text-dark)' }}>{pageTitle}</h2>
             <p className="subtitle">{pageSubtitle}</p>
           </div>
           <div className="header-right">

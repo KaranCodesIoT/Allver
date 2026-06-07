@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search, MapPin, Star, Briefcase, Users, CheckCircle2,
   SlidersHorizontal, ChevronDown, X, Hammer
@@ -124,6 +125,7 @@ const ProfileModal = ({ prof, onClose }) => {
 };
 
 const LabourPage = () => {
+  const navigate = useNavigate();
   const [labourList, setLabourList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -141,7 +143,7 @@ const LabourPage = () => {
       .catch(() => { setLabourList([]); setLoading(false); });
   }, []);
 
-  const displayList = labourList.length > 0 ? labourList : MOCK_LABOUR;
+  const displayList = [...labourList, ...MOCK_LABOUR];
 
   const filtered = displayList.filter(p =>
     (!search || (p.fullName || '').toLowerCase().includes(search.toLowerCase())) &&
@@ -233,7 +235,7 @@ const LabourPage = () => {
                     {tags.slice(0, 3).map((t, i) => <span key={i} className="dl-tag orange">{t}</span>)}
                   </div>
                 )}
-                <button className="lpc-view-btn orange" onClick={() => setSelectedProf(prof)}>View Profile</button>
+                <button className="lpc-view-btn orange" onClick={() => navigate(`/labour/${prof._id}`)}>View Profile</button>
               </div>
             );
           })}

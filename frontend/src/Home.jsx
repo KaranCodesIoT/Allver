@@ -30,6 +30,7 @@ import welcomeHero from './assets/welcome_hero.png';
 import architectImg from './assets/architect_home.png';
 import contractorImg from './assets/contractor_site.png';
 import labourImg from './assets/labour_working.png';
+import allverLogo from './assets/allver-logo.svg';
 
 const ROLE_ROUTES = { Architect: '/architects', Contractor: '/contractors', Labour: '/labour' };
 
@@ -164,8 +165,7 @@ const Home = () => {
         {/* Left Sidebar */}
         <aside className="dashboard-sidebar">
           <div className="sidebar-brand">
-            <Construction size={28} className="brand-logo-icon" />
-            <span>AllverHQ</span>
+            <img src={allverLogo} alt="Allver" className="brand-logo-svg" />
           </div>
 
           <nav className="sidebar-nav">
@@ -711,8 +711,7 @@ const Home = () => {
       <header className="site-header">
         <div className="container" style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
           <Link to="/" className="logo">
-            <Construction size={32} />
-            AllverHQ
+            <img src={allverLogo} alt="Allver" className="header-logo-svg" />
           </Link>
           
           <nav>
@@ -848,7 +847,7 @@ const Home = () => {
         <div className="container">
           <div className="footer-grid">
             <div className="footer-brand">
-              <h3>AllverHQ</h3>
+              <img src={allverLogo} alt="Allver" className="footer-logo-svg" />
               <p style={{ color: 'var(--text-muted)' }}>The world's leading construction marketplace for high-end professional connections.</p>
             </div>
             <div className="footer-links">
@@ -877,7 +876,7 @@ const Home = () => {
             </div>
           </div>
           <div style={{ marginTop: '5rem', paddingTop: '2rem', borderTop: '1px solid #f3f4f6', textAlign: 'center', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-            © 2026 AllverHQ Construction Marketplace. All rights reserved.
+            © 2026 Allver Construction Marketplace. All rights reserved.
           </div>
         </div>
       </footer>
