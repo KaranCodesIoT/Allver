@@ -6,63 +6,13 @@ import {
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
 
-const MOCK_ARCHITECTS = [
-  {
-    _id: 'mock-1', fullName: 'Neha Sharma', city: 'Mumbai, Maharashtra',
-    experience: '8+ Years', firmName: 'Sharma Design Studio',
-    specialization: ['Modern', 'Sustainable', 'Luxury'],
-    rating: 4.8, reviews: 124, projects: 128, followers: 256,
-    isMock: true, avatar: 'NS', avatarColor: '#10b981',
-    shortDesc: 'Specializes in modern, sustainable and luxury architecture.'
-  },
-  {
-    _id: 'mock-2', fullName: 'Rohit Mehta', city: 'Pune, Maharashtra',
-    experience: '10+ Years', firmName: 'Mehta Architects',
-    specialization: ['Residential', 'Commercial'],
-    rating: 4.7, reviews: 98, projects: 96, followers: 189,
-    isMock: true, avatar: 'RM', avatarColor: '#3b82f6',
-    shortDesc: 'Expert in residential and commercial architecture.'
-  },
-  {
-    _id: 'mock-3', fullName: 'Priya Nair', city: 'Bengaluru, Karnataka',
-    experience: '7+ Years', firmName: 'Nair Interior Architecture',
-    specialization: ['Interior', 'Space Planning'],
-    rating: 4.9, reviews: 156, projects: 156, followers: 218,
-    isMock: true, avatar: 'PN', avatarColor: '#8b5cf6',
-    shortDesc: 'Specializes in interior architecture and space planning.'
-  },
-  {
-    _id: 'mock-4', fullName: 'Karan Patel', city: 'Hyderabad, Telangana',
-    experience: '6+ Years', firmName: 'Freelance',
-    specialization: ['Innovative', 'Cost-effective'],
-    rating: 4.6, reviews: 72, projects: 84, followers: 132,
-    isMock: true, avatar: 'KP', avatarColor: '#f59e0b',
-    shortDesc: 'Focus on innovative and cost-effective designs.'
-  },
-  {
-    _id: 'mock-5', fullName: 'Aisha Khan', city: 'Delhi, NCR',
-    experience: '9+ Years', firmName: 'Khan & Associates',
-    specialization: ['Luxury', 'Heritage', 'Commercial'],
-    rating: 4.8, reviews: 110, projects: 98, followers: 310,
-    isMock: true, avatar: 'AK', avatarColor: '#ec4899',
-    shortDesc: 'Heritage restoration and luxury residential specialist.'
-  },
-  {
-    _id: 'mock-6', fullName: 'Sanjay Verma', city: 'Chennai, Tamil Nadu',
-    experience: '12+ Years', firmName: 'Verma Urban Design',
-    specialization: ['Urban', 'Sustainable', 'Green'],
-    rating: 4.7, reviews: 89, projects: 120, followers: 204,
-    isMock: true, avatar: 'SV', avatarColor: '#06b6d4',
-    shortDesc: 'Green and sustainable urban architecture expert.'
-  }
-];
+
 
 // Profile Detail Modal
 const ProfileModal = ({ prof, onClose }) => {
   if (!prof) return null;
-  const avatarBg = prof.isMock ? prof.avatarColor : '#10b981';
-  const initials = prof.isMock ? prof.avatar
-    : (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  const avatarBg = '#10b981';
+  const initials = (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   const specialization = prof.specialization || [];
 
   return (
@@ -107,7 +57,7 @@ const ProfileModal = ({ prof, onClose }) => {
               </div>
             </div>
           )}
-          {!prof.isMock && prof.serviceArea?.length > 0 && (
+          {prof.serviceArea?.length > 0 && (
             <div className="dl-modal-row">
               <label>Service Areas</label>
               <div className="dl-tag-group">
@@ -115,7 +65,7 @@ const ProfileModal = ({ prof, onClose }) => {
               </div>
             </div>
           )}
-          {!prof.isMock && prof.portfolioImages?.length > 0 && (
+          {prof.portfolioImages?.length > 0 && (
             <div className="dl-modal-row">
               <label>Portfolio</label>
               <div className="dl-portfolio-grid">
@@ -156,7 +106,7 @@ const ArchitectsPage = () => {
       .catch(() => { setArchitects([]); setLoading(false); });
   }, []);
 
-  const displayList = architects.length > 0 ? architects : MOCK_ARCHITECTS;
+  const displayList = architects;
 
   const filtered = displayList.filter(p => {
     const nm = (p.fullName || '').toLowerCase();
@@ -200,7 +150,7 @@ const ArchitectsPage = () => {
       <div className={`listing-status-banner ${architects.length > 0 ? 'green' : 'grey'}`}>
         {architects.length > 0
           ? <><CheckCircle2 size={14} /> {architects.length} registered architect{architects.length !== 1 ? 's' : ''} on platform</>
-          : <><SlidersHorizontal size={14} /> Showing sample architects — register as Architect to appear here!</>}
+          : <><SlidersHorizontal size={14} /> No architects registered yet — register as Architect to appear here!</>}
       </div>
 
       {/* ── Cards Grid ── */}
@@ -209,9 +159,8 @@ const ArchitectsPage = () => {
       ) : (
         <div className="listing-cards-grid">
           {filtered.map(prof => {
-            const initials = prof.isMock ? prof.avatar
-              : (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-            const avatarBg = prof.isMock ? prof.avatarColor : '#10b981';
+            const initials = (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+            const avatarBg = '#10b981';
             const specs = prof.specialization || [];
             return (
               <div key={prof._id} className="listing-pro-card green-card">

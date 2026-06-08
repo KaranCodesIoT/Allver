@@ -11,58 +11,14 @@ const SKILL_COLORS = {
   Plumber: '#10b981', Painter: '#ef4444', Helper: '#6366f1', Other: '#64748b'
 };
 
-const MOCK_LABOUR = [
-  {
-    _id: 'mock-l1', fullName: 'Ramesh Yadav', city: 'Mumbai, Maharashtra',
-    experience: '12+ Years', skillType: 'Mason', availability: 'Available',
-    workTags: ['Brick Work', 'Concrete', 'Plaster', 'Tile Work'],
-    rating: 4.8, reviews: 124, isMock: true, avatar: 'RY', avatarColor: '#f59e0b',
-    shortDesc: 'Expert mason with 12+ years in brick work, concrete and plastering.'
-  },
-  {
-    _id: 'mock-l2', fullName: 'Suresh Kumar', city: 'Pune, Maharashtra',
-    experience: '10+ Years', skillType: 'Carpenter', availability: 'Available',
-    workTags: ['Wood Work', 'Furniture', 'Door Fitting', 'False Ceiling'],
-    rating: 4.7, reviews: 98, isMock: true, avatar: 'SK', avatarColor: '#8b5cf6',
-    shortDesc: 'Skilled carpenter specializing in furniture, door fitting and false ceilings.'
-  },
-  {
-    _id: 'mock-l3', fullName: 'Imran Shaikh', city: 'Navi Mumbai, Maharashtra',
-    experience: '8+ Years', skillType: 'Electrician', availability: 'Available',
-    workTags: ['Wiring', 'Switch Board', 'Light Fitting', 'Electrical Repair'],
-    rating: 4.6, reviews: 76, isMock: true, avatar: 'IS', avatarColor: '#3b82f6',
-    shortDesc: 'Certified electrician for wiring, switch board and light fitting work.'
-  },
-  {
-    _id: 'mock-l4', fullName: 'Ravi Verma', city: 'Thane, Maharashtra',
-    experience: '7+ Years', skillType: 'Plumber', availability: 'Available',
-    workTags: ['Pipe Fitting', 'Bathroom Fitting', 'Water Supply', 'Sanitary Work'],
-    rating: 4.5, reviews: 64, isMock: true, avatar: 'RV', avatarColor: '#10b981',
-    shortDesc: 'Expert plumber for pipe fitting, bathroom and sanitary installations.'
-  },
-  {
-    _id: 'mock-l5', fullName: 'Arun Patil', city: 'Nagpur, Maharashtra',
-    experience: '6+ Years', skillType: 'Painter', availability: 'Available',
-    workTags: ['Interior Painting', 'Exterior Painting', 'Texture', 'Polish'],
-    rating: 4.6, reviews: 55, isMock: true, avatar: 'AP', avatarColor: '#ef4444',
-    shortDesc: 'Professional painter for interior, exterior, texture and polish work.'
-  },
-  {
-    _id: 'mock-l6', fullName: 'Dev Sharma', city: 'Kolhapur, Maharashtra',
-    experience: '5+ Years', skillType: 'Helper', availability: 'Not Available',
-    workTags: ['General Help', 'Lifting', 'Site Cleaning', 'Material Handling'],
-    rating: 4.3, reviews: 40, isMock: true, avatar: 'DS', avatarColor: '#6366f1',
-    shortDesc: 'General site helper with experience in material handling and site maintenance.'
-  }
-];
+
 
 const ProfileModal = ({ prof, onClose }) => {
   if (!prof) return null;
   const skillColor = SKILL_COLORS[prof.skillType] || '#f59e0b';
-  const avatarBg = prof.isMock ? prof.avatarColor : skillColor;
-  const initials = prof.isMock ? prof.avatar
-    : (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  const tags = prof.isMock ? prof.workTags : [];
+  const avatarBg = skillColor;
+  const initials = (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  const tags = [];
   const isAvailable = prof.availability === 'Available';
 
   return (
@@ -143,7 +99,7 @@ const LabourPage = () => {
       .catch(() => { setLabourList([]); setLoading(false); });
   }, []);
 
-  const displayList = [...labourList, ...MOCK_LABOUR];
+  const displayList = labourList;
 
   const filtered = displayList.filter(p =>
     (!search || (p.fullName || '').toLowerCase().includes(search.toLowerCase())) &&
@@ -185,7 +141,7 @@ const LabourPage = () => {
       <div className={`listing-status-banner ${labourList.length > 0 ? 'orange' : 'grey'}`}>
         {labourList.length > 0
           ? <><CheckCircle2 size={14} /> {labourList.length} registered worker{labourList.length !== 1 ? 's' : ''} on platform</>
-          : <><SlidersHorizontal size={14} /> Showing sample workers — register as Labour to appear here!</>}
+          : <><SlidersHorizontal size={14} /> No workers registered yet — register as Labour to appear here!</>}
       </div>
 
       {/* Cards Grid */}
@@ -195,10 +151,9 @@ const LabourPage = () => {
         <div className="listing-cards-grid">
           {filtered.map(prof => {
             const skillColor = SKILL_COLORS[prof.skillType] || '#f59e0b';
-            const avatarBg = prof.isMock ? prof.avatarColor : skillColor;
-            const initials = prof.isMock ? prof.avatar
-              : (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-            const tags = prof.isMock ? prof.workTags : [];
+            const avatarBg = skillColor;
+            const initials = (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+            const tags = [];
             const isAvailable = prof.availability === 'Available';
 
             return (

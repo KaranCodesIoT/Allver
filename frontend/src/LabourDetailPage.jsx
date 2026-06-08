@@ -7,240 +7,7 @@ import {
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
 
-/* ──────────────────────────────────────────
-   MOCK LABOUR DATA (Matching mock-l1 to mock-l6)
-   ────────────────────────────────────────── */
 
-const MOCK_LABOURS_DETAILS = {
-  'mock-l1': {
-    id: 'mock-l1',
-    fullName: 'Ramesh Yadav',
-    role: 'Site Supervisor / Mason',
-    city: 'Mumbai, Maharashtra',
-    experience: '12+ Years Experience',
-    rating: 4.8,
-    reviews: 124,
-    avatar: 'RY',
-    avatarColor: '#f59e0b',
-    img: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=200&q=80',
-    verified: true,
-    stats: {
-      daysWorked: 31,
-      totalPayment: 11000,
-      advanceGiven: 2000,
-      pendingPayment: 9000
-    },
-    attendance: [
-      { date: '01 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 100, remarks: '-' },
-      { date: '02 May 2024', day: 'Thu', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '03 May 2024', day: 'Fri', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '04 May 2024', day: 'Sat', status: 'Half Day', hours: 4.0, advance: 100, remarks: '-' },
-      { date: '05 May 2024', day: 'Sun', status: 'Absent', hours: 0.0, advance: 0, remarks: 'Personal' },
-      { date: '06 May 2024', day: 'Mon', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '07 May 2024', day: 'Tue', status: 'Present', hours: 8.0, advance: 100, remarks: '-' },
-      { date: '08 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '09 May 2024', day: 'Thu', status: 'Present', hours: 8.0, advance: 100, remarks: '-' },
-      { date: '10 May 2024', day: 'Fri', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '11 May 2024', day: 'Sat', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '12 May 2024', day: 'Sun', status: 'Absent', hours: 0.0, advance: 0, remarks: 'Personal' },
-      { date: '13 May 2024', day: 'Mon', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '14 May 2024', day: 'Tue', status: 'Present', hours: 8.0, advance: 100, remarks: '-' },
-      { date: '15 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '16 May 2024', day: 'Thu', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '17 May 2024', day: 'Fri', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '18 May 2024', day: 'Sat', status: 'Half Day', hours: 4.0, advance: 0, remarks: '-' },
-      { date: '19 May 2024', day: 'Sun', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '20 May 2024', day: 'Mon', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '21 May 2024', day: 'Tue', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '22 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '23 May 2024', day: 'Thu', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '24 May 2024', day: 'Fri', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '25 May 2024', day: 'Sat', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '26 May 2024', day: 'Sun', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '27 May 2024', day: 'Mon', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '28 May 2024', day: 'Tue', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '29 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '30 May 2024', day: 'Thu', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '31 May 2024', day: 'Fri', status: 'Present', hours: 8.0, advance: 0, remarks: '-' }
-    ],
-    payments: [
-      { date: '01 May 2024', desc: 'Advance Given', amount: 1000, type: 'Cash', status: 'Verified' },
-      { date: '04 May 2024', desc: 'Advance Given', amount: 1000, type: 'Online', status: 'Verified' },
-      { date: '10 May 2024', desc: 'Partial Payout', amount: 4000, type: 'Online', status: 'Verified' },
-      { date: '25 May 2024', desc: 'Mid-Month Payout', amount: 5000, type: 'Online', status: 'Verified' }
-    ]
-  },
-  'mock-l2': {
-    id: 'mock-l2',
-    fullName: 'Suresh Patil',
-    role: 'Mason',
-    city: 'Pune, Maharashtra',
-    experience: '10 Years Experience',
-    rating: 4.6,
-    reviews: 89,
-    avatar: 'SP',
-    avatarColor: '#f59e0b',
-    img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-    verified: true,
-    stats: {
-      daysWorked: 28,
-      totalPayment: 9800,
-      advanceGiven: 1500,
-      pendingPayment: 8300
-    },
-    attendance: [
-      { date: '01 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '02 May 2024', day: 'Thu', status: 'Present', hours: 8.0, advance: 100, remarks: '-' },
-      { date: '03 May 2024', day: 'Fri', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '04 May 2024', day: 'Sat', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '05 May 2024', day: 'Sun', status: 'Absent', hours: 0.0, advance: 0, remarks: 'Sunday Holiday' }
-    ],
-    payments: [
-      { date: '02 May 2024', desc: 'Food Advance', amount: 500, type: 'Cash', status: 'Verified' },
-      { date: '10 May 2024', desc: 'Site Advance', amount: 1000, type: 'Online', status: 'Verified' }
-    ]
-  },
-  'mock-l3': {
-    id: 'mock-l3',
-    fullName: 'Ravi Singh',
-    role: 'Carpenter',
-    city: 'Mumbai, Maharashtra',
-    experience: '7 Years Experience',
-    rating: 4.7,
-    reviews: 102,
-    avatar: 'RS',
-    avatarColor: '#3b82f6',
-    img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
-    verified: true,
-    stats: {
-      daysWorked: 25,
-      totalPayment: 12500,
-      advanceGiven: 3000,
-      pendingPayment: 9500
-    },
-    attendance: [
-      { date: '01 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 200, remarks: '-' },
-      { date: '02 May 2024', day: 'Thu', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '03 May 2024', day: 'Fri', status: 'Present', hours: 8.0, advance: 0, remarks: '-' }
-    ],
-    payments: [
-      { date: '01 May 2024', desc: 'Material Advance', amount: 3000, type: 'Online', status: 'Verified' }
-    ]
-  },
-  'mock-l4': {
-    id: 'mock-l4',
-    fullName: 'Imran Shaikh',
-    role: 'Electrician',
-    city: 'Navi Mumbai, Maharashtra',
-    experience: '8 Years Experience',
-    rating: 4.5,
-    reviews: 67,
-    avatar: 'IS',
-    avatarColor: '#8b5cf6',
-    img: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=200&q=80',
-    verified: true,
-    stats: {
-      daysWorked: 24,
-      totalPayment: 10800,
-      advanceGiven: 1000,
-      pendingPayment: 9800
-    },
-    attendance: [
-      { date: '01 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-      { date: '02 May 2024', day: 'Thu', status: 'Present', hours: 8.0, advance: 0, remarks: '-' }
-    ],
-    payments: [
-      { date: '02 May 2024', desc: 'Travel Payout', amount: 1000, type: 'Cash', status: 'Verified' }
-    ]
-  },
-  'mock-l5': {
-    id: 'mock-l5',
-    fullName: 'Mahesh Gupta',
-    role: 'Electrician',
-    experience: '6 Years Experience',
-    rating: 4.9,
-    reviews: 156,
-    avatar: 'MG',
-    avatarColor: '#ef4444',
-    img: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=200&q=80',
-    verified: true,
-    stats: {
-      daysWorked: 30,
-      totalPayment: 15000,
-      advanceGiven: 4000,
-      pendingPayment: 11000
-    },
-    attendance: [
-      { date: '01 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 500, remarks: '-' }
-    ],
-    payments: [
-      { date: '01 May 2024', desc: 'Advance Payout', amount: 4000, type: 'Online', status: 'Verified' }
-    ]
-  },
-  'mock-l6': {
-    id: 'mock-l6',
-    fullName: 'Anil Naik',
-    role: 'Painter',
-    city: 'Mumbai, Maharashtra',
-    experience: '5 Years Experience',
-    rating: 4.4,
-    reviews: 54,
-    avatar: 'AN',
-    avatarColor: '#06b6d4',
-    img: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=200&q=80',
-    verified: true,
-    stats: {
-      daysWorked: 20,
-      totalPayment: 8000,
-      advanceGiven: 1000,
-      pendingPayment: 7000
-    },
-    attendance: [
-      { date: '01 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 0, remarks: '-' }
-    ],
-    payments: [
-      { date: '01 May 2024', desc: 'Advance Payout', amount: 1000, type: 'Cash', status: 'Verified' }
-    ]
-  }
-};
-
-const DEFAULT_LABOUR = {
-  id: 'mock-l1',
-  fullName: 'Ramesh Yadav',
-  role: 'Mason',
-  city: 'Mumbai, Maharashtra',
-  experience: '12+ Years Experience',
-  rating: 4.8,
-  reviews: 124,
-  avatar: 'RY',
-  avatarColor: '#f59e0b',
-  img: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=200&q=80',
-  verified: true,
-  stats: {
-    daysWorked: 31,
-    totalPayment: 11000,
-    advanceGiven: 2000,
-    pendingPayment: 9000
-  },
-  attendance: [
-    { date: '01 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 100, remarks: '-' },
-    { date: '02 May 2024', day: 'Thu', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-    { date: '03 May 2024', day: 'Fri', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-    { date: '04 May 2024', day: 'Sat', status: 'Half Day', hours: 4.0, advance: 100, remarks: '-' },
-    { date: '05 May 2024', day: 'Sun', status: 'Absent', hours: 0.0, advance: 0, remarks: 'Personal' },
-    { date: '06 May 2024', day: 'Mon', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-    { date: '07 May 2024', day: 'Tue', status: 'Present', hours: 8.0, advance: 100, remarks: '-' },
-    { date: '08 May 2024', day: 'Wed', status: 'Present', hours: 8.0, advance: 0, remarks: '-' },
-    { date: '09 May 2024', day: 'Thu', status: 'Present', hours: 8.0, advance: 100, remarks: '-' },
-    { date: '10 May 2024', day: 'Fri', status: 'Present', hours: 8.0, advance: 0, remarks: '-' }
-  ],
-  payments: [
-    { date: '01 May 2024', desc: 'Advance Given', amount: 1000, type: 'Cash', status: 'Verified' },
-    { date: '04 May 2024', desc: 'Advance Given', amount: 1000, type: 'Online', status: 'Verified' },
-    { date: '10 May 2024', desc: 'Partial Payout', amount: 4000, type: 'Online', status: 'Verified' },
-    { date: '25 May 2024', desc: 'Mid-Month Payout', amount: 5000, type: 'Online', status: 'Verified' }
-  ]
-};
 
 const LabourDetailPage = () => {
   const navigate = useNavigate();
@@ -253,44 +20,37 @@ const LabourDetailPage = () => {
   const [selectedMonth, setSelectedMonth] = useState('May 2024');
 
   useEffect(() => {
-    // Dynamic fetch or load
-    if (MOCK_LABOURS_DETAILS[id]) {
-      setLabourData(MOCK_LABOURS_DETAILS[id]);
-      setLoading(false);
-    } else {
-      // Fetch details from API
-      fetch(`http://localhost:5000/api/professionals/details/${id}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.professional) {
-            const prof = data.professional;
-            setLabourData({
-              id: prof._id,
-              fullName: prof.fullName,
-              role: prof.skillType || 'Skilled Labourer',
-              city: prof.city || 'India',
-              experience: prof.experience || '5+ Years Experience',
-              rating: prof.rating || 4.5,
-              reviews: prof.reviews || 20,
-              avatar: prof.fullName?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'L',
-              avatarColor: '#f59e0b',
-              img: DEFAULT_LABOUR.img,
-              verified: true,
-              stats: DEFAULT_LABOUR.stats,
-              attendance: DEFAULT_LABOUR.attendance,
-              payments: DEFAULT_LABOUR.payments
-            });
-          } else {
-            setLabourData(DEFAULT_LABOUR);
-          }
-          setLoading(false);
-        })
-        .catch(() => {
-          // Fallback to default
-          setLabourData(DEFAULT_LABOUR);
-          setLoading(false);
-        });
-    }
+    // Fetch from API
+    fetch(`http://localhost:5000/api/professional/${id}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.professional) {
+          const prof = data.professional;
+          setLabourData({
+            id: prof._id,
+            fullName: prof.fullName,
+            role: prof.skillType || 'Skilled Labourer',
+            city: prof.city || 'India',
+            experience: prof.experience || 'Not specified',
+            rating: prof.rating || 0,
+            reviews: prof.reviews || 0,
+            avatar: prof.fullName?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'L',
+            avatarColor: '#f59e0b',
+            img: prof.avatarUrl || '',
+            verified: true,
+            stats: { daysWorked: 0, totalPayment: 0, advanceGiven: 0, pendingPayment: 0 },
+            attendance: [],
+            payments: []
+          });
+        } else {
+          setLabourData(null);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        setLabourData(null);
+        setLoading(false);
+      });
   }, [id]);
 
   if (loading) {
@@ -301,7 +61,20 @@ const LabourDetailPage = () => {
     );
   }
 
-  const l = labourData || DEFAULT_LABOUR;
+  if (!labourData) {
+    return (
+      <DashboardLayout pageTitle="Labour Profile" pageSubtitle="Profile not found" accentColor="#f59e0b">
+        <div className="ldp-loading">
+          <p>Labour profile not found.</p>
+          <button className="prof-page-back-nav" onClick={() => navigate(-1)}>
+            <ArrowLeft size={18} /> Back
+          </button>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const l = labourData;
   const s = l.stats;
 
   // Calculate counts for May 2024 based on static/mock data

@@ -21,7 +21,19 @@ import {
   MapPin,
   Building2,
   Calendar,
-  Briefcase
+  Briefcase,
+  ChevronDown,
+  Users,
+  Package,
+  Globe,
+  Sofa,
+  Paintbrush,
+  Wrench,
+  Recycle,
+  Leaf,
+
+  Phone,
+  X
 } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 
@@ -33,35 +45,6 @@ import labourImg from './assets/labour_working.png';
 import allverLogo from './assets/allver-logo.svg';
 
 const ROLE_ROUTES = { Architect: '/architects', Contractor: '/contractors', Labour: '/labour' };
-
-const RoleCard = ({ image, title, description, color, bgColor, icon: Icon }) => {
-  const navigate = useNavigate();
-  return (
-    <div className="role-card" style={{ backgroundColor: bgColor, cursor: 'pointer' }} onClick={() => navigate(ROLE_ROUTES[title] || '/')}>
-      <img src={image} alt={title} />
-      <div className="role-title" style={{ color: color }}>
-        <Icon size={28} />
-        <span>{title}</span>
-      </div>
-      <p className="role-desc">{description}</p>
-      <button className="role-link" style={{ color: color, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, fontSize: '1rem', padding: 0 }}>
-        Explore Professionals <ArrowRight size={20} />
-      </button>
-    </div>
-  );
-};
-
-const CategoryCard = ({ icon: Icon, label }) => (
-  <div className="category-card">
-    <div className="icon-box">
-      <Icon size={32} />
-    </div>
-    <h3>{label}</h3>
-    <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-      Find vetted experts in {label.toLowerCase()}
-    </p>
-  </div>
-);
 
 const Home = () => {
   const navigate = useNavigate();
@@ -706,177 +689,263 @@ const Home = () => {
 
   // Otherwise, render Public Landing Page
   return (
-    <div className="site-wrapper">
-      {/* Header */}
-      <header className="site-header">
-        <div className="container" style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Link to="/" className="logo">
-            <img src={allverLogo} alt="Allver" className="header-logo-svg" />
+    <div className="allver-landing">
+      {/* ========== NAVBAR ========== */}
+      <header className="av-navbar">
+        <div className="av-navbar-inner">
+          <Link to="/" className="av-brand">
+            <img src={allverLogo} alt="Allver" className="av-brand-logo" />
           </Link>
-          
-          <nav>
-            <ul className="nav-links">
-              <li><a href="#">Find Talent</a></li>
-              <li><a href="#">Project Gallery</a></li>
-              <li><a href="#">Success Stories</a></li>
-              <li><a href="#">About Us</a></li>
-            </ul>
+
+          <nav className="av-nav-links">
+            <a href="#home" className="active">Home</a>
+            <div className="av-nav-dropdown">
+              <a href="#services">Services <ChevronDown size={14} /></a>
+            </div>
+            <div className="av-nav-dropdown">
+              <a href="#professionals">For Professionals <ChevronDown size={14} /></a>
+            </div>
+            <a href="#services">Track Order</a>
+            <a href="#cta">Sustainability</a>
+            <a href="#footer">About Us</a>
           </nav>
 
-          <div className="header-actions">
-            <Link to="/login" className="btn-login">Login</Link>
-            <Link to="/register" className="btn-get-started">Join as Professional or Client</Link>
+          <div className="av-nav-actions">
+            <Link to="/login" className="av-btn-login">Login</Link>
+            <Link to="/register" className="av-btn-signup">Sign Up</Link>
           </div>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="hero">
-        <div className="container">
-          <div className="hero-content">
-            {stats && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'white', padding: '0.5rem 1rem', borderRadius: '2rem', fontSize: '0.875rem', fontWeight: '700', color: 'var(--color-contractor)', marginBottom: '1.5rem', boxShadow: 'var(--shadow-sm)' }}>
-                <Shield size={16} />
-                Trusted by {stats.happyClients}+ Happy Clients
+      {/* ========== HERO SECTION ========== */}
+      <section className="av-hero" id="home">
+        <div className="av-hero-inner">
+          <div className="av-hero-content">
+            <h1 className="av-hero-title">
+              One Platform.<br />
+              <span className="av-gold-text">Every Construction Need.</span>
+            </h1>
+            <p className="av-hero-desc">
+              Allver connects Contractors, Architects, Laborers and Suppliers on one platform to build faster, smarter and more sustainably.
+            </p>
+            <div className="av-hero-btns">
+              <Link to="/register" className="av-btn-primary">
+                Explore Services <ArrowRight size={16} />
+              </Link>
+              <Link to="/register" className="av-btn-outline">
+                Join Allver Now
+              </Link>
+            </div>
+
+            {/* Trusted By */}
+            <div className="av-trusted-row">
+              <span className="av-trusted-label">Trusted by Professionals</span>
+              <div className="av-avatar-stack">
+                <div className="av-avatar-circle"><img src="https://i.pravatar.cc/150?img=11" alt="user" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit: 'cover'}} /></div>
+                <div className="av-avatar-circle"><img src="https://i.pravatar.cc/150?img=12" alt="user" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit: 'cover'}} /></div>
+                <div className="av-avatar-circle"><img src="https://i.pravatar.cc/150?img=33" alt="user" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit: 'cover'}} /></div>
+                <div className="av-avatar-circle"><img src="https://i.pravatar.cc/150?img=44" alt="user" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit: 'cover'}} /></div>
+                <div className="av-avatar-circle"><img src="https://i.pravatar.cc/150?img=5" alt="user" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit: 'cover'}} /></div>
+                <div className="av-avatar-circle av-avatar-more">+</div>
               </div>
-            )}
-            <h1>Building the Future of Construction</h1>
-            <p>The marketplace where clients, architects, and contractors connect to bring visions to life.</p>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <Link to="/register" className="btn-get-started" style={{ padding: '1rem 2rem', fontSize: '1.1rem', textDecoration: 'none' }}>
-                Post a Project
-              </Link>
-              <Link to="/register" style={{ background: 'white', border: '2px solid #e5e7eb', padding: '1rem 2rem', borderRadius: '0.75rem', fontWeight: '700', cursor: 'pointer', textDecoration: 'none', color: 'var(--text-dark)' }}>
-                Search Professionals
-              </Link>
+              <div className="av-stat-inline">
+                <strong>10K+</strong>
+                <span>Happy Users</span>
+              </div>
             </div>
           </div>
-          <div className="hero-image">
-            <img src={welcomeHero} alt="Construction Marketplace Illustration" />
+
+          <div className="av-hero-visual">
+            {/* Floating Card */}
+            <div className="av-floating-card">
+              <div className="av-floating-icon">
+                <Package size={20} />
+              </div>
+              <div className="av-floating-text">
+                <strong>Your Project, In Real Time</strong>
+                <p>Track orders, manage deliveries<br/>and stay updated 24/7.</p>
+              </div>
+              <button className="av-btn-track">Track Order <ArrowRight size={14} /></button>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Roles Section */}
-      <section className="container" style={{ padding: '8rem 2rem' }}>
-        <div className="section-header">
-          <h2>Everything you need for your build</h2>
-          <p style={{ fontSize: '1.25rem', color: 'var(--text-muted)' }}>Choose your role and get started on the platform</p>
-        </div>
-        
-        <div className="roles-grid">
-          <RoleCard 
-            image={architectImg}
-            title="Architect"
-            description="Design your dream with world-class residential and commercial architects."
-            color="var(--color-architect)"
-            bgColor="var(--color-architect-bg)"
-            icon={Compass}
-          />
-          <RoleCard 
-            image={contractorImg}
-            title="Contractor"
-            description="Turn plans into reality with certified general and specialized contractors."
-            color="var(--color-contractor)"
-            bgColor="var(--color-contractor-bg)"
-            icon={HardHat}
-          />
-          <RoleCard 
-            image={labourImg}
-            title="Labour"
-            description="Find skilled masonry, carpentry, and electric work experts for any task."
-            color="var(--color-labour)"
-            bgColor="var(--color-labour-bg)"
-            icon={Hammer}
-          />
-        </div>
-      </section>
 
-      {/* Categories Section */}
-      <section className="categories-section">
-        <div className="container">
-          <div className="section-header">
-            <h2>Popular Service Categories</h2>
-            <p style={{ color: 'var(--text-muted)' }}>Discover experts across all construction domains</p>
-          </div>
+      {/* ========== PEOPLE SECTION ========== */}
+      <section className="av-people" id="professionals">
+        <div className="av-section-inner">
+          <h2 className="av-section-title">We Connect The Right People</h2>
           
-          <div className="categories-grid">
-            <CategoryCard icon={Layout} label="Architecture" />
-            <CategoryCard icon={Hammer} label="Construction" />
-            <CategoryCard icon={Drill} label="Renovation" />
-            <CategoryCard icon={Truck} label="Material Logistics" />
-          </div>
-        </div>
-      </section>
+          <div className="av-people-grid">
+            <div className="av-people-card" onClick={() => navigate('/contractors')}>
+              <div className="av-people-icon-wrap contractor">
+                <HardHat size={32} />
+              </div>
+              <h4>Contractors</h4>
+              <p>Find projects, hire the right team and grow your business.</p>
+            </div>
 
-      {/* How It Works */}
-      <section className="how-it-works">
-        <div className="container">
-          <div className="section-header">
-            <h2>How It Works</h2>
-            <p style={{ color: 'var(--text-muted)' }}>Simple, secure, and transparent construction workflow</p>
-          </div>
-          
-          <div className="steps-container">
-            <div className="step-item">
-              <div className="step-num">1</div>
-              <h4>Choose Your Role</h4>
-              <p>Identify as a Client, Architect, or Contractor to access tailored tools.</p>
+            <div className="av-people-card" onClick={() => navigate('/architects')}>
+              <div className="av-people-icon-wrap architect">
+                <Compass size={32} />
+              </div>
+              <h4>Architects</h4>
+              <p>Collaborate, showcase your work and get more clients.</p>
             </div>
-            <div className="step-item">
-              <div className="step-num">2</div>
-              <h4>Find & Connect</h4>
-              <p>Search profiles, compare portfolios, and invite talent to your project.</p>
-            </div>
-            <div className="step-item">
-              <div className="step-num">3</div>
-              <h4>Collaborate</h4>
-              <p>Discuss requirements, share blueprints, and agree on milestones.</p>
-            </div>
-            <div className="step-item">
-              <div className="step-num">4</div>
-              <h4>Success</h4>
-              <p>Manage projects with confidence and build something amazing together.</p>
+
+            <div className="av-people-card" onClick={() => navigate('/labour')}>
+              <div className="av-people-icon-wrap labour">
+                <Hammer size={32} />
+              </div>
+              <h4>Laborers</h4>
+              <p>Find job opportunities and work with trusted employers.</p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="site-footer">
-        <div className="container">
-          <div className="footer-grid">
-            <div className="footer-brand">
-              <img src={allverLogo} alt="Allver" className="footer-logo-svg" />
-              <p style={{ color: 'var(--text-muted)' }}>The world's leading construction marketplace for high-end professional connections.</p>
+      {/* ========== STATS BAR ========== */}
+      <section className="av-stats-bar">
+        <div className="av-stats-inner">
+          <div className="av-stat-item">
+            <Users size={24} />
+            <div>
+              <strong>10K+</strong>
+              <span>Professionals</span>
             </div>
-            <div className="footer-links">
+          </div>
+          <div className="av-stat-item">
+            <Building2 size={24} />
+            <div>
+              <strong>5K+</strong>
+              <span>Projects Completed</span>
+            </div>
+          </div>
+          <div className="av-stat-item">
+            <Package size={24} />
+            <div>
+              <strong>15K+</strong>
+              <span>Products Listed</span>
+            </div>
+          </div>
+          <div className="av-stat-item">
+            <Globe size={24} />
+            <div>
+              <strong>50+</strong>
+              <span>Cities Covered</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ========== CTA SECTION ========== */}
+      <section className="av-cta" id="cta">
+        <div className="av-cta-inner">
+          <div className="av-cta-content">
+            <h2>Ready to Build Something Great?</h2>
+            <p>Join Allver today and experience a smarter way to build, manage and grow your construction projects.</p>
+            <div className="av-cta-btns">
+              <Link to="/register" className="av-btn-primary">
+                Sign Up Now <ArrowRight size={16} />
+              </Link>
+              <a href="#services" className="av-btn-outline-light">
+                Learn More <ArrowRight size={16} />
+              </a>
+            </div>
+          </div>
+          <div className="av-cta-visual">
+            <div className="av-cta-phone-mockup">
+              <div className="av-mockup-header">
+                <img src={allverLogo} alt="Allver" className="av-mockup-logo" />
+                <span>ALLVER</span>
+              </div>
+              <div className="av-mockup-content">
+                <h5>Track Your Order</h5>
+                <p>Real time updates on your orders and deliveries.</p>
+                <div className="av-mockup-status">
+                  <div className="av-status-dot active"></div>
+                  <div>
+                    <strong>In Transit</strong>
+                    <span>Estimated Delivery: Today, 3:45 PM</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <img src={welcomeHero} alt="Construction" className="av-cta-bg-img" />
+          </div>
+        </div>
+      </section>
+
+      {/* ========== FOOTER ========== */}
+      <footer className="av-footer" id="footer">
+        <div className="av-footer-inner">
+          <div className="av-footer-grid">
+            {/* Brand Column */}
+            <div className="av-footer-brand">
+              <div className="av-brand">
+                <img src={allverLogo} alt="Allver" className="av-brand-logo" />
+                <div className="av-brand-text">
+                  <span className="av-brand-name">ALLVER</span>
+                  <span className="av-brand-tagline">BUILD. CONNECT. DELIVER.</span>
+                </div>
+              </div>
+              <p>Allver is your all-in-one platform for construction services and solutions.</p>
+              <div className="av-social-links">
+                <a href="#" aria-label="Facebook"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg></a>
+                <a href="#" aria-label="LinkedIn"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg></a>
+                <a href="#" aria-label="Instagram"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.319 1.347 20.651.935 19.86.63c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.061 1.17-.256 1.805-.421 2.227-.224.562-.479.96-.899 1.382-.419.419-.824.679-1.38.896-.42.164-1.065.36-2.235.413-1.274.057-1.649.07-4.859.07-3.211 0-3.586-.015-4.859-.074-1.171-.061-1.816-.256-2.236-.421-.569-.224-.96-.479-1.379-.899-.421-.419-.69-.824-.9-1.38-.165-.42-.359-1.065-.42-2.235-.045-1.26-.061-1.649-.061-4.844 0-3.196.016-3.586.061-4.861.061-1.17.255-1.814.42-2.234.21-.57.479-.96.9-1.381.419-.419.81-.689 1.379-.898.42-.166 1.051-.361 2.221-.421 1.275-.045 1.65-.06 4.859-.06l.045.03zm0 3.678a6.162 6.162 0 100 12.324 6.162 6.162 0 100-12.324zM12 16c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm7.846-10.405a1.441 1.441 0 11-2.88 0 1.441 1.441 0 012.88 0z"/></svg></a>
+                <a href="#" aria-label="YouTube"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg></a>
+              </div>
+            </div>
+
+            {/* Platform Links */}
+            <div className="av-footer-links">
               <h4>Platform</h4>
               <ul>
-                <li><a href="#">For Clients</a></li>
-                <li><a href="#">For Architects</a></li>
-                <li><a href="#">For Contractors</a></li>
+                <li><a href="#home">Home</a></li>
+                <li><a href="#services">Services</a></li>
+                <li><a href="#services">Track Order</a></li>
+                <li><a href="#cta">Sustainability</a></li>
+                <li><a href="#footer">About Us</a></li>
               </ul>
             </div>
-            <div className="footer-links">
-              <h4>Company</h4>
+
+            {/* For Professionals */}
+            <div className="av-footer-links">
+              <h4>For Professionals</h4>
               <ul>
-                <li><a href="#">About Us</a></li>
-                <li><a href="#">Careers</a></li>
-                <li><a href="#">Press</a></li>
+                <li><Link to="/contractors">Contractors</Link></li>
+                <li><Link to="/architects">Architects</Link></li>
+                <li><Link to="/labour">Laborers</Link></li>
+                <li><a href="#">Suppliers</a></li>
               </ul>
             </div>
-            <div className="footer-links">
+
+            {/* Support */}
+            <div className="av-footer-links">
               <h4>Support</h4>
               <ul>
                 <li><a href="#">Help Center</a></li>
                 <li><a href="#">Contact Us</a></li>
+                <li><a href="#">Terms & Conditions</a></li>
                 <li><a href="#">Privacy Policy</a></li>
               </ul>
             </div>
+
+            {/* Newsletter */}
+            <div className="av-footer-newsletter">
+              <h4>Newsletter</h4>
+              <p>Stay updated with the latest news and offers from Allver.</p>
+              <div className="av-newsletter-form">
+                <input type="email" placeholder="Enter your email" />
+                <button type="button"><ArrowRight size={18} /></button>
+              </div>
+            </div>
           </div>
-          <div style={{ marginTop: '5rem', paddingTop: '2rem', borderTop: '1px solid #f3f4f6', textAlign: 'center', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-            © 2026 Allver Construction Marketplace. All rights reserved.
+
+          <div className="av-footer-bottom">
+            <p>© 2026 Allver Construction Marketplace. All rights reserved.</p>
           </div>
         </div>
       </footer>
@@ -885,3 +954,4 @@ const Home = () => {
 };
 
 export default Home;
+

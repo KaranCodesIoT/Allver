@@ -13,7 +13,7 @@ import {
   Construction
 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
-import welcomeHero from './assets/welcome_hero.png';
+const constructionHero = "https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=800&q=80";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -80,18 +80,25 @@ const Register = () => {
   return (
     <div className="register-page">
       {/* Left Side: Hero/Illustration */}
-      <div className="register-hero">
-        <div style={{ position: 'absolute', top: '2rem', left: '2rem' }}>
+      <div className="register-hero" style={{ 
+        backgroundImage: `linear-gradient(135deg, rgba(13,13,13,0.85) 0%, rgba(17,17,17,0.7) 100%), url(${constructionHero})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        justifyContent: 'flex-end',
+        alignItems: 'flex-start',
+        padding: '4rem',
+        position: 'relative'
+      }}>
+        <div style={{ position: 'absolute', top: '2rem', left: '2rem', zIndex: 2 }}>
           <button 
             onClick={() => navigate('/')} 
-            style={{ border: 'none', background: 'white', padding: '0.75rem', borderRadius: '50%', cursor: 'pointer', boxShadow: 'var(--shadow-md)', display: 'flex' }}
+            style={{ border: 'none', background: 'rgba(255,255,255,0.15)', backdropFilter: 'blur(10px)', padding: '0.75rem', borderRadius: '50%', cursor: 'pointer', display: 'flex', color: 'white' }}
           >
             <ArrowLeft size={24} />
           </button>
         </div>
-        <img src={welcomeHero} alt="Register Hero" />
-        <h1 style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>Welcome to Allver</h1>
-        <p style={{ maxWidth: '400px', fontSize: '1.1rem', color: 'var(--text-muted)' }}>
+        <h1 style={{ fontSize: '2.8rem', marginBottom: '1rem', color: '#fff', fontWeight: 900, lineHeight: 1.1 }}>Welcome to<br/><span style={{ color: '#F59E0B' }}>Allver</span></h1>
+        <p style={{ maxWidth: '400px', fontSize: '1.1rem', color: 'rgba(255,255,255,0.7)' }}>
           The premium marketplace connecting elite construction professionals with high-value projects.
         </p>
       </div>

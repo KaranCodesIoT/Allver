@@ -6,62 +6,12 @@ import {
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
 
-const MOCK_CONTRACTORS = [
-  {
-    _id: 'mock-c1', fullName: 'BuildWell Constructions', city: 'Mumbai, Maharashtra',
-    experience: '12+ Years', contractorType: 'Civil Contractor',
-    workCategory: ['Residential', 'Commercial', 'Timely Delivery'],
-    rating: 4.8, reviews: 124, projects: 156, followers: 320,
-    isMock: true, avatar: 'BW', avatarColor: '#3b82f6',
-    shortDesc: 'Specialized in residential and commercial construction with quality and timely delivery.'
-  },
-  {
-    _id: 'mock-c2', fullName: 'Surya Constructions', city: 'Pune, Maharashtra',
-    experience: '10+ Years', contractorType: 'General Contractor',
-    workCategory: ['Building', 'Renovation', 'Precision'],
-    rating: 4.7, reviews: 98, projects: 112, followers: 245,
-    isMock: true, avatar: 'SC', avatarColor: '#f59e0b',
-    shortDesc: 'Building your dream with strength, precision and reliability.'
-  },
-  {
-    _id: 'mock-c3', fullName: 'Shree Ram Builders', city: 'Bengaluru, Karnataka',
-    experience: '8+ Years', contractorType: 'Civil Contractor',
-    workCategory: ['Home Construction', 'Renovation', 'Civil Work'],
-    rating: 4.6, reviews: 76, projects: 98, followers: 198,
-    isMock: true, avatar: 'SR', avatarColor: '#ef4444',
-    shortDesc: 'Experts in home construction, renovation and civil work.'
-  },
-  {
-    _id: 'mock-c4', fullName: 'Reliable Infra Solutions', city: 'Hyderabad, Telangana',
-    experience: '9+ Years', contractorType: 'General Contractor',
-    workCategory: ['Infrastructure', 'Commercial', 'Sustainable'],
-    rating: 4.5, reviews: 64, projects: 86, followers: 176,
-    isMock: true, avatar: 'RI', avatarColor: '#6366f1',
-    shortDesc: 'Delivering strong and sustainable structures across industries.'
-  },
-  {
-    _id: 'mock-c5', fullName: 'Metro Build Corp', city: 'Delhi, NCR',
-    experience: '15+ Years', contractorType: 'General Contractor',
-    workCategory: ['High-Rise', 'Commercial', 'Infrastructure'],
-    rating: 4.9, reviews: 200, projects: 210, followers: 500,
-    isMock: true, avatar: 'MB', avatarColor: '#10b981',
-    shortDesc: 'Premium contractor for large-scale commercial and infrastructure projects.'
-  },
-  {
-    _id: 'mock-c6', fullName: 'AquaFix Plumbing Co.', city: 'Chennai, Tamil Nadu',
-    experience: '7+ Years', contractorType: 'Plumbing Contractor',
-    workCategory: ['Plumbing', 'Sanitation', 'Water Supply'],
-    rating: 4.5, reviews: 54, projects: 70, followers: 120,
-    isMock: true, avatar: 'AF', avatarColor: '#06b6d4',
-    shortDesc: 'Specialized plumbing, sanitation and water supply solutions.'
-  }
-];
+
 
 const ProfileModal = ({ prof, onClose }) => {
   if (!prof) return null;
-  const avatarBg = prof.isMock ? prof.avatarColor : '#3b82f6';
-  const initials = prof.isMock ? prof.avatar
-    : (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  const avatarBg = '#3b82f6';
+  const initials = (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   const categories = prof.workCategory || [];
 
   return (
@@ -101,7 +51,7 @@ const ProfileModal = ({ prof, onClose }) => {
               </div>
             </div>
           )}
-          {!prof.isMock && prof.serviceLocation?.length > 0 && (
+          {prof.serviceLocation?.length > 0 && (
             <div className="dl-modal-row">
               <label>Service Locations</label>
               <div className="dl-tag-group">
@@ -140,7 +90,7 @@ const ContractorsPage = () => {
       .catch(() => { setContractors([]); setLoading(false); });
   }, []);
 
-  const displayList = [...contractors, ...MOCK_CONTRACTORS];
+  const displayList = contractors;
 
   const filtered = displayList.filter(p => {
     const nameMatch = (p.fullName || '').toLowerCase().includes(search.toLowerCase());
@@ -186,7 +136,7 @@ const ContractorsPage = () => {
       <div className={`listing-status-banner ${contractors.length > 0 ? 'blue' : 'grey'}`}>
         {contractors.length > 0
           ? <><CheckCircle2 size={14} /> {contractors.length} registered contractor{contractors.length !== 1 ? 's' : ''} on platform</>
-          : <><SlidersHorizontal size={14} /> Showing sample contractors — register as Contractor to appear here!</>}
+          : <><SlidersHorizontal size={14} /> No contractors registered yet — register as Contractor to appear here!</>}
       </div>
 
       {/* Cards Grid */}
@@ -195,9 +145,8 @@ const ContractorsPage = () => {
       ) : (
         <div className="listing-cards-grid">
           {filtered.map(prof => {
-            const initials = prof.isMock ? prof.avatar
-              : (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-            const avatarBg = prof.isMock ? prof.avatarColor : '#3b82f6';
+            const initials = (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+            const avatarBg = '#3b82f6';
             const cats = prof.workCategory || [];
             return (
               <div key={prof._id} className="listing-pro-card blue-card">

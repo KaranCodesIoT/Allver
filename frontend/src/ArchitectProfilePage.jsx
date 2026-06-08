@@ -6,74 +6,7 @@ import {
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
 
-const MOCK_ARCHITECTS = [
-  {
-    _id: 'mock-1', fullName: 'Neha Sharma', city: 'Mumbai, Maharashtra',
-    experience: '8 Years', firmName: 'Design Space Architects',
-    specialization: ['Residential Design', 'Commercial Design', 'Interior Design', 'Landscape', '3D Visualization', 'Renovation', 'Vastu Planning', 'Smart Homes'],
-    rating: 4.8, reviews: 124, projects: 128, followers: 256,
-    isMock: true, avatar: 'NS', avatarColor: '#10b981',
-    phone: '+91 98765 43210',
-    cover: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
-    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80',
-    shortDesc: 'We specialize in residential and commercial architecture with a focus on modern, sustainable, and functional design solutions.'
-  },
-  {
-    _id: 'mock-2', fullName: 'Rohit Mehta', city: 'Pune, Maharashtra',
-    experience: '10 Years', firmName: 'Mehta Architects & Associates',
-    specialization: ['Urban Planning', 'Green Building', 'Commercial Space', 'Contemporary Design', 'Acoustics', 'Eco-friendly Design'],
-    rating: 4.7, reviews: 98, projects: 96, followers: 189,
-    isMock: true, avatar: 'RM', avatarColor: '#3b82f6',
-    phone: '+91 98765 11223',
-    cover: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1200&q=80',
-    avatarUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=300&q=80',
-    shortDesc: 'Leading architect specializing in sustainable contemporary and eco-friendly structures.'
-  },
-  {
-    _id: 'mock-3', fullName: 'Priya Nair', city: 'Bengaluru, Karnataka',
-    experience: '7 Years', firmName: 'Nair Interior Architecture',
-    specialization: ['Interior Architecture', 'Space Optimization', 'Custom Furniture', 'Lighting Design', 'Luxury Penthouse', 'Color Theory'],
-    rating: 4.9, reviews: 156, projects: 156, followers: 218,
-    isMock: true, avatar: 'PN', avatarColor: '#8b5cf6',
-    phone: '+91 98765 99887',
-    cover: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=1200&q=80',
-    avatarUrl: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=300&q=80',
-    shortDesc: 'Passionate interior architect focusing on personalized spaces, space optimization, and bespoke luxury furniture.'
-  },
-  {
-    _id: 'mock-4', fullName: 'Karan Patel', city: 'Hyderabad, Telangana',
-    experience: '6 Years', firmName: 'KP Design Studio',
-    specialization: ['Affordable Housing', 'Prefabrication', 'Renovation', 'Steel Structure', 'Bungalow Planning'],
-    rating: 4.6, reviews: 72, projects: 84, followers: 132,
-    isMock: true, avatar: 'KP', avatarColor: '#f59e0b',
-    phone: '+91 98765 33445',
-    cover: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1200&q=80',
-    avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=300&q=80',
-    shortDesc: 'Innovative engineering and architecture solutions combining prefabrication and affordable design.'
-  },
-  {
-    _id: 'mock-5', fullName: 'Aisha Khan', city: 'Delhi, NCR',
-    experience: '9 Years', firmName: 'Khan Restoration & Luxury Design',
-    specialization: ['Heritage Restoration', 'Luxury Residential', 'Boutique Hotels', 'Landscape Architecture', 'Art Deco'],
-    rating: 4.8, reviews: 110, projects: 98, followers: 310,
-    isMock: true, avatar: 'AK', avatarColor: '#ec4899',
-    phone: '+91 98765 66778',
-    cover: 'https://images.unsplash.com/photo-1600566753376-12c8ab7fb75b?auto=format&fit=crop&w=1200&q=80',
-    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-    shortDesc: 'Award-winning heritage restorer and high-end residential architect.'
-  },
-  {
-    _id: 'mock-6', fullName: 'Sanjay Verma', city: 'Chennai, Tamil Nadu',
-    experience: '12 Years', firmName: 'Verma Green Architects',
-    specialization: ['Sustainable Design', 'Solar Architecture', 'Urban Landscaping', 'Passive Cooling', 'Community Planning'],
-    rating: 4.7, reviews: 89, projects: 120, followers: 204,
-    isMock: true, avatar: 'SV', avatarColor: '#06b6d4',
-    phone: '+91 98765 55443',
-    cover: 'https://images.unsplash.com/photo-1600573472591-ee6b68d14c68?auto=format&fit=crop&w=1200&q=80',
-    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
-    shortDesc: 'Pioneering sustainable and zero-emission building structures with integrated solar and passive cooling technology.'
-  }
-];
+
 
 const MOCK_PROJECTS = [
   { id: 'p1', name: 'Greenwood Villa', location: 'Navi Mumbai', status: 'Completed', year: 2024, img: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80' },
@@ -151,38 +84,29 @@ const ArchitectProfilePage = () => {
       setIsOwnProfile(true);
     }
 
-    // Attempt to load mock architect first
-    const mockFind = MOCK_ARCHITECTS.find(a => a._id === profileId);
-    if (mockFind) {
-      setProfile(mockFind);
-      setFollowersCount(mockFind.followers || 256);
-      setLoading(false);
-    } else {
-      // Fetch from API for real registered professionals
-      fetch(`http://localhost:5000/api/professional/${profileId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.professional) {
-            setProfile(data.professional);
-            setFollowersCount(256);
-            if (data.professional._id === currentUser?._id) {
-              setIsOwnProfile(true);
-            }
-          } else if (profileId === currentUser?._id) {
-            // Fallback to local storage if API didn't return professional object directly
-            setProfile(currentUser);
-            setFollowersCount(256);
+    // Fetch from API for real registered professionals
+    fetch(`http://localhost:5000/api/professional/${profileId}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.professional) {
+          setProfile(data.professional);
+          setFollowersCount(data.professional.followers || 0);
+          if (data.professional._id === currentUser?._id) {
+            setIsOwnProfile(true);
           }
-          setLoading(false);
-        })
-        .catch(() => {
-          if (profileId === currentUser?._id) {
-            setProfile(currentUser);
-            setFollowersCount(256);
-          }
-          setLoading(false);
-        });
-    }
+        } else if (profileId === currentUser?._id) {
+          setProfile(currentUser);
+          setFollowersCount(0);
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        if (profileId === currentUser?._id) {
+          setProfile(currentUser);
+          setFollowersCount(0);
+        }
+        setLoading(false);
+      });
   }, [id]);
 
   if (loading) {
@@ -217,7 +141,7 @@ const ArchitectProfilePage = () => {
   const accentColor = roleName === 'Architect' ? '#10b981' : roleName === 'Contractor' ? '#3b82f6' : roleName === 'Labour' ? '#f59e0b' : '#8b5cf6';
 
   const initials = (profile.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  const avatarBg = profile.isMock ? profile.avatarColor : accentColor;
+  const avatarBg = accentColor;
   const showCover = profile.cover || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80';
   const showAvatar = profile.avatarUrl || null;
 
@@ -597,7 +521,12 @@ const ArchitectProfilePage = () => {
                 <div className="tab-pane-fade">
                   <div className="tab-projects-list">
                     {projectsList.map(proj => (
-                      <div key={proj.id} className="tab-project-row" onClick={() => navigate(`/project/${proj.id}`)} style={{ cursor: 'pointer' }}>
+                      <div 
+                        key={proj.id} 
+                        className="tab-project-row clickable-row" 
+                        onClick={() => navigate(`/project/${proj.id}`)}
+                        style={{ cursor: 'pointer' }}
+                      >
                         <img src={proj.img} alt={proj.name} className="tpr-thumb" />
                         <div className="tpr-details">
                           <div className="tpr-title-row">
@@ -610,7 +539,14 @@ const ArchitectProfilePage = () => {
                             <MapPin size={12} /> {proj.location} <span className="sep">•</span> {proj.year}
                           </p>
                         </div>
-                        <button className="tpr-bookmark-btn" title="Save Project" onClick={(e) => e.stopPropagation()}>
+                        <button 
+                          className="tpr-bookmark-btn" 
+                          title="Save Project"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // bookmark logic if any
+                          }}
+                        >
                           <Heart size={16} />
                         </button>
                       </div>
