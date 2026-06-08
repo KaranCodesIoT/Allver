@@ -10,7 +10,8 @@ import {
   ArrowLeft,
   Eye,
   EyeOff,
-  Construction
+  Construction,
+  Mail
 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 const constructionHero = "https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=800&q=80";
@@ -19,6 +20,7 @@ const Register = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     fullName: '',
+    email: '',
     phoneNumber: '',
     password: '',
     role: 'Client',
@@ -132,19 +134,32 @@ const Register = () => {
             </div>
 
             <div className="form-group">
-              <label>Phone Number <span>*</span></label>
+              <label>Email <span>*</span></label>
+              <div className="input-with-icon">
+                <Mail size={20} className="lucide" />
+                <input 
+                  type="email" 
+                  name="email" 
+                  placeholder="Enter your email address" 
+                  required 
+                  value={formData.email}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Phone Number <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.8rem' }}>(Optional)</span></label>
               <div className="input-with-icon">
                 <Phone size={20} className="lucide" />
                 <input 
                   type="tel" 
                   name="phoneNumber" 
                   placeholder="Enter your phone number" 
-                  required 
                   value={formData.phoneNumber}
                   onChange={handleChange}
                 />
               </div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>OTP will be sent to this number</span>
             </div>
 
             <div className="form-group">

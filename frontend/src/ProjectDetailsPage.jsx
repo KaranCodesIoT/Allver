@@ -86,13 +86,67 @@ const ProjectDetailsPage = () => {
   const project = getProjectMeta(id);
   const architect = getArchitectInfo();
 
-  // Detect if current user is Architect
-  const isArchitect = (() => {
+  // Detect current user and role
+  const currentUser = (() => {
     try {
-      const u = JSON.parse(localStorage.getItem('currentUser') || '{}');
-      return u.role === 'Architect';
-    } catch { return false; }
+      const u = localStorage.getItem('currentUser');
+      return u ? JSON.parse(u) : null;
+    } catch { return null; }
   })();
+
+  const currentUserRole = currentUser?.role || null;
+
+  const isArchitect = currentUserRole === 'Architect';
+  const isContractor = currentUserRole === 'Contractor';
+  const isClient = currentUserRole === 'Client';
+
+  // Project members state (claiming logic)
+  const [projectMembers, setProjectMembers] = useState(() => {
+    const saved = localStorage.getItem(`allver_proj_members_${id}`);
+    if (saved) return JSON.parse(saved);
+    return {
+      contractorId: null,
+      contractorName: '',
+      clientId: null,
+      clientName: '',
+      architectId: null,
+      architectName: ''
+    };
+  });
+
+  // Effect to handle automatic claiming on first visit of registered roles
+  useEffect(() => {
+    if (!currentUser) return;
+    
+    let updated = false;
+    const newMembers = { ...projectMembers };
+    
+    if (currentUser.role === 'Contractor' && !newMembers.contractorId) {
+      newMembers.contractorId = currentUser._id;
+      newMembers.contractorName = currentUser.fullName;
+      updated = true;
+    } else if (currentUser.role === 'Client' && !newMembers.clientId) {
+      newMembers.clientId = currentUser._id;
+      newMembers.clientName = currentUser.fullName;
+      updated = true;
+    } else if (currentUser.role === 'Architect' && !newMembers.architectId) {
+      newMembers.architectId = currentUser._id;
+      newMembers.architectName = currentUser.fullName;
+      updated = true;
+    }
+    
+    if (updated) {
+      localStorage.setItem(`allver_proj_members_${id}`, JSON.stringify(newMembers));
+      setProjectMembers(newMembers);
+    }
+  }, [id, currentUser, projectMembers]);
+
+  const isAssignedContractor = currentUser && currentUser.role === 'Contractor' && projectMembers.contractorId === currentUser._id;
+  const isAssignedClient = currentUser && currentUser.role === 'Client' && projectMembers.clientId === currentUser._id;
+  const isAssignedArchitect = currentUser && currentUser.role === 'Architect' && projectMembers.architectId === currentUser._id;
+  
+  const isProjectMember = isAssignedContractor || isAssignedClient || isAssignedArchitect;
+  const canPostUpdates = isAssignedContractor || isAssignedClient;
 
   // --- STATE PERSISTENCE KEYS ---
   const KEY_UPDATES = `allver_proj_upd_${id}`;
@@ -293,6 +347,10 @@ const ProjectDetailsPage = () => {
   // Add progress update
   const handleCreateUpdate = (e) => {
     e.preventDefault();
+    if (!canPostUpdates) {
+      alert("Only the assigned Contractor or Client can post updates.");
+      return;
+    }
     if (!newUpdateTitle.trim() || !newUpdateDesc.trim()) return;
 
     const newUpd = {
@@ -322,6 +380,10 @@ const ProjectDetailsPage = () => {
   };
 
   const handleLikeUpdate = (uid) => {
+    if (!isProjectMember) {
+      alert("Only project members can react to updates.");
+      return;
+    }
     setUpdates(updates.map(upd => {
       if (upd.id === uid) {
         return {
@@ -336,8 +398,14 @@ const ProjectDetailsPage = () => {
 
   const handleAddComment = (uid, e) => {
     e.preventDefault();
+    if (!isProjectMember) {
+      alert("Only project members can comment.");
+      return;
+    }
     const commentText = commentInputs[uid] || '';
     if (!commentText.trim()) return;
+
+    const senderDisplay = currentUser ? `${currentUser.fullName} (${currentUser.role})` : 'Guest';
 
     setUpdates(updates.map(upd => {
       if (upd.id === uid) {
@@ -347,7 +415,7 @@ const ProjectDetailsPage = () => {
           comments: [
             ...upd.comments,
             {
-              sender: 'Raj (Client)',
+              sender: senderDisplay,
               text: commentText.trim(),
               time: 'Just now'
             }
@@ -369,6 +437,10 @@ const ProjectDetailsPage = () => {
 
   // Architect: Open Payment Request Modal
   const openPayReqModal = (milestone) => {
+    if (!isAssignedArchitect) {
+      alert("Only the assigned Architect can request payment.");
+      return;
+    }
     setPayReqModal(milestone);
     setPayReqNote('');
     setPayReqFiles([]);
@@ -388,6 +460,10 @@ const ProjectDetailsPage = () => {
 
   // Architect: Submit Payment Request → status becomes 'Payment Requested'
   const handleSendPayReq = () => {
+    if (!isAssignedArchitect) {
+      alert("Only the assigned Architect can request payment.");
+      return;
+    }
     setPayReqSending(true);
     const requestDate = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
     setTimeout(() => {
@@ -406,7 +482,7 @@ const ProjectDetailsPage = () => {
         {
           id: Date.now(),
           sender: 'architect',
-          name: `${architect.fullName} (Architect)`,
+          name: `${currentUser?.fullName || 'Architect'} (Architect)`,
           text: `📩 Payment Request Submitted for milestone "${payReqModal.name}" — ₹${payReqModal.amount.toLocaleString('en-IN')}. ${payReqNote || 'Milestone completed. Kindly review and approve payment.'}`,
           time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
           type: 'text'
@@ -418,6 +494,10 @@ const ProjectDetailsPage = () => {
 
   // Client: Approve Payment → status becomes 'Paid'
   const handleApprovePayment = (ms) => {
+    if (!isAssignedClient) {
+      alert("Only the assigned Client can approve payments.");
+      return;
+    }
     const receiptNo = `REC-2026-${String(Date.now()).slice(-4)}`;
     setPayments(prev => ({
       ...prev,
@@ -432,7 +512,7 @@ const ProjectDetailsPage = () => {
       {
         id: Date.now(),
         sender: 'client',
-        name: 'Client',
+        name: currentUser?.fullName || 'Client',
         text: `✅ Payment Approved for "${ms.name}" — ₹${ms.amount.toLocaleString('en-IN')}. Receipt ${receiptNo} generated.`,
         time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
         type: 'text'
@@ -442,12 +522,20 @@ const ProjectDetailsPage = () => {
 
   // Client: Open Reject Modal
   const openRejectModal = (ms) => {
+    if (!isAssignedClient) {
+      alert("Only the assigned Client can reject payments.");
+      return;
+    }
     setRejectModal(ms);
     setRejectReason('');
   };
 
   // Client: Submit Rejection → status returns to Pending
   const handleSubmitRejection = () => {
+    if (!isAssignedClient) {
+      alert("Only the assigned Client can reject payments.");
+      return;
+    }
     setRejectSubmitting(true);
     setTimeout(() => {
       setPayments(prev => ({
@@ -463,7 +551,7 @@ const ProjectDetailsPage = () => {
         {
           id: Date.now(),
           sender: 'client',
-          name: 'Client',
+          name: currentUser?.fullName || 'Client',
           text: `❌ Payment Rejected for "${rejectModal.name}". Reason: ${rejectReason || 'No reason provided.'}`,
           time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
           type: 'text'
@@ -475,6 +563,10 @@ const ProjectDetailsPage = () => {
   };
 
   const handleProcessPayment = () => {
+    if (!isAssignedClient) {
+      alert("Only the assigned Client can process payments.");
+      return;
+    }
     setPaymentProcessing(true);
     setTimeout(() => {
       setPaymentProcessing(false);
@@ -500,7 +592,7 @@ const ProjectDetailsPage = () => {
       const confirmChat = {
         id: Date.now() + 10,
         sender: 'client',
-        name: 'Raj (Client)',
+        name: currentUser ? `${currentUser.fullName} (Client)` : 'Client',
         text: `💸 Milestone Paid: Just processed payment of ₹${milestoneAmount.toLocaleString('en-IN')} for "${activePaymentModalMilestone.name}".`,
         time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
         type: 'text'
@@ -518,8 +610,8 @@ const ProjectDetailsPage = () => {
             {
               id: Date.now() + 20,
               sender: 'architect',
-              name: 'Neha (Architect)',
-              text: `Thank you Raj! I received the notification for the payment of ₹${milestoneAmount.toLocaleString('en-IN')}. I've marked it in the dashboard ledger.`,
+              name: projectMembers.architectName || 'Neha (Architect)',
+              text: `Thank you! I received the notification for the payment of ₹${milestoneAmount.toLocaleString('en-IN')}. I've marked it in the dashboard ledger.`,
               time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
               type: 'text'
             }
@@ -537,12 +629,18 @@ const ProjectDetailsPage = () => {
   // Send message
   const handleSendMessage = (e) => {
     if (e) e.preventDefault();
+    if (!isProjectMember) {
+      alert("Only project members can send messages.");
+      return;
+    }
     if (!chatInput.trim()) return;
+
+    const senderName = currentUser ? `${currentUser.fullName} (${currentUser.role})` : 'Client';
 
     const clientMsg = {
       id: Date.now(),
-      sender: 'client',
-      name: 'Raj (Client)',
+      sender: 'client', // Align user's own messages to the right side
+      name: senderName,
       text: chatInput.trim(),
       time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
       type: 'text'
@@ -559,9 +657,9 @@ const ProjectDetailsPage = () => {
       let replyText = "Understood! I will check on this and get back to you shortly.";
       
       if (inputVal.includes('payment') || inputVal.includes('pay') || inputVal.includes('money')) {
-        replyText = "Thank you! I will verify the payment sheet in our system and let you know if the ledger updates. Feel free to use the Payments tab to process milestones.";
+        replyText = `Thank you! I will verify the payment sheet in our system and let you know if the ledger updates. Feel free to use the Payments tab to process milestones.`;
       } else if (inputVal.includes('update') || inputVal.includes('photo') || inputVal.includes('progress') || inputVal.includes('image')) {
-        replyText = "Yes, I will ask our site engineer Amit to upload the latest finishing pictures directly to the Project Updates timeline today.";
+        replyText = "Yes, I will ask our site engineer Amit to upload the latest pictures directly to the Project Updates timeline today.";
       } else if (inputVal.includes('visit') || inputVal.includes('meeting') || inputVal.includes('meet')) {
         replyText = "Sure, I am visiting the site on Wednesday at 11:30 AM. Let me know if that works for you, and we can discuss the material approvals on-site.";
       } else if (inputVal.includes('drawing') || inputVal.includes('plan') || inputVal.includes('design')) {
@@ -573,7 +671,7 @@ const ProjectDetailsPage = () => {
         {
           id: Date.now() + 1,
           sender: 'architect',
-          name: 'Neha (Architect)',
+          name: projectMembers.architectName || 'Neha (Architect)',
           text: replyText,
           time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
           type: 'text'
@@ -583,6 +681,10 @@ const ProjectDetailsPage = () => {
   };
 
   const handleReplyToChat = (upd) => {
+    if (!isProjectMember) {
+      alert("Only project members can reply or chat.");
+      return;
+    }
     setActiveTab('chats');
     setChatInput(`Regarding the update "${upd.title}": `);
   };
@@ -676,64 +778,19 @@ const ProjectDetailsPage = () => {
           {/* ==========================================
              TAB 1: UPDATES TIMELINE
              ========================================== */}
-          {/* ==========================================
-             TAB 1: UPDATES TIMELINE
-             ========================================== */}
           {activeTab === 'updates' && (
             <div className="pd-tab-pane animated-fade-in">
-              <div className="pd-progress-three-cols">
+              <div className="pd-progress-full-width">
                 
-                {/* Left Column: Flow Sidebar */}
-                <div className="pd-flow-sidebar">
-                  <h3 className="sidebar-title">How It Works (Flow)</h3>
-                  <div className="flow-steps-list">
-                    <div className="flow-step">
-                      <div className="step-num step-1">1</div>
-                      <div className="step-details">
-                        <h4>Quotation Upload</h4>
-                        <p>Contractor uploads quotation image to start the project.</p>
-                      </div>
-                    </div>
-                    <div className="flow-step">
-                      <div className="step-num step-2">2</div>
-                      <div className="step-details">
-                        <h4>Site Progress Updates</h4>
-                        <p>Contractor uploads site photos/videos with short message as work progresses.</p>
-                      </div>
-                    </div>
-                    <div className="flow-step">
-                      <div className="step-num step-3">3</div>
-                      <div className="step-details">
-                        <h4>Owner Reactions & Reply</h4>
-                        <p>Home owner can react (like, love, etc.) and reply on every update. Reply opens in chat.</p>
-                      </div>
-                    </div>
-                    <div className="flow-step">
-                      <div className="step-num step-4">4</div>
-                      <div className="step-details">
-                        <h4>Payment</h4>
-                        <p>After verifying progress or final completion, home owner can pay directly from the app.</p>
-                      </div>
-                    </div>
-                    <div className="flow-step">
-                      <div className="step-num step-5">5</div>
-                      <div className="step-details">
-                        <h4>Project Completion</h4>
-                        <p>Contractor uploads completion video and home owner review video.</p>
-                      </div>
-                    </div>
-                    <div className="flow-step">
-                      <div className="step-num step-6">6</div>
-                      <div className="step-details">
-                        <h4>Portfolio for Others</h4>
-                        <p>Other users can view this project timeline to understand contractor's work quality.</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Middle Column: Project Progress Feed */}
                 <div className="pd-progress-main-feed">
+                  
+                  {!isProjectMember && (
+                    <div className="project-read-only-banner">
+                      <ShieldCheck size={18} />
+                      <span><strong>Guest Mode:</strong> You are viewing this project in read-only mode. Only assigned members can post updates, comment, or react.</span>
+                    </div>
+                  )}
                   
                   {/* Feed Header Card */}
                   <div className="feed-header-card">
@@ -809,17 +866,19 @@ const ProjectDetailsPage = () => {
                       </div>
                     </div>
 
-                    <button 
-                      className="btn-add-update"
-                      onClick={() => setShowAddUpdateForm(!showAddUpdateForm)}
-                    >
-                      <Plus size={16} />
-                      <span>{showAddUpdateForm ? 'Close' : 'Add Update'}</span>
-                    </button>
+                    {canPostUpdates && (
+                      <button 
+                        className="btn-add-update"
+                        onClick={() => setShowAddUpdateForm(!showAddUpdateForm)}
+                      >
+                        <Plus size={16} />
+                        <span>{showAddUpdateForm ? 'Close' : 'Add Update'}</span>
+                      </button>
+                    )}
                   </div>
 
-                  {/* Add Update Collapse Form */}
-                  {showAddUpdateForm && (
+                  {/* Add Update Collapse Form — only for Contractor/Client */}
+                  {canPostUpdates && showAddUpdateForm && (
                     <form className="add-update-form-card" onSubmit={handleCreateUpdate}>
                       <h3>Post Site Progress Update</h3>
                       
@@ -914,16 +973,20 @@ const ProjectDetailsPage = () => {
                               )}
                             </div>
 
-                            <div className="node-card-actions-row">
+                             <div className="node-card-actions-row">
                               <button 
                                 className={`node-action-btn-react ${upd.liked ? 'liked' : ''}`}
                                 onClick={() => handleLikeUpdate(upd.id)}
+                                style={!isProjectMember ? { cursor: 'not-allowed', opacity: 0.5 } : {}}
+                                title={!isProjectMember ? "Only project members can react" : ""}
                               >
                                 ❤️ <span>{upd.likes}</span>
                               </button>
                               <button 
                                 className="node-action-btn-reply"
                                 onClick={() => handleReplyToChat(upd)}
+                                style={!isProjectMember ? { cursor: 'not-allowed', opacity: 0.5 } : {}}
+                                title={!isProjectMember ? "Only project members can reply" : ""}
                               >
                                 💬 <span>Reply</span>
                               </button>
@@ -942,6 +1005,26 @@ const ProjectDetailsPage = () => {
 
                 {/* Right Column: Actions Available Sidebar */}
                 <div className="pd-actions-sidebar">
+                  
+                  {/* Project Members Widget */}
+                  <div className="sidebar-section-card green-border">
+                    <h3>Project Members</h3>
+                    <div className="member-list-mini">
+                      <div className="member-list-item">
+                        <span className="role">👷 Contractor:</span>
+                        <span className="name">{projectMembers.contractorName || 'Not Assigned'}</span>
+                      </div>
+                      <div className="member-list-item">
+                        <span className="role">👤 Client:</span>
+                        <span className="name">{projectMembers.clientName || 'Not Assigned'}</span>
+                      </div>
+                      <div className="member-list-item">
+                        <span className="role">📐 Architect:</span>
+                        <span className="name">{projectMembers.architectName || 'Not Assigned'}</span>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="sidebar-section-card purple-shadow">
                     <h3>Actions Available</h3>
                     <div className="sidebar-action-item">
@@ -1129,7 +1212,7 @@ const ProjectDetailsPage = () => {
                             )}
 
                             {/* PAYMENT REQUESTED — Architect view */}
-                            {ms.status === 'Payment Requested' && isArchitect && (
+                            {ms.status === 'Payment Requested' && isAssignedArchitect && (
                               <span className="ms-waiting-badge">
                                 <Clock size={12} />
                                 Waiting for Approval
@@ -1137,7 +1220,7 @@ const ProjectDetailsPage = () => {
                             )}
 
                             {/* PAYMENT REQUESTED — Client view */}
-                            {ms.status === 'Payment Requested' && !isArchitect && (
+                            {ms.status === 'Payment Requested' && isAssignedClient && (
                               <div className="ms-client-actions">
                                 <button className="btn-approve-pay" onClick={() => handleApprovePayment(ms)}>
                                   <Check size={13} /> Approve
@@ -1148,16 +1231,24 @@ const ProjectDetailsPage = () => {
                               </div>
                             )}
 
+                            {/* PAYMENT REQUESTED — Guest view */}
+                            {ms.status === 'Payment Requested' && !isAssignedArchitect && !isAssignedClient && (
+                              <span className="ms-waiting-badge">
+                                <Clock size={12} />
+                                Awaiting Approval
+                              </span>
+                            )}
+
                             {/* PENDING — Architect view */}
-                            {ms.status === 'Pending' && isArchitect && (
+                            {ms.status === 'Pending' && isAssignedArchitect && (
                               <button className="btn-pay-req-action" onClick={() => openPayReqModal(ms)}>
                                 <BellRing size={13} />
                                 Request Payment
                               </button>
                             )}
 
-                            {/* PENDING — Client view */}
-                            {ms.status === 'Pending' && !isArchitect && (
+                            {/* PENDING — Non-Architect view */}
+                            {ms.status === 'Pending' && !isAssignedArchitect && (
                               <span className="ms-client-pending">—</span>
                             )}
                           </td>
@@ -1187,18 +1278,20 @@ const ProjectDetailsPage = () => {
                   </div>
                 </div>
                 
-                <div className="chat-quick-replies">
-                  <h4>Quick Templates</h4>
-                  <button onClick={() => setChatInput("Please check the latest structural concrete update.")}>
-                    📢 Ask about structure
-                  </button>
-                  <button onClick={() => setChatInput("I have verified the payment and would like to proceed.")}>
-                    💸 Talk about payments
-                  </button>
-                  <button onClick={() => setChatInput("Can we coordinate a site check meeting on Wednesday?")}>
-                    📅 Schedule site check
-                  </button>
-                </div>
+                {isProjectMember && (
+                  <div className="chat-quick-replies">
+                    <h4>Quick Templates</h4>
+                    <button onClick={() => setChatInput("Please check the latest structural concrete update.")}>
+                      📢 Ask about structure
+                    </button>
+                    <button onClick={() => setChatInput("I have verified the payment and would like to proceed.")}>
+                      💸 Talk about payments
+                    </button>
+                    <button onClick={() => setChatInput("Can we coordinate a site check meeting on Wednesday?")}>
+                      📅 Schedule site check
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Main Chat Area */}
@@ -1206,7 +1299,7 @@ const ProjectDetailsPage = () => {
                 <div className="chat-header">
                   <div className="info">
                     <strong>Project Discussion</strong>
-                    <p>Client Raj & Architect Neha Sharma</p>
+                    <p>{projectMembers.clientName || 'Client'} & {projectMembers.architectName || 'Architect'}</p>
                   </div>
                 </div>
 
@@ -1214,8 +1307,8 @@ const ProjectDetailsPage = () => {
                 <div className="chat-messages-stream">
                   {chatMessages.map((msg) => (
                     <div key={msg.id} className={`message-bubble-row ${msg.sender}`}>
-                      <div className="msg-avatar">
-                        {msg.sender === 'client' ? 'R' : 'N'}
+                      <div className="msg-avatar" style={msg.sender === 'client' ? { background: '#3b82f6' } : { background: '#10b981' }}>
+                        {msg.name ? msg.name.charAt(0).toUpperCase() : 'U'}
                       </div>
                       <div className="msg-content-wrapper">
                         <div className="msg-meta">
@@ -1232,7 +1325,9 @@ const ProjectDetailsPage = () => {
                   {/* Typing Indicator */}
                   {isTyping && (
                     <div className="message-bubble-row architect typing">
-                      <div className="msg-avatar">N</div>
+                      <div className="msg-avatar" style={{ background: '#10b981' }}>
+                        {(projectMembers.architectName || 'N').charAt(0).toUpperCase()}
+                      </div>
                       <div className="msg-content-wrapper">
                         <div className="typing-indicator">
                           <span />
@@ -1247,17 +1342,23 @@ const ProjectDetailsPage = () => {
                 </div>
 
                 {/* Message input */}
-                <form className="chat-footer-input" onSubmit={handleSendMessage}>
-                  <input 
-                    type="text" 
-                    placeholder="Type a message..."
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                  />
-                  <button type="submit" className="btn-chat-send" disabled={!chatInput.trim()}>
-                    <Send size={16} />
-                  </button>
-                </form>
+                {isProjectMember ? (
+                  <form className="chat-footer-input" onSubmit={handleSendMessage}>
+                    <input 
+                      type="text" 
+                      placeholder="Type a message..."
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                    />
+                    <button type="submit" className="btn-chat-send" disabled={!chatInput.trim()}>
+                      <Send size={16} />
+                    </button>
+                  </form>
+                ) : (
+                  <div className="chat-footer-locked">
+                    <span>🔒 Chat is read-only for guests</span>
+                  </div>
+                )}
               </div>
 
             </div>

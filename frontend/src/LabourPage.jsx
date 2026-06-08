@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search, MapPin, Star, Briefcase, Users, CheckCircle2,
   SlidersHorizontal, ChevronDown, X, Hammer
@@ -82,11 +82,12 @@ const ProfileModal = ({ prof, onClose }) => {
 
 const LabourPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [labourList, setLabourList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [locationFilter, setLocationFilter] = useState('');
-  const [skillFilter, setSkillFilter] = useState('');
+  const [skillFilter, setSkillFilter] = useState(location.state?.skillVal || '');
   const [showSkillDrop, setShowSkillDrop] = useState(false);
   const [selectedProf, setSelectedProf] = useState(null);
 

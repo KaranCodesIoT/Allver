@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
-  phoneNumber: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  phoneNumber: { type: String, default: '' },
   password: { type: String, required: true },
   role: { type: String, enum: ['Architect', 'Contractor', 'Labour', 'Client'], required: true },
   city: { type: String, required: true },
@@ -40,6 +41,9 @@ const userSchema = new mongoose.Schema({
   // Shared fields
   experience: { type: String },
   location: { type: String },
+  rating: { type: Number },
+  reviews: { type: Number },
+  projects: { type: Number },
   
   createdAt: { type: Date, default: Date.now }
 });

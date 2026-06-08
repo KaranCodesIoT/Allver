@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, CheckCircle2, MapPin, Star, Phone, MessageCircle,
-  Briefcase, Users, Play, Video, Users2, StarHalf, Heart, Check, ExternalLink, Calendar, Plus
+  Briefcase, Users, Play, Video, Users2, StarHalf, Heart, Check, ExternalLink, Calendar, Plus, X
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
 
@@ -66,21 +66,38 @@ const ArchitectProfilePage = () => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followersCount, setFollowersCount] = useState(256);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
+  
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showHireModal, setShowHireModal] = useState(false);
+  const [hireRequestSuccess, setHireRequestSuccess] = useState(false);
+  const [hireForm, setHireForm] = useState({
+    title: '',
+    projectType: 'Residential',
+    location: '',
+    budget: '',
+    startDate: '',
+    description: ''
+  });
 
   useEffect(() => {
     const userStr = localStorage.getItem('currentUser');
-    let currentUser = null;
+    let currUser = null;
     if (userStr) {
-      currentUser = JSON.parse(userStr);
+      currUser = JSON.parse(userStr);
+      setCurrentUser(currUser);
     }
 
-    const profileId = id || currentUser?._id;
+    // Reset ownership flag on every navigation
+    setIsOwnProfile(false);
+    setLoading(true);
+
+    const profileId = id || currUser?._id;
     if (!profileId) {
       setLoading(false);
       return;
     }
 
-    if (profileId === currentUser?._id) {
+    if (profileId === currUser?._id) {
       setIsOwnProfile(true);
     }
 
@@ -91,23 +108,69 @@ const ArchitectProfilePage = () => {
         if (data.professional) {
           setProfile(data.professional);
           setFollowersCount(data.professional.followers || 0);
-          if (data.professional._id === currentUser?._id) {
+          if (data.professional._id === currUser?._id) {
             setIsOwnProfile(true);
           }
-        } else if (profileId === currentUser?._id) {
-          setProfile(currentUser);
+        } else if (profileId === currUser?._id) {
+          setProfile(currUser);
           setFollowersCount(0);
         }
         setLoading(false);
       })
       .catch(() => {
-        if (profileId === currentUser?._id) {
-          setProfile(currentUser);
+        if (profileId === currUser?._id) {
+          setProfile(currUser);
           setFollowersCount(0);
         }
         setLoading(false);
       });
   }, [id]);
+
+  const handleHireSubmit = async (e) => {
+    e.preventDefault();
+    if (!currentUser || !profile) return;
+    
+    try {
+      const response = await fetch('http://localhost:5000/api/contract-requests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          client: currentUser._id,
+          professional: profile._id,
+          title: hireForm.title,
+          projectType: hireForm.projectType,
+          location: hireForm.location,
+          budget: hireForm.budget,
+          startDate: hireForm.startDate,
+          description: hireForm.description
+        })
+      });
+      
+      const data = await response.json();
+      if (response.ok) {
+        setHireRequestSuccess(true);
+        setTimeout(() => {
+          setHireRequestSuccess(false);
+          setShowHireModal(false);
+          setHireForm({
+            title: '',
+            projectType: 'Residential',
+            location: '',
+            budget: '',
+            startDate: '',
+            description: ''
+          });
+        }, 4000);
+      } else {
+        alert(data.message || 'Failed to send hire request');
+      }
+    } catch (err) {
+      console.error('Error sending request:', err);
+      alert('Error connecting to server.');
+    }
+  };
 
   if (loading) {
     return (
@@ -407,7 +470,18 @@ const ArchitectProfilePage = () => {
                     </button>
 
                     {roleName !== 'Client' && (
-                      <button className="pwbc-btn primary-hire-btn" style={{ background: accentColor }}>
+                      <button 
+                        className="pwbc-btn primary-hire-btn" 
+                        style={{ background: accentColor }}
+                        onClick={() => {
+                          if (!currentUser) {
+                            alert('Please login to send a hire request.');
+                            navigate('/login');
+                            return;
+                          }
+                          setShowHireModal(true);
+                        }}
+                      >
                         <span>Hire / Give Contract</span>
                       </button>
                     )}
@@ -713,6 +787,211 @@ const ArchitectProfilePage = () => {
 
       </div>
 
+      {/* ── Render Hire Request Modal ── */}
+      {showHireModal && (
+        <div className="dl-modal-overlay" onClick={() => setShowHireModal(false)}>
+          <div className="dl-modal-card" onClick={(e) => e.stopPropagation()}>
+            <button className="dl-modal-close" onClick={() => setShowHireModal(false)}>
+              <X size={20} />
+            </button>
+            
+            <div className="dl-modal-header" style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <div className="dl-modal-title-block">
+                <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Briefcase size={24} style={{ color: accentColor }} />
+                  Hire / Give Contract
+                </h2>
+                <p style={{ fontSize: '0.85rem', color: '#6b7280', marginTop: 4 }}>
+                  Send project details to {profile.fullName} to initiate a contract discussion
+                </p>
+              </div>
+            </div>
+
+            {hireRequestSuccess ? (
+              <div className="dl-modal-body" style={{ padding: '3.5rem 2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
+                <div style={{ color: '#10b981', display: 'flex', justifyContent: 'center' }}>
+                  <CheckCircle2 size={64} />
+                </div>
+                <h4 style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#0f172a' }}>Contract Request Sent!</h4>
+                <p style={{ color: '#64748b', fontSize: '0.95rem', maxWidth: '380px', margin: '0 auto', lineHeight: '1.5' }}>
+                  Your request has been sent to {profile.fullName}. You will be notified once they review and accept the discussion.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleHireSubmit} className="dl-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                <div className="form-row">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Project Title *</label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="e.g. 2BHK Electrical Work"
+                    value={hireForm.title}
+                    onChange={(e) => setHireForm({...hireForm, title: e.target.value})}
+                    style={{
+                      padding: '0.65rem 0.85rem',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '0.5rem',
+                      fontSize: '0.9rem',
+                      background: '#fafbfd',
+                      outline: 'none',
+                      width: '100%',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div className="form-row">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Project Type *</label>
+                  <select
+                    style={{
+                      padding: '0.65rem 0.85rem',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '0.5rem',
+                      fontSize: '0.9rem',
+                      background: '#fafbfd',
+                      outline: 'none',
+                      width: '100%',
+                      boxSizing: 'border-box'
+                    }}
+                    value={hireForm.projectType}
+                    onChange={(e) => setHireForm({...hireForm, projectType: e.target.value})}
+                  >
+                    <option value="Residential">Residential</option>
+                    <option value="Commercial">Commercial</option>
+                    <option value="Renovation">Renovation</option>
+                    <option value="Interior">Interior</option>
+                    <option value="Electrical">Electrical</option>
+                    <option value="Plumbing">Plumbing</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-row">
+                    <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Location *</label>
+                    <input 
+                      type="text" 
+                      required
+                      placeholder="e.g. Thane"
+                      value={hireForm.location}
+                      onChange={(e) => setHireForm({...hireForm, location: e.target.value})}
+                      style={{
+                        padding: '0.65rem 0.85rem',
+                        border: '1.5px solid #e2e8f0',
+                        borderRadius: '0.5rem',
+                        fontSize: '0.9rem',
+                        background: '#fafbfd',
+                        outline: 'none',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div className="form-row">
+                    <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Budget Range *</label>
+                    <input 
+                      type="text" 
+                      required
+                      placeholder="e.g. ₹2L–₹4L"
+                      value={hireForm.budget}
+                      onChange={(e) => setHireForm({...hireForm, budget: e.target.value})}
+                      style={{
+                        padding: '0.65rem 0.85rem',
+                        border: '1.5px solid #e2e8f0',
+                        borderRadius: '0.5rem',
+                        fontSize: '0.9rem',
+                        background: '#fafbfd',
+                        outline: 'none',
+                        width: '100%',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Start Date *</label>
+                  <input 
+                    type="date" 
+                    required
+                    value={hireForm.startDate}
+                    onChange={(e) => setHireForm({...hireForm, startDate: e.target.value})}
+                    style={{
+                      padding: '0.65rem 0.85rem',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '0.5rem',
+                      fontSize: '0.9rem',
+                      background: '#fafbfd',
+                      outline: 'none',
+                      width: '100%',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div className="form-row">
+                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Description *</label>
+                  <textarea 
+                    required
+                    rows={4}
+                    placeholder="Provide details of the work, timeline, and requirements..."
+                    style={{
+                      padding: '0.65rem 0.85rem',
+                      border: '1.5px solid #e2e8f0',
+                      borderRadius: '0.5rem',
+                      fontSize: '0.9rem',
+                      background: '#fafbfd',
+                      fontFamily: 'inherit',
+                      resize: 'none',
+                      outline: 'none',
+                      width: '100%',
+                      boxSizing: 'border-box'
+                    }}
+                    value={hireForm.description}
+                    onChange={(e) => setHireForm({...hireForm, description: e.target.value})}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                  <button 
+                    type="button" 
+                    className="btn-cancel"
+                    style={{
+                      flex: 1,
+                      padding: '0.75rem',
+                      border: '1px solid #cbd5e1',
+                      background: 'white',
+                      borderRadius: '0.5rem',
+                      cursor: 'pointer',
+                      fontWeight: '600',
+                      color: '#64748b'
+                    }}
+                    onClick={() => setShowHireModal(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="btn-get-started"
+                    style={{
+                      flex: 1,
+                      padding: '0.75rem',
+                      background: accentColor,
+                      color: 'white',
+                      borderRadius: '0.5rem',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontWeight: '600',
+                      boxShadow: `0 4px 14px 0 rgba(59, 130, 246, 0.3)`
+                    }}
+                  >
+                    Send Contract Request
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 };

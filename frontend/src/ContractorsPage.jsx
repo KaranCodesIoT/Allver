@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search, MapPin, Star, Briefcase, Users, CheckCircle2,
   SlidersHorizontal, ChevronDown, Phone, X
@@ -75,9 +75,10 @@ const ProfileModal = ({ prof, onClose }) => {
 
 const ContractorsPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [contractors, setContractors] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(location.state?.searchVal || '');
   const [locationFilter, setLocationFilter] = useState('');
   const [ratingFilter, setRatingFilter] = useState('');
   const [showRatingDrop, setShowRatingDrop] = useState(false);

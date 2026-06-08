@@ -124,6 +124,33 @@ const DashboardLayout = ({ children, pageTitle, pageSubtitle, accentColor = '#10
           {children}
         </div>
       </main>
+
+      {/* ── Mobile Bottom Navigation Bar ── */}
+      <nav className="mobile-bottom-nav">
+        <button className={`mobile-nav-item ${location.pathname === '/' && (!location.state || location.state.activeTab === 'home') ? 'active' : ''}`} onClick={() => navigate('/', { state: { activeTab: 'home' } })}>
+          <Layout size={22} />
+          <span>Home</span>
+        </button>
+        <button className={`mobile-nav-item ${location.state?.activeTab === 'feed' ? 'active' : ''}`} onClick={() => navigate('/', { state: { activeTab: 'feed' } })}>
+          <Sparkles size={22} />
+          <span>Feed</span>
+        </button>
+        <button className={`mobile-nav-item ${location.pathname === '/architects' ? 'active' : ''}`} onClick={() => navigate('/architects')}>
+          <Compass size={22} />
+          <span>Design</span>
+        </button>
+        <button className={`mobile-nav-item ${location.state?.activeTab === 'chats' ? 'active' : ''}`} onClick={() => navigate('/', { state: { activeTab: 'chats' } })}>
+          <div style={{ position: 'relative', display: 'inline-flex' }}>
+            <MessageCircle size={22} />
+            <span className="mobile-chats-badge"></span>
+          </div>
+          <span>Chats</span>
+        </button>
+        <button className={`mobile-nav-item ${location.pathname === '/profile' ? 'active' : ''}`} onClick={() => navigate('/profile')}>
+          <User size={22} />
+          <span>Profile</span>
+        </button>
+      </nav>
     </div>
   );
 };
