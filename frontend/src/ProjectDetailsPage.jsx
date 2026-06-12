@@ -141,12 +141,12 @@ const ProjectDetailsPage = () => {
   const [registeredLabours, setRegisteredLabours] = useState([]);
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/professionals/Architect')
+    fetch('https://allver.onrender.com/api/professionals/Architect')
       .then(res => res.json())
       .then(data => setRegisteredArchitects(data.professionals || []))
       .catch(err => console.error('Error fetching architects:', err));
 
-    fetch('http://localhost:5000/api/professionals/Labour')
+    fetch('https://allver.onrender.com/api/professionals/Labour')
       .then(res => res.json())
       .then(data => setRegisteredLabours(data.professionals || []))
       .catch(err => console.error('Error fetching labours:', err));

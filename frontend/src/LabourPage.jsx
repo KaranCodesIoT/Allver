@@ -30,7 +30,7 @@ const LabourPage = () => {
   const [minRating, setMinRating] = useState('0');
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/professionals/Labour')
+    fetch('https://allver.onrender.com/api/professionals/Labour')
       .then(res => res.json())
       .then(data => {
         setLabours(data.professionals || []);

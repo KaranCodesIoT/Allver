@@ -157,7 +157,7 @@ const EditProfilePage = () => {
     const formData = new FormData();
     formData.append('image', file);
     try {
-      const res = await fetch('http://localhost:5000/api/upload', { method: 'POST', body: formData });
+      const res = await fetch('https://allver.onrender.com/api/upload', { method: 'POST', body: formData });
       const data = await res.json();
       if (res.ok) {
         handleChange(type === 'cover' ? 'coverPhoto' : 'profilePhoto', data.url);
@@ -201,7 +201,7 @@ const EditProfilePage = () => {
     };
 
     try {
-      const res = await fetch(`http://localhost:5000/api/user/profile/${currentUser._id}`, {
+      const res = await fetch(`https://allver.onrender.com/api/user/profile/${currentUser._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

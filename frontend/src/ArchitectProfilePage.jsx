@@ -84,7 +84,7 @@ const ArchitectProfilePage = () => {
 
   const handleRequestAction = async (requestId, status) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/contract-requests/${requestId}/status`, {
+      const response = await fetch(`https://allver.onrender.com/api/contract-requests/${requestId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -95,11 +95,11 @@ const ArchitectProfilePage = () => {
       const data = await response.json();
       if (response.ok) {
         if (currentUser) {
-          fetch(`http://localhost:5000/api/contract-requests/user/${currentUser._id}`)
+          fetch(`https://allver.onrender.com/api/contract-requests/user/${currentUser._id}`)
             .then(res => res.json())
             .then(d => setContractRequests(d.requests || []))
             .catch(err => console.error(err));
-          fetch(`http://localhost:5000/api/project-workspaces/user/${currentUser._id}`)
+          fetch(`https://allver.onrender.com/api/project-workspaces/user/${currentUser._id}`)
             .then(res => res.json())
             .then(d => setRealWorkspaces(d.workspaces || []))
             .catch(err => console.error(err));
@@ -126,7 +126,7 @@ const ArchitectProfilePage = () => {
       currUser = JSON.parse(userStr);
       setCurrentUser(currUser);
       // Fetch contract requests
-      fetch(`http://localhost:5000/api/contract-requests/user/${currUser._id}`)
+      fetch(`https://allver.onrender.com/api/contract-requests/user/${currUser._id}`)
         .then(res => res.json())
         .then(data => setContractRequests(data.requests || []))
         .catch(err => console.error('Error fetching requests in profile:', err));
@@ -147,7 +147,7 @@ const ArchitectProfilePage = () => {
     }
 
     // Fetch from API for real registered professionals
-    fetch(`http://localhost:5000/api/professional/${profileId}`)
+    fetch(`https://allver.onrender.com/api/professional/${profileId}`)
       .then(res => res.json())
       .then(data => {
         if (data.professional) {
@@ -171,7 +171,7 @@ const ArchitectProfilePage = () => {
       });
 
     // Fetch real workspaces for the profile user
-    fetch(`http://localhost:5000/api/project-workspaces/user/${profileId}`)
+    fetch(`https://allver.onrender.com/api/project-workspaces/user/${profileId}`)
       .then(res => res.json())
       .then(data => setRealWorkspaces(data.workspaces || []))
       .catch(err => console.error('Error fetching profile workspaces:', err));
@@ -182,7 +182,7 @@ const ArchitectProfilePage = () => {
     if (!currentUser || !profile) return;
     
     try {
-      const response = await fetch('http://localhost:5000/api/contract-requests', {
+      const response = await fetch('https://allver.onrender.com/api/contract-requests', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

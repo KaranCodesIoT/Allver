@@ -10484,4 +10484,4 @@ body {
 
 .lp-bottom-nav { display: flex; justify-content: space-around; padding: 1rem 0; border-top: 1px solid #e2e8f0; position: sticky; bottom: 0; background: white; z-index: 5; }
 .lp-nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: none; color: #94a3b8; font-size: 0.7rem; font-weight: 600; cursor: pointer; }
-.lp-nav-item.active { color: #10b981; }
+.lp-nav-item.active { color: #10b981; }

@@ -1,4 +1,6 @@
 const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const multer = require('multer');
@@ -23,6 +25,37 @@ const upload = multer({
 });
 
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+app.set('io', io);
+
+io.on('connection', (socket) => {
+  console.log('User connected to socket:', socket.id);
+  
+  socket.on('join_room', ({ roomId }) => {
+    socket.join(roomId);
+    console.log(`Socket ${socket.id} joined room ${roomId}`);
+  });
+
+  socket.on('send_message', ({ roomId, message }) => {
+    io.to(roomId).emit('receive_message', {
+      workspaceId: roomId,
+      message: message
+    });
+    console.log(`Direct socket message in room ${roomId}:`, message.text);
+  });
+  
+  socket.on('disconnect', () => {
+    console.log('User disconnected from socket:', socket.id);
+  });
+});
+
 const PORT = process.env.PORT || 5000;
 
 // Ensure uploads folder exists
@@ -470,6 +503,15 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
         path: 'messages.sender',
         select: 'fullName email role'
       });
+
+    const savedMsg = updatedWorkspace.messages[updatedWorkspace.messages.length - 1];
+    const io = req.app.get('io');
+    if (io) {
+      io.to(id).emit('receive_message', {
+        workspaceId: id,
+        message: savedMsg
+      });
+    }
 
     res.status(201).json({ message: 'Message sent successfully', workspace: updatedWorkspace });
   } catch (error) {
@@ -1088,7 +1130,7 @@ app.post('/api/project-workspaces/:id/labour/payment', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
 

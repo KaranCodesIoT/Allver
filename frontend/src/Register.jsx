@@ -44,7 +44,7 @@ const Register = () => {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/register', {
+      const response = await fetch('https://allver.onrender.com/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)

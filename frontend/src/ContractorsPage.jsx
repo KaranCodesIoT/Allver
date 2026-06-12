@@ -17,7 +17,7 @@ const ContractorsPage = () => {
   const [minRating, setMinRating] = useState('0');
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/professionals/Contractor')
+    fetch('https://allver.onrender.com/api/professionals/Contractor')
       .then(res => res.json())
       .then(data => {
         setContractors(data.professionals || []);

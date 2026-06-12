@@ -62,7 +62,7 @@ const ContractorProfileSetup = () => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`http://localhost:5000/api/user/profile/${tempUser._id}`, {
+      const response = await fetch(`https://allver.onrender.com/api/user/profile/${tempUser._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dataPayload)

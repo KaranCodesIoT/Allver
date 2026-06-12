@@ -18,7 +18,7 @@ const ArchitectsPage = () => {
 
   useEffect(() => {
     // Fetch and seed if needed
-    fetch('http://localhost:5000/api/professionals/Architect')
+    fetch('https://allver.onrender.com/api/professionals/Architect')
       .then(r => r.json())
       .then(async (d) => {
         let list = d.professionals || [];
@@ -87,14 +87,14 @@ const ArchitectsPage = () => {
           for (const item of seedData) {
             const exists = list.some(u => u.email === item.email);
             if (!exists) {
-              const regRes = await fetch('http://localhost:5000/api/register', {
+              const regRes = await fetch('https://allver.onrender.com/api/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(item)
               });
               if (regRes.ok) {
                 const regData = await regRes.json();
-                await fetch(`http://localhost:5000/api/user/profile/${regData.user._id}`, {
+                await fetch(`https://allver.onrender.com/api/user/profile/${regData.user._id}`, {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -111,7 +111,7 @@ const ArchitectsPage = () => {
             }
           }
 
-          const refetchRes = await fetch('http://localhost:5000/api/professionals/Architect');
+          const refetchRes = await fetch('https://allver.onrender.com/api/professionals/Architect');
           const refetchData = await refetchRes.json();
           setArchitects(refetchData.professionals || []);
         } else {

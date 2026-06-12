@@ -41,7 +41,7 @@ const LabourManagementTab = ({ workspaceDetail, currentUser, setWorkspaceDetail 
     });
 
     try {
-      const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/labour/attendance`, {
+      const res = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/labour/attendance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -69,7 +69,7 @@ const LabourManagementTab = ({ workspaceDetail, currentUser, setWorkspaceDetail 
     if (!paymentForm.labourId || !paymentForm.amount) return alert('Please fill required fields');
 
     try {
-      const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/labour/payment`, {
+      const res = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/labour/payment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

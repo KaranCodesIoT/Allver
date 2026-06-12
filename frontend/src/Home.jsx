@@ -473,13 +473,13 @@ const Home = () => {
     const userObj = JSON.parse(userStr);
     
     try {
-      const reqRes = await fetch(`http://localhost:5000/api/contract-requests/user/${userObj._id}`);
+      const reqRes = await fetch(`https://allver.onrender.com/api/contract-requests/user/${userObj._id}`);
       if (reqRes.ok) {
         const reqData = await reqRes.json();
         setContractRequests(reqData.requests || []);
       }
       
-      const wsRes = await fetch(`http://localhost:5000/api/project-workspaces/user/${userObj._id}`);
+      const wsRes = await fetch(`https://allver.onrender.com/api/project-workspaces/user/${userObj._id}`);
       if (wsRes.ok) {
         const wsData = await wsRes.json();
         setWorkspaces(wsData.workspaces || []);
@@ -494,7 +494,7 @@ const Home = () => {
     if (!userStr) return;
     const userObj = JSON.parse(userStr);
     try {
-      const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceId}?userId=${userObj._id}`);
+      const res = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceId}?userId=${userObj._id}`);
       if (res.ok) {
         const data = await res.json();
         setWorkspaceDetail(data.workspace);
@@ -513,7 +513,7 @@ const Home = () => {
 
   const handleRequestAction = async (requestId, status) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/contract-requests/${requestId}/status`, {
+      const response = await fetch(`https://allver.onrender.com/api/contract-requests/${requestId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -546,7 +546,7 @@ const Home = () => {
     if (!wsMessageText.trim() || !workspaceDetail) return;
     
     try {
-      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/messages`, {
+      const response = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -572,7 +572,7 @@ const Home = () => {
   const handleSendSystemMessage = async (text) => {
     if (!workspaceDetail) return;
     try {
-      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/messages`, {
+      const response = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -607,7 +607,7 @@ const Home = () => {
     const totalCost = items.reduce((sum, item) => sum + item.cost, 0);
     
     try {
-      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/quotation`, {
+      const response = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/quotation`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -636,7 +636,7 @@ const Home = () => {
     if (!workspaceDetail) return;
     
     try {
-      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/quotation`, {
+      const response = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/quotation`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -669,7 +669,7 @@ const Home = () => {
     };
     
     try {
-      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/messages`, {
+      const response = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -703,7 +703,7 @@ const Home = () => {
     if (!timelineForm.title.trim() || !workspaceDetail) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/updates`, {
+      const response = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/updates`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -734,7 +734,7 @@ const Home = () => {
     if (!workspaceDetail) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/updates/${updateId}/like`, {
+      const response = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/updates/${updateId}/like`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -759,7 +759,7 @@ const Home = () => {
     if (!text?.trim() || !workspaceDetail) return;
 
     try {
-      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/updates/${updateId}/comments`, {
+      const response = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/updates/${updateId}/comments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -817,12 +817,12 @@ const Home = () => {
       const interval = setInterval(fetchNotificationsAndWorkspaces, 7000);
 
       // Fetch registered architects and labours
-      fetch('http://localhost:5000/api/professionals/Architect')
+      fetch('https://allver.onrender.com/api/professionals/Architect')
         .then(res => res.json())
         .then(data => setRegisteredArchitects(data.professionals || []))
         .catch(err => console.error('Error fetching architects:', err));
 
-      fetch('http://localhost:5000/api/professionals/Labour')
+      fetch('https://allver.onrender.com/api/professionals/Labour')
         .then(res => res.json())
         .then(data => setRegisteredLabours(data.professionals || []))
         .catch(err => console.error('Error fetching labours:', err));
@@ -832,7 +832,7 @@ const Home = () => {
   }, []);
 
   useEffect(() => {
-    fetch('http://localhost:5000/api/stats')
+    fetch('https://allver.onrender.com/api/stats')
       .then(res => res.json())
       .then(data => setStats(data))
       .catch(err => console.error('Error fetching stats:', err));
@@ -841,24 +841,24 @@ const Home = () => {
     const fetchFeatured = async () => {
       try {
         // Fetch Architect
-        const archRes = await fetch('http://localhost:5000/api/professionals/Architect');
+        const archRes = await fetch('https://allver.onrender.com/api/professionals/Architect');
         const archData = await archRes.json();
         if (archData.professionals && archData.professionals.length > 0) {
           setFeaturedPros(prev => ({ ...prev, Architect: archData.professionals[0] }));
         }
 
         // Fetch Contractor
-        const contRes = await fetch('http://localhost:5000/api/professionals/Contractor');
+        const contRes = await fetch('https://allver.onrender.com/api/professionals/Contractor');
         const contData = await contRes.json();
         if (contData.professionals && contData.professionals.length > 0) {
           setFeaturedPros(prev => ({ ...prev, Contractor: contData.professionals[0] }));
         }
 
         // Fetch Labour - Auto-seed if none
-        const labourRes = await fetch('http://localhost:5000/api/professionals/Labour');
+        const labourRes = await fetch('https://allver.onrender.com/api/professionals/Labour');
         const labourData = await labourRes.json();
         if (!labourData.professionals || labourData.professionals.length === 0) {
-          const regRes = await fetch('http://localhost:5000/api/register', {
+          const regRes = await fetch('https://allver.onrender.com/api/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -872,7 +872,7 @@ const Home = () => {
           });
           if (regRes.ok) {
             const regData = await regRes.json();
-            const profUpdate = await fetch(`http://localhost:5000/api/user/profile/${regData.user._id}`, {
+            const profUpdate = await fetch(`https://allver.onrender.com/api/user/profile/${regData.user._id}`, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -897,7 +897,7 @@ const Home = () => {
 
     const fetchDesigners = async () => {
       try {
-        const res = await fetch('http://localhost:5000/api/professionals/Architect');
+        const res = await fetch('https://allver.onrender.com/api/professionals/Architect');
         const data = await res.json();
         let list = data.professionals || [];
         
@@ -965,14 +965,14 @@ const Home = () => {
           for (const item of seedData) {
             const exists = list.some(u => u.email === item.email);
             if (!exists) {
-              const regRes = await fetch('http://localhost:5000/api/register', {
+              const regRes = await fetch('https://allver.onrender.com/api/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(item)
               });
               if (regRes.ok) {
                 const regData = await regRes.json();
-                await fetch(`http://localhost:5000/api/user/profile/${regData.user._id}`, {
+                await fetch(`https://allver.onrender.com/api/user/profile/${regData.user._id}`, {
                   method: 'PUT',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -989,7 +989,7 @@ const Home = () => {
             }
           }
 
-          const refetchRes = await fetch('http://localhost:5000/api/professionals/Architect');
+          const refetchRes = await fetch('https://allver.onrender.com/api/professionals/Architect');
           const refetchData = await refetchRes.json();
           setDesignersList(refetchData.professionals || []);
         } else {
@@ -2915,7 +2915,7 @@ const Home = () => {
                                     value=""
                                     onChange={async (e) => {
                                       if (!e.target.value) return;
-                                      const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/assign-architect`, {
+                                      const res = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/assign-architect`, {
                                         method: 'PUT',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({ architectId: e.target.value, userId: currentUser._id })
@@ -2944,7 +2944,7 @@ const Home = () => {
                                       {(isWorkspaceClient || isWorkspaceContractor) && (
                                         <button
                                           onClick={async () => {
-                                            const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/remove-labour`, {
+                                            const res = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/remove-labour`, {
                                               method: 'PUT',
                                               headers: { 'Content-Type': 'application/json' },
                                               body: JSON.stringify({ labourId: l._id, userId: currentUser._id })
@@ -2970,7 +2970,7 @@ const Home = () => {
                                     value=""
                                     onChange={async (e) => {
                                       if (!e.target.value) return;
-                                      const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/add-labour`, {
+                                      const res = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/add-labour`, {
                                         method: 'PUT',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({ labourId: e.target.value, userId: currentUser._id })
@@ -3000,7 +3000,7 @@ const Home = () => {
                               <select
                                 value={workspaceDetail.status}
                                 onChange={async (e) => {
-                                  const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/project-status`, {
+                                  const res = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/project-status`, {
                                     method: 'PUT',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify({ status: e.target.value, senderId: currentUser._id })

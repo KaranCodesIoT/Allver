@@ -82,7 +82,7 @@ const ArchitectProfileSetup = () => {
     formData.append('image', file);
 
     try {
-      const response = await fetch('http://localhost:5000/api/upload', {
+      const response = await fetch('https://allver.onrender.com/api/upload', {
         method: 'POST',
         body: formData
       });
@@ -103,7 +103,7 @@ const ArchitectProfileSetup = () => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch(`http://localhost:5000/api/user/profile/${tempUser._id}`, {
+      const response = await fetch(`https://allver.onrender.com/api/user/profile/${tempUser._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(dataPayload)

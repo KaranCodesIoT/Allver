@@ -16,7 +16,7 @@ const DashboardLayout = ({ children, pageTitle, pageSubtitle, accentColor = '#10
   const fetchNotifications = async (userId) => {
     if (!userId) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/contract-requests/user/${userId}`);
+      const res = await fetch(`https://allver.onrender.com/api/contract-requests/user/${userId}`);
       if (res.ok) {
         const data = await res.json();
         setContractRequests(data.requests || []);
@@ -45,7 +45,7 @@ const DashboardLayout = ({ children, pageTitle, pageSubtitle, accentColor = '#10
 
   const handleRequestAction = async (requestId, status) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/contract-requests/${requestId}/status`, {
+      const response = await fetch(`https://allver.onrender.com/api/contract-requests/${requestId}/status`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
