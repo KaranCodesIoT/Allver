@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import Constants from 'expo-constants';
 
 const { width, height } = Dimensions.get('window');
 
@@ -54,10 +53,7 @@ const PRESET_AVATARS = [
   'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
 ];
 
-// Dynamically determine backend URL
-const debuggerHost = Constants.expoConfig?.hostUri;
-const localIp = debuggerHost?.split(':')[0];
-const BACKEND_URL = localIp ? `http://${localIp}:5000` : (Platform.OS === 'android' ? 'http://10.0.2.2:5000' : 'http://localhost:5000');
+import { BACKEND_URL } from '../constants/Config';
 
 export default function EditProfileScreen() {
   const router = useRouter();

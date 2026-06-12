@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import Constants from 'expo-constants';
+import { BACKEND_URL } from '../constants/Config';
 
 const { width, height } = Dimensions.get('window');
 
@@ -19,10 +19,6 @@ const COLORS = {
   bgLight: '#F3F4F6',
   blue: '#3B82F6'
 };
-
-const debuggerHost = Constants.expoConfig?.hostUri;
-const localIp = debuggerHost?.split(':')[0];
-const BACKEND_URL = localIp ? `http://${localIp}:5000` : (Platform.OS === 'android' ? 'http://10.0.2.2:5000' : 'http://localhost:5000');
 
 export default function ArchitectProfileScreen() {
   const router = useRouter();

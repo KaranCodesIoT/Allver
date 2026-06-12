@@ -4,11 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import Constants from 'expo-constants';
-
-const debuggerHost = Constants.expoConfig?.hostUri;
-const localIp = debuggerHost?.split(':')[0];
-const BACKEND_URL = localIp ? `http://${localIp}:5000` : (Platform.OS === 'android' ? 'http://10.0.2.2:5000' : 'http://localhost:5000');
+import { BACKEND_URL } from '../../constants/Config';
 
 const getParticipantDetails = (workspace: any, currentUserId: string) => {
   const isClient = workspace.client?._id === currentUserId || workspace.client === currentUserId;

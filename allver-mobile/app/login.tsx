@@ -5,7 +5,7 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Link, useRouter } from 'expo-router';
 
-import Constants from 'expo-constants';
+import { BACKEND_URL } from '../constants/Config';
 
 const { width } = Dimensions.get('window');
 const isDesktop = width > 768;
@@ -19,10 +19,6 @@ const COLORS = {
   white: '#FFFFFF',
   red: '#EF4444',
 };
-
-const debuggerHost = Constants.expoConfig?.hostUri;
-const localIp = debuggerHost?.split(':')[0];
-const BACKEND_URL = localIp ? `http://${localIp}:5000` : (Platform.OS === 'android' ? 'http://10.0.2.2:5000' : 'http://localhost:5000');
 
 export default function LoginScreen() {
   const router = useRouter();

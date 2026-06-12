@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import Constants from 'expo-constants';
 import { io } from 'socket.io-client';
 
 const { width } = Dimensions.get('window');
@@ -23,10 +22,7 @@ const COLORS = {
   badgeGold: '#F59E0B',
 };
 
-// Dynamically determine backend URL
-const debuggerHost = Constants.expoConfig?.hostUri;
-const localIp = debuggerHost?.split(':')[0];
-const BACKEND_URL = localIp ? `http://${localIp}:5000` : (Platform.OS === 'android' ? 'http://10.0.2.2:5000' : 'http://localhost:5000');
+import { BACKEND_URL } from '../constants/Config';
 
 interface Message {
   _id: string;

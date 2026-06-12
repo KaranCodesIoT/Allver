@@ -3,7 +3,6 @@ import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, ImageB
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
-import Constants from 'expo-constants';
 
 const COLORS = {
   green: '#16A34A',
@@ -15,10 +14,7 @@ const COLORS = {
   bgLight: '#F3F4F6'
 };
 
-// Dynamically determine the backend URL based on the Expo host
-const debuggerHost = Constants.expoConfig?.hostUri;
-const localIp = debuggerHost?.split(':')[0];
-const BACKEND_URL = localIp ? `http://${localIp}:5000` : (Platform.OS === 'android' ? 'http://10.0.2.2:5000' : 'http://localhost:5000');
+import { BACKEND_URL } from '../constants/Config';
 
 export default function SignupScreen() {
   const router = useRouter();
