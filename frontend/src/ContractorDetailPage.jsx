@@ -1,240 +1,293 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Star, CheckCircle2, MapPin, Users, Briefcase,
-  Clock, ChevronRight, Heart, Play, ExternalLink, MessageCircle,
-  Phone, Calendar, Building2, Wrench, Video
+  ArrowLeft, MoreVertical, CheckCircle2, Star, MapPin, 
+  Users, Grid, PlaySquare, Users as TeamIcon, FileBadge
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
-
-/* ──────────────────────────────────────────
-   COMPONENT
-   ────────────────────────────────────────── */
 
 const ContractorDetailPage = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const [activeTab, setActiveTab] = useState('projects');
   const [isFollowing, setIsFollowing] = useState(false);
-  const [showFullAbout, setShowFullAbout] = useState(false);
   const [contractorData, setContractorData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Fetch from API
     fetch(`http://localhost:5000/api/professional/${id}`)
       .then(res => res.json())
       .then(data => {
         if (data.professional) {
-          const prof = data.professional;
-          setContractorData({
-            id: prof._id,
-            fullName: prof.fullName,
-            subtitle: `${prof.contractorType || 'Contractor'} | ${prof.city || 'India'}`,
-            coverPhoto: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=1200&q=80',
-            avatar: prof.fullName?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'C',
-            avatarColor: '#3b82f6',
-            verified: true,
-            followers: 0,
-            rating: prof.rating || 0,
-            reviews: prof.reviews || 0,
-            years: parseInt(prof.experience) || 0,
-            workers: prof.teamSize || 0,
-            serviceArea: prof.serviceLocation?.join(', ') || prof.city || 'India',
-            city: prof.city || 'India',
-            phone: prof.whatsappNumber || prof.phoneNumber || '',
-            about: prof.shortDesc || prof.about || 'No description available.',
-            skills: prof.workCategory || [],
-            projects: []
-          });
-        } else {
-          setContractorData(null);
+          setContractorData(data.professional);
         }
         setLoading(false);
       })
-      .catch(() => {
-        setContractorData(null);
-        setLoading(false);
-      });
+      .catch(() => setLoading(false));
   }, [id]);
 
   if (loading) {
-    return (
-      <DashboardLayout pageTitle="Contractor Profile" pageSubtitle="Loading profile..." accentColor="#3b82f6">
-        <div className="cdp-loading">Loading contractor profile...</div>
-      </DashboardLayout>
-    );
+    return <DashboardLayout pageTitle="Profile"><div style={{ textAlign: 'center', padding: '3rem' }}>Loading profile...</div></DashboardLayout>;
   }
+
   if (!contractorData) {
-    return (
-      <DashboardLayout pageTitle="Contractor Profile" pageSubtitle="Profile not found" accentColor="#3b82f6">
-        <div className="cdp-loading">
-          <p>Contractor profile not found.</p>
-          <button className="prof-page-back-nav" onClick={() => navigate('/contractors')}>
-            <ArrowLeft size={18} /> Back to Contractors
-          </button>
-        </div>
-      </DashboardLayout>
-    );
+    return <DashboardLayout pageTitle="Profile"><div style={{ textAlign: 'center', padding: '3rem' }}>Profile not found</div></DashboardLayout>;
   }
 
   const c = contractorData;
-  const recentProjects = c.projects ? c.projects.slice(0, 3) : [];
+  const avatarLetter = (c.fullName || 'C')[0].toUpperCase();
+  const cats = c.workCategory || ['RCC Work', 'Brickwork', 'Plumbing', 'Electrical', 'Painting', 'Tile Work', 'False Ceiling', 'Carpentry'];
+  const followersCount = isFollowing ? (c.followers || 256) + 1 : (c.followers || 256);
+
+  // Fallback images
+  const coverImg = c.cover || 'https://images.unsplash.com/photo-1541888087405-eb317f223f66?auto=format&fit=crop&w=800&q=80';
+  const recentProjImgs = [
+    'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=300&q=80',
+    'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=300&q=80',
+    'https://images.unsplash.com/photo-1556912172-45b7abe8b7e1?auto=format&fit=crop&w=300&q=80',
+    'https://images.unsplash.com/photo-1600566753086-00f18efc2291?auto=format&fit=crop&w=300&q=80'
+  ];
 
   return (
-    <DashboardLayout pageTitle={c.fullName} pageSubtitle="Contractor Profile" accentColor="#3b82f6">
-
-      {/* Back */}
-      <button className="prof-page-back-nav" onClick={() => navigate('/contractors')}>
-        <ArrowLeft size={18} /> Back to Contractors
-      </button>
-
-      {/* ═══ COVER + AVATAR SECTION ═══ */}
-      <div className="cdp-hero">
-        <div className="cdp-cover" style={{ backgroundImage: `url(${c.coverPhoto})` }}>
-          <div className="cdp-cover-overlay" />
+    <DashboardLayout pageTitle="Contractor Profile" accentColor="#10b981">
+      <div className="cp-page-container">
+        
+        {/* Top Nav (Floating over cover) */}
+        <div className="cp-top-nav">
+          <button onClick={() => navigate(-1)}><ArrowLeft size={20} /></button>
+          <button><MoreVertical size={20} /></button>
         </div>
-        <div className="cdp-hero-bottom">
-          <div className="cdp-avatar-area">
-            <div className="cdp-avatar" style={{ background: c.avatarColor }}>
-              {c.avatar}
-              {c.verified && <span className="cdp-verified-badge"><CheckCircle2 size={16} fill="#3b82f6" color="white" /></span>}
-            </div>
-          </div>
-          <div className="cdp-hero-right">
-            <button
-              className={`cdp-follow-btn ${isFollowing ? 'following' : ''}`}
-              onClick={() => setIsFollowing(!isFollowing)}
-            >
-              {isFollowing ? 'Following' : 'Follow'}
-            </button>
-            <span className="cdp-followers-count">
-              <Users size={14} /> {isFollowing ? c.followers + 1 : c.followers} Followers
-            </span>
-          </div>
-        </div>
-      </div>
 
-      {/* ═══ NAME + INFO ═══ */}
-      <div className="cdp-info-section">
-        <h1 className="cdp-name">{c.fullName}</h1>
-        <p className="cdp-subtitle">{c.subtitle}</p>
+        {/* Cover Image */}
+        <img src={coverImg} alt="Cover" className="cp-cover" />
 
-        <div className="cdp-stats-row">
-          <div className="cdp-stat">
-            <Clock size={16} />
-            <strong>{c.years} Years Experience</strong>
-          </div>
-          <div className="cdp-stat-divider" />
-          <div className="cdp-stat">
-            <Users size={16} />
-            <strong>{c.workers} Workers Available</strong>
-          </div>
-          <div className="cdp-stat-divider" />
-          <div className="cdp-stat">
-            <MapPin size={16} />
-            <div>
-              <span className="cdp-stat-label">Service Areas</span>
-              <strong>{c.serviceArea}</strong>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ═══ ABOUT ═══ */}
-      <div className="cdp-card">
-        <h2>About</h2>
-        <p className="cdp-about-text">
-          {showFullAbout ? c.about : c.about.slice(0, 180) + '...'}
-          <button className="cdp-read-more" onClick={() => setShowFullAbout(!showFullAbout)}>
-            {showFullAbout ? 'Show Less' : 'Read More'}
-          </button>
-        </p>
-      </div>
-
-      {/* ═══ SKILLS & EXPERTISE ═══ */}
-      <div className="cdp-card">
-        <div className="cdp-card-header">
-          <h2>Skills & Expertise</h2>
-          <button className="cdp-view-all-link">View All</button>
-        </div>
-        <div className="cdp-skills-grid">
-          {c.skills.map((skill, idx) => (
-            <span key={idx} className="cdp-skill-tag">{skill}</span>
-          ))}
-        </div>
-      </div>
-
-      {/* ═══ RECENT PROJECTS ═══ */}
-      <div className="cdp-card">
-        <div className="cdp-card-header">
-          <h2>Recent Projects</h2>
-          <button className="cdp-view-all-link" onClick={() => setActiveTab('projects')}>View All</button>
-        </div>
-        <div className="cdp-recent-projects">
-          {recentProjects.map(proj => (
-            <div key={proj.id} className="cdp-recent-card" onClick={() => navigate(`/project/${proj.id}`)}>
-              <img src={proj.img} alt={proj.name} />
-              <div className="cdp-recent-info">
-                <h3>{proj.name}</h3>
-                <span><MapPin size={11} /> {proj.location}</span>
+        {/* Header Content */}
+        <div className="cp-header-content">
+          <div className="cp-header-top-row">
+            {c.avatarUrl ? (
+              <img src={c.avatarUrl} alt="Avatar" className="cp-avatar" />
+            ) : (
+              <div className="cp-avatar">{avatarLetter}</div>
+            )}
+            
+            <div className="cp-follow-card">
+              <button 
+                className="cp-follow-btn" 
+                style={isFollowing ? { background: 'white', color: '#0f172a', border: '1px solid #0f172a' } : {}}
+                onClick={() => setIsFollowing(!isFollowing)}
+              >
+                {isFollowing ? 'Following' : 'Follow'}
+              </button>
+              <div className="cp-followers-count">
+                <span>{followersCount}</span>
+                Followers
               </div>
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
 
-      {/* ═══ TABBED SECTIONS ═══ */}
-      <div className="cdp-tabs-section">
-        <div className="cdp-tabs-nav">
-          <button className={`cdp-tab ${activeTab === 'projects' ? 'active' : ''}`} onClick={() => setActiveTab('projects')}>
-            <Briefcase size={16} /> Projects
-          </button>
-          <button className={`cdp-tab ${activeTab === 'media' ? 'active' : ''}`} onClick={() => setActiveTab('media')}>
-            <Video size={16} /> Media
-          </button>
-          <button className={`cdp-tab ${activeTab === 'team' ? 'active' : ''}`} onClick={() => setActiveTab('team')}>
-            <Users size={16} /> Team
-          </button>
-        </div>
+          <div className="cp-name-row">
+            {c.fullName} <CheckCircle2 size={18} color="#10b981" fill="#10b981" style={{ color: 'white' }} />
+          </div>
+          <div className="cp-subtitle">
+            {c.contractorType || 'Residential Contractor'} | {c.city || 'Navi Mumbai'}
+          </div>
 
-        {/* Projects Tab */}
-        {activeTab === 'projects' && (
-          <div className="cdp-tab-content">
-            {c.projects.map(proj => (
-              <div key={proj.id} className="cdp-project-row" onClick={() => navigate(`/project/${proj.id}`)}>
-                <img src={proj.img} alt={proj.name} className="cdp-proj-thumb" />
-                <div className="cdp-proj-info">
-                  <h3>{proj.name}</h3>
-                  <span className="cdp-proj-location"><MapPin size={12} /> {proj.location}</span>
-                </div>
-                <div className="cdp-proj-progress-col">
-                  <div className="cdp-progress-bar">
-                    <div className="cdp-progress-fill" style={{ width: `${proj.progress}%`, background: proj.progress === 100 ? '#10b981' : '#3b82f6' }} />
-                  </div>
-                  <span className="cdp-progress-text">{proj.progress}%</span>
-                </div>
-                <ChevronRight size={18} className="cdp-proj-arrow" />
+          <div className="cp-stats-row">
+            <div className="cp-stat-item">
+              <Star size={16} />
+              <div>
+                <strong>{c.experience || '5 Years'}</strong>
+                Experience
               </div>
+            </div>
+            <div className="cp-stat-item">
+              <Users size={16} />
+              <div>
+                <strong>{c.teamSize || '25 Workers'}</strong>
+                Available
+              </div>
+            </div>
+            <div className="cp-stat-item">
+              <MapPin size={16} />
+              <div>
+                <strong>Service Areas</strong>
+                {c.serviceLocation?.join(', ') || 'Mumbai, Navi Mumbai'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* About Section */}
+        <div className="cp-section">
+          <div className="cp-section-header">
+            <h3>About</h3>
+          </div>
+          <p className="cp-about-text">
+            {c.about || 'We are a trusted team of construction professionals specializing in residential projects. From planning to completion, we ensure quality, on-time delivery and customer satisfaction.'}
+            <span className="cp-view-all" style={{ marginLeft: '5px' }}>Read More</span>
+          </p>
+        </div>
+
+        {/* Skills Section */}
+        <div className="cp-section">
+          <div className="cp-section-header">
+            <h3>Skills & Expertise</h3>
+            <span className="cp-view-all">View All</span>
+          </div>
+          <div className="cp-skills-grid">
+            {cats.map((skill, idx) => (
+              <div key={idx} className="cp-skill-pill">{skill}</div>
             ))}
           </div>
-        )}
+        </div>
 
-        {/* Media Tab */}
-        {activeTab === 'media' && (
-          <div className="cdp-tab-content">
-            <p style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>No media uploaded yet.</p>
+        {/* Recent Projects Preview */}
+        <div className="cp-section" style={{ borderBottom: 'none' }}>
+          <div className="cp-section-header">
+            <h3>Recent Projects</h3>
+            <span className="cp-view-all" onClick={() => setActiveTab('projects')}>View All</span>
           </div>
-        )}
+          <div className="cp-recent-grid">
+            {recentProjImgs.map((img, idx) => (
+              <img key={idx} src={img} alt="Project" />
+            ))}
+          </div>
+        </div>
 
-        {/* Team Tab */}
-        {activeTab === 'team' && (
-          <div className="cdp-tab-content">
-            <p style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>No team members added yet.</p>
-          </div>
-        )}
+        {/* Sticky Tab Bar */}
+        <div className="cp-tab-bar">
+          <button className={`cp-tab ${activeTab === 'projects' ? 'active' : ''}`} onClick={() => setActiveTab('projects')}>
+            <Grid size={22} />
+          </button>
+          <button className={`cp-tab ${activeTab === 'media' ? 'active' : ''}`} onClick={() => setActiveTab('media')}>
+            <PlaySquare size={22} />
+          </button>
+          <button className={`cp-tab ${activeTab === 'team' ? 'active' : ''}`} onClick={() => setActiveTab('team')}>
+            <TeamIcon size={22} />
+          </button>
+          <button className="cp-tab" onClick={() => alert('Documents coming soon')}>
+            <FileBadge size={22} />
+          </button>
+        </div>
+
+        {/* Tab Contents */}
+        <div className="cp-tab-content">
+          
+          {/* Projects Tab */}
+          {activeTab === 'projects' && (
+            <div>
+              <div className="cp-project-card">
+                <img src={recentProjImgs[0]} alt="Project" />
+                <div className="cp-project-info">
+                  <div>
+                    <div className="cp-project-title">2BHK Residential Construction</div>
+                    <div className="cp-project-loc">Navi Mumbai</div>
+                    <div className="cp-project-status ongoing"><div className="dot"></div> Ongoing</div>
+                  </div>
+                  <div className="cp-progress-bar-container">
+                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Progress</span>
+                    <div className="cp-progress-bar">
+                      <div className="cp-progress-fill" style={{ width: '60%' }}></div>
+                    </div>
+                    <span className="cp-progress-text">60%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="cp-project-card">
+                <img src={recentProjImgs[1]} alt="Project" />
+                <div className="cp-project-info">
+                  <div>
+                    <div className="cp-project-title">3BHK Villa Project</div>
+                    <div className="cp-project-loc">Panvel, Navi Mumbai</div>
+                    <div className="cp-project-status completed"><div className="dot"></div> Completed</div>
+                  </div>
+                  <div className="cp-progress-bar-container">
+                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Progress</span>
+                    <div className="cp-progress-bar">
+                      <div className="cp-progress-fill" style={{ width: '100%', background: '#3b82f6' }}></div>
+                    </div>
+                    <span className="cp-progress-text">100%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="cp-project-card">
+                <img src={recentProjImgs[2]} alt="Project" />
+                <div className="cp-project-info">
+                  <div>
+                    <div className="cp-project-title">Interior Work</div>
+                    <div className="cp-project-loc">Kharghar, Navi Mumbai</div>
+                    <div className="cp-project-status ongoing"><div className="dot"></div> Ongoing</div>
+                  </div>
+                  <div className="cp-progress-bar-container">
+                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Progress</span>
+                    <div className="cp-progress-bar">
+                      <div className="cp-progress-fill" style={{ width: '40%' }}></div>
+                    </div>
+                    <span className="cp-progress-text">40%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Media Tab */}
+          {activeTab === 'media' && (
+            <div>
+              <div className="cp-media-filters">
+                <button className="cp-media-filter active">All</button>
+                <button className="cp-media-filter">Photos</button>
+                <button className="cp-media-filter">Videos</button>
+              </div>
+              <div className="cp-media-grid">
+                <div className="cp-media-item"><img src={recentProjImgs[0]} alt="media" /></div>
+                <div className="cp-media-item">
+                  <img src={recentProjImgs[1]} alt="media" />
+                  <div className="cp-media-duration">0:30</div>
+                </div>
+                <div className="cp-media-item"><img src={recentProjImgs[2]} alt="media" /></div>
+                <div className="cp-media-item"><img src={recentProjImgs[3]} alt="media" /></div>
+                <div className="cp-media-item">
+                  <img src="https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=300&q=80" alt="media" />
+                  <div className="cp-media-duration">0:45</div>
+                </div>
+                <div className="cp-media-item"><img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=300&q=80" alt="media" /></div>
+              </div>
+            </div>
+          )}
+
+          {/* Team Tab */}
+          {activeTab === 'team' && (
+            <div>
+              {[
+                { name: 'Ramesh Yadav', role: 'Site Supervisor', exp: '8 Years Experience', img: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80' },
+                { name: 'Suresh Patil', role: 'Mason', exp: '10 Years Experience', img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80' },
+                { name: 'Ravi Singh', role: 'Carpenter', exp: '7 Years Experience', img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80' },
+                { name: 'Imran Shaikh', role: 'Electrician', exp: '6 Years Experience', img: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=150&q=80' },
+              ].map((member, idx) => (
+                <div key={idx} className="cp-team-card">
+                  <img src={member.img} alt={member.name} className="cp-team-avatar" />
+                  <div className="cp-team-info">
+                    <div className="cp-team-name">{member.name}</div>
+                    <div className="cp-team-role">{member.role}</div>
+                    <div className="cp-team-exp">{member.exp}</div>
+                  </div>
+                  <div className="cp-team-badge" style={{ marginRight: '10px' }}>Available</div>
+                  <button 
+                    className="cp-follow-btn" 
+                    style={{ padding: '0.4rem 1rem', fontSize: '0.8rem', background: 'white', color: '#0f172a', border: '1px solid #e2e8f0' }}
+                    onClick={() => navigate(`/labour/manage/team-member`)}
+                  >
+                    Project Dashboard
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+        </div>
       </div>
-
     </DashboardLayout>
   );
 };

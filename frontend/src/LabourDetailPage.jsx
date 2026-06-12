@@ -1,329 +1,231 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  ArrowLeft, Star, CheckCircle2, MapPin, Briefcase, Calendar,
-  MessageCircle, Plus, Info, ChevronLeft, ChevronRight, MoreVertical,
-  DollarSign, Clock, AlertCircle
+  ArrowLeft, CheckCircle2, Star, MapPin, 
+  Phone, MessageCircle, Briefcase, PlayCircle, Users,
+  Clock, Map, Calendar
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
-
-
 
 const LabourDetailPage = () => {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [activeTab, setActiveTab] = useState('attendance');
   const [labourData, setLabourData] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // States for interactive month navigation
-  const [selectedMonth, setSelectedMonth] = useState('May 2024');
-
   useEffect(() => {
-    // Fetch from API
     fetch(`http://localhost:5000/api/professional/${id}`)
       .then(res => res.json())
       .then(data => {
         if (data.professional) {
-          const prof = data.professional;
-          setLabourData({
-            id: prof._id,
-            fullName: prof.fullName,
-            role: prof.skillType || 'Skilled Labourer',
-            city: prof.city || 'India',
-            experience: prof.experience || 'Not specified',
-            rating: prof.rating || 0,
-            reviews: prof.reviews || 0,
-            avatar: prof.fullName?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'L',
-            avatarColor: '#f59e0b',
-            img: prof.avatarUrl || '',
-            verified: true,
-            stats: { daysWorked: 0, totalPayment: 0, advanceGiven: 0, pendingPayment: 0 },
-            attendance: [],
-            payments: []
-          });
-        } else {
-          setLabourData(null);
+          setLabourData(data.professional);
         }
         setLoading(false);
       })
-      .catch(() => {
-        setLabourData(null);
-        setLoading(false);
-      });
+      .catch(() => setLoading(false));
   }, [id]);
 
   if (loading) {
-    return (
-      <DashboardLayout pageTitle="Labour Profile" pageSubtitle="Loading profile..." accentColor="#f59e0b">
-        <div className="ldp-loading">Loading labour profile...</div>
-      </DashboardLayout>
-    );
+    return <DashboardLayout pageTitle="Profile"><div style={{ textAlign: 'center', padding: '3rem' }}>Loading...</div></DashboardLayout>;
   }
 
-  if (!labourData) {
-    return (
-      <DashboardLayout pageTitle="Labour Profile" pageSubtitle="Profile not found" accentColor="#f59e0b">
-        <div className="ldp-loading">
-          <p>Labour profile not found.</p>
-          <button className="prof-page-back-nav" onClick={() => navigate(-1)}>
-            <ArrowLeft size={18} /> Back
-          </button>
-        </div>
-      </DashboardLayout>
-    );
-  }
+  const c = labourData || {
+    fullName: 'Ramesh Yadav',
+    role: 'Mason',
+    location: 'Belapur, Navi Mumbai',
+    experience: '8 Years',
+    phone: '+91 98765 43210',
+    avatarUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80'
+  };
 
-  const l = labourData;
-  const s = l.stats;
-
-  // Calculate counts for May 2024 based on static/mock data
-  const totalDays = l.attendance.length;
-  const presentDays = l.attendance.filter(r => r.status === 'Present').length;
-  const halfDays = l.attendance.filter(r => r.status === 'Half Day').length;
-  const absentDays = l.attendance.filter(r => r.status === 'Absent').length;
-  const totalAdvanceTable = l.attendance.reduce((sum, r) => sum + r.advance, 0);
+  const avatarLetter = (c.fullName || 'L')[0].toUpperCase();
 
   return (
-    <DashboardLayout pageTitle="Labour Profile" pageSubtitle="Worker Details & Attendance Logs" accentColor="#f59e0b">
-      
-      {/* Back button */}
-      <button className="prof-page-back-nav" onClick={() => navigate(-1)}>
-        <ArrowLeft size={18} /> Back
-      </button>
-
-      {/* ═══ LABOUR PROFILE CARD ═══ */}
-      <div className="ldp-profile-card">
-        <div className="ldp-card-left">
-          <div className="ldp-avatar-wrapper">
-            <img src={l.img} alt={l.fullName} className="ldp-profile-img" />
-            {l.verified && (
-              <span className="ldp-verified-icon">
-                <CheckCircle2 size={16} fill="#10b981" color="white" />
-              </span>
-            )}
-          </div>
-          <div className="ldp-profile-info">
-            <div className="ldp-name-row">
-              <h2>{l.fullName}</h2>
-            </div>
-            <div className="ldp-rating-row">
-              <Star size={14} fill="#f59e0b" color="#f59e0b" />
-              <strong>{l.rating}</strong>
-              <span className="ldp-reviews-count">({l.reviews} Reviews)</span>
-            </div>
-            <div className="ldp-role-badge">{l.role}</div>
-            <div className="ldp-meta-item">
-              <MapPin size={13} /> {l.city}
-            </div>
-            <div className="ldp-meta-item">
-              <Briefcase size={13} /> {l.experience}
-            </div>
-          </div>
+    <DashboardLayout pageTitle="Labour Profile" accentColor="#10b981">
+      <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.02)', overflow: 'hidden' }}>
+        
+        {/* Cover Image */}
+        <div style={{ position: 'relative', height: '250px', width: '100%', background: '#f1f5f9' }}>
+          <img 
+            src="https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=1200&q=80" 
+            alt="Cover" 
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+            onError={(e) => e.target.style.display = 'none'}
+          />
         </div>
 
-        <div className="ldp-card-right">
-          <button className="ldp-msg-btn">
-            <MessageCircle size={16} /> Message
-          </button>
-          <button className="ldp-hire-btn">
-            <Plus size={16} /> Hire / Give Work
-          </button>
+        {/* Profile Content */}
+        <div style={{ padding: '0 3rem 3rem', marginTop: '-60px', position: 'relative' }}>
+          
+          {/* Top Row: Avatar & Stats */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '1.5rem' }}>
+            <div style={{ position: 'relative' }}>
+              {c.avatarUrl ? (
+                <img src={c.avatarUrl} alt={c.fullName} style={{ width: '140px', height: '140px', borderRadius: '50%', objectFit: 'cover', border: '5px solid white', background: 'white' }} />
+              ) : (
+                <div style={{ width: '140px', height: '140px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '3rem', fontWeight: 'bold', color: 'white', border: '5px solid white' }}>{avatarLetter}</div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', paddingBottom: '1rem' }}>
+              <button style={{ padding: '0.6rem 1.2rem', background: 'white', border: '1px solid #3b82f6', borderRadius: '8px', color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', cursor: 'pointer' }}>
+                <Users size={16} /> Follow
+              </button>
+              <div style={{ padding: '0.6rem 1.2rem', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Users size={16} color="#64748b" />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.95rem', fontWeight: '700', color: '#0f172a', lineHeight: 1 }}>256</span>
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Followers</span>
+                </div>
+              </div>
+              <div style={{ padding: '0.8rem 1.2rem', background: '#f0fdf4', borderRadius: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', fontWeight: '700', color: '#0f172a' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981' }}></div> Available
+                </span>
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Available for work</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Info Details */}
+          <div style={{ marginBottom: '2rem' }}>
+            <h1 style={{ fontSize: '2rem', fontWeight: '800', color: '#0f172a', margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {c.fullName} <CheckCircle2 size={24} fill="#10b981" color="white" style={{ background: '#10b981', borderRadius: '50%' }} />
+            </h1>
+            <div style={{ fontSize: '1rem', color: '#64748b', fontWeight: '600', marginBottom: '0.8rem' }}>{c.role || 'Mason'}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', color: '#475569', fontSize: '0.95rem' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><MapPin size={18} /> {c.location || 'Belapur, Navi Mumbai'}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#3b82f6', fontWeight: '600' }}><Phone size={18} /> {c.phone || '+91 98765 43210'}</span>
+            </div>
+          </div>
+
+          {/* Action Buttons Row */}
+          <div style={{ display: 'flex', gap: '1rem', marginBottom: '2.5rem' }}>
+            <button style={{ flex: 1, padding: '1rem', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontSize: '1rem', fontWeight: '600', color: '#0f172a', cursor: 'pointer' }}>
+              <Phone size={20} color="#16a34a" /> Call
+            </button>
+            <button style={{ flex: 1, padding: '1rem', background: 'white', border: '1px solid #e2e8f0', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontSize: '1rem', fontWeight: '600', color: '#0f172a', cursor: 'pointer' }}>
+              <MessageCircle size={20} color="#16a34a" /> WhatsApp
+            </button>
+            <button style={{ flex: 1, padding: '1rem', background: '#16a34a', border: 'none', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontSize: '1rem', fontWeight: '600', color: 'white', cursor: 'pointer' }}>
+              <Briefcase size={20} /> Hire Worker
+            </button>
+          </div>
+
+          {/* 4-Column Stats Box */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', background: '#fafbfd', border: '1px solid #f1f5f9', borderRadius: '12px', padding: '1.5rem', marginBottom: '2.5rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', borderRight: '1px solid #e2e8f0' }}>
+              <Briefcase size={24} color="#64748b" style={{ marginBottom: '8px' }} />
+              <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600', marginBottom: '4px' }}>Skill Type</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: '#0f172a' }}>{c.role || 'Mason'}</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', borderRight: '1px solid #e2e8f0' }}>
+              <Calendar size={24} color="#64748b" style={{ marginBottom: '8px' }} />
+              <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600', marginBottom: '4px' }}>Experience</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: '#0f172a' }}>{c.experience || '8 Years'}</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', borderRight: '1px solid #e2e8f0' }}>
+              <MapPin size={24} color="#64748b" style={{ marginBottom: '8px' }} />
+              <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600', marginBottom: '4px' }}>Location</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: '#0f172a' }}>{c.location || 'Belapur, Navi Mumbai'}</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+              <Clock size={24} color="#64748b" style={{ marginBottom: '8px' }} />
+              <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600', marginBottom: '4px' }}>Availability</div>
+              <div style={{ fontSize: '1rem', fontWeight: '700', color: '#0f172a' }}>Available</div>
+            </div>
+          </div>
+
+          {/* Skills */}
+          <div style={{ marginBottom: '2.5rem' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0f172a', margin: '0 0 1rem 0' }}>Skills</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
+              {['Brick Work', 'RCC Work', 'Plaster Work', 'Tile Work', 'Wall Construction'].map((skill, i) => (
+                <span key={i} style={{ padding: '0.6rem 1.2rem', background: '#f0fdf4', color: '#166534', borderRadius: '8px', fontSize: '0.9rem', fontWeight: '600', border: '1px solid #dcfce7' }}>
+                  {skill}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* About Me */}
+          <div style={{ marginBottom: '3rem' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0f172a', margin: '0 0 1rem 0' }}>About Me</h3>
+            <p style={{ fontSize: '1rem', color: '#475569', lineHeight: '1.6', margin: 0, maxWidth: '800px' }}>
+              I am an experienced mason. I do all types of brick work, RCC work and plaster work. I always complete work on time with good quality.
+            </p>
+          </div>
+
+          {/* 2-Column Grid for Media & Reviews */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+            
+            {/* Photos & Videos */}
+            <div style={{ border: '1px solid #f1f5f9', borderRadius: '12px', padding: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>Photos & Videos</h3>
+                <span style={{ color: '#3b82f6', fontSize: '0.9rem', fontWeight: '600', cursor: 'pointer' }}>View All</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', aspectRatio: '1' }}>
+                  <img src="https://images.unsplash.com/photo-1541888086225-b467ec4c0677?auto=format&fit=crop&w=300&q=80" alt="Work" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+                <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', aspectRatio: '1' }}>
+                  <img src="https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=300&q=80" alt="Work" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <PlayCircle size={32} color="white" style={{ position: 'absolute', top: '10px', left: '10px', opacity: 0.9 }} />
+                </div>
+                <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', aspectRatio: '1' }}>
+                  <img src="https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=300&q=80" alt="Work" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+                <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', aspectRatio: '1' }}>
+                  <img src="https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=300&q=80" alt="Work" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <PlayCircle size={32} color="white" style={{ position: 'absolute', top: '10px', left: '10px', opacity: 0.9 }} />
+                </div>
+              </div>
+            </div>
+
+            {/* Reviews */}
+            <div style={{ border: '1px solid #f1f5f9', borderRadius: '12px', padding: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>Reviews</h3>
+                <span style={{ color: '#3b82f6', fontSize: '0.9rem', fontWeight: '600', cursor: 'pointer' }}>View All</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '1.5rem' }}>
+                <span style={{ fontSize: '2.5rem', fontWeight: '800', color: '#0f172a' }}>4.7</span>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', gap: '2px', color: '#f59e0b' }}>
+                    <Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" opacity={0.5} />
+                  </div>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>(32 Reviews)</span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {[
+                  { name: 'Suresh Patil', time: '2 days ago', text: 'Very good work and very punctual.', img: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=50&q=80' },
+                  { name: 'Vikram Singh', time: '1 week ago', text: 'Excellent work quality. Highly recommended.', img: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=50&q=80' },
+                  { name: 'Neha Sharma', time: '2 weeks ago', text: 'Good work and behavior.', img: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=50&q=80' },
+                ].map((rev, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '1rem' }}>
+                    <img src={rev.img} alt={rev.name} style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                        <span style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.95rem' }}>{rev.name}</span>
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{rev.time}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '2px', color: '#f59e0b', marginBottom: '4px' }}>
+                        <Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" />
+                      </div>
+                      <p style={{ margin: 0, fontSize: '0.9rem', color: '#475569' }}>{rev.text}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+
         </div>
       </div>
-
-      {/* ═══ STATS COUNTERS ROW ═══ */}
-      <div className="ldp-stats-grid">
-        <div className="ldp-stat-card">
-          <div className="ldp-stat-header">
-            <Clock size={16} className="ldp-stat-icon" />
-            <span>Total Days Worked</span>
-          </div>
-          <h3>{s.daysWorked} Days</h3>
-          <span className="ldp-stat-sub">This Month</span>
-        </div>
-        <div className="ldp-stat-card">
-          <div className="ldp-stat-header">
-            <DollarSign size={16} className="ldp-stat-icon green" />
-            <span>Total Payment</span>
-          </div>
-          <h3>₹ {s.totalPayment.toLocaleString('en-IN')}</h3>
-          <span className="ldp-stat-sub">This Month</span>
-        </div>
-        <div className="ldp-stat-card">
-          <div className="ldp-stat-header">
-            <DollarSign size={16} className="ldp-stat-icon orange" />
-            <span>Advance Given</span>
-          </div>
-          <h3>₹ {s.advanceGiven.toLocaleString('en-IN')}</h3>
-          <span className="ldp-stat-sub">This Month</span>
-        </div>
-        <div className="ldp-stat-card">
-          <div className="ldp-stat-header">
-            <DollarSign size={16} className="ldp-stat-icon red" />
-            <span>Pending Payment</span>
-          </div>
-          <h3>₹ {s.pendingPayment.toLocaleString('en-IN')}</h3>
-          <span className="ldp-stat-sub">This Month</span>
-        </div>
-      </div>
-
-      {/* ═══ TABS SELECTION ═══ */}
-      <div className="ldp-tabs-section">
-        <div className="ldp-tabs-header">
-          <button
-            className={`ldp-tab-btn ${activeTab === 'attendance' ? 'active' : ''}`}
-            onClick={() => setActiveTab('attendance')}
-          >
-            Work & Attendance
-          </button>
-          <button
-            className={`ldp-tab-btn ${activeTab === 'payments' ? 'active' : ''}`}
-            onClick={() => setActiveTab('payments')}
-          >
-            Payments
-          </button>
-        </div>
-
-        {/* WORK & ATTENDANCE TAB CONTENT */}
-        {activeTab === 'attendance' && (
-          <div className="ldp-tab-content">
-            <div className="ldp-tab-header-row">
-              <h3>Work & Attendance</h3>
-              <div className="ldp-month-nav">
-                <ChevronLeft size={16} className="ldp-month-arrow" />
-                <span>{selectedMonth}</span>
-                <ChevronRight size={16} className="ldp-month-arrow" />
-              </div>
-            </div>
-
-            {/* Attendance Quick Count Cards */}
-            <div className="ldp-attendance-counts">
-              <div className="ldp-count-card grey">
-                <span className="ldp-count-label">Total Days</span>
-                <h2>{totalDays}</h2>
-              </div>
-              <div className="ldp-count-card green">
-                <span className="ldp-count-label">Present Days</span>
-                <h2>{presentDays}</h2>
-              </div>
-              <div className="ldp-count-card orange">
-                <span className="ldp-count-label">Half Days</span>
-                <h2>{halfDays}</h2>
-              </div>
-              <div className="ldp-count-card red">
-                <span className="ldp-count-label">Absent Days</span>
-                <h2>{absentDays}</h2>
-              </div>
-            </div>
-
-            {/* Attendance Table */}
-            <div className="ldp-table-container">
-              <table className="ldp-attendance-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Day</th>
-                    <th>Status</th>
-                    <th>Hours</th>
-                    <th>Advance (₹)</th>
-                    <th>Remarks</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {l.attendance.map((row, index) => {
-                    let statusClass = '';
-                    if (row.status === 'Present') statusClass = 'status-present';
-                    else if (row.status === 'Half Day') statusClass = 'status-half';
-                    else if (row.status === 'Absent') statusClass = 'status-absent';
-
-                    return (
-                      <tr key={index}>
-                        <td>{row.date}</td>
-                        <td>{row.day}</td>
-                        <td>
-                          <span className={`ldp-status-badge ${statusClass}`}>{row.status}</span>
-                        </td>
-                        <td>{row.hours.toFixed(1)}</td>
-                        <td>₹ {row.advance}</td>
-                        <td>{row.remarks}</td>
-                      </tr>
-                    );
-                  })}
-                  <tr className="ldp-table-total-row">
-                    <td><strong>Total</strong></td>
-                    <td>-</td>
-                    <td>
-                      <span className="ldp-total-badge green">{presentDays} Present</span>
-                      <span className="ldp-total-badge orange">{halfDays} Half</span>
-                      <span className="ldp-total-badge red">{absentDays} Absent</span>
-                    </td>
-                    <td>-</td>
-                    <td><strong>₹ {totalAdvanceTable}</strong></td>
-                    <td>-</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Bottom note */}
-            <div className="ldp-note-box">
-              <Info size={16} />
-              <span>Note: 1 day = 8 working hours</span>
-            </div>
-          </div>
-        )}
-
-        {/* PAYMENTS TAB CONTENT */}
-        {activeTab === 'payments' && (
-          <div className="ldp-tab-content">
-            <div className="ldp-tab-header-row">
-              <h3>Payment History</h3>
-            </div>
-
-            {/* Payments Table */}
-            <div className="ldp-table-container">
-              <table className="ldp-payments-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th>Amount</th>
-                    <th>Payment Method</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {l.payments.map((pay, index) => (
-                    <tr key={index}>
-                      <td>{pay.date}</td>
-                      <td>{pay.desc}</td>
-                      <td className="ldp-amount-col">₹ {pay.amount.toLocaleString('en-IN')}</td>
-                      <td>{pay.type}</td>
-                      <td>
-                        <span className="ldp-payment-status verified">{pay.status}</span>
-                      </td>
-                    </tr>
-                  ))}
-                  <tr className="ldp-table-total-row">
-                    <td><strong>Total Paid</strong></td>
-                    <td>-</td>
-                    <td className="ldp-amount-col"><strong>₹ {l.payments.reduce((sum, p) => sum + p.amount, 0).toLocaleString('en-IN')}</strong></td>
-                    <td>-</td>
-                    <td><span className="ldp-payment-status verified">Success</span></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div className="ldp-payment-info-box">
-              <AlertCircle size={16} />
-              <span>Remaining Pending Payout of <strong>₹ {s.pendingPayment.toLocaleString('en-IN')}</strong> will be disbursed at the end of the contract cycle.</span>
-            </div>
-          </div>
-        )}
-      </div>
-
     </DashboardLayout>
   );
 };

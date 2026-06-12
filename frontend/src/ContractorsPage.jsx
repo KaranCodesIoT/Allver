@@ -1,191 +1,163 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  Search, MapPin, Star, Briefcase, Users, CheckCircle2,
-  SlidersHorizontal, ChevronDown, Phone, X
+  Search, MapPin, Star, ChevronDown, CheckCircle2,
+  Briefcase, ArrowLeft, Building2, Users
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
 
-
-
-const ProfileModal = ({ prof, onClose }) => {
-  if (!prof) return null;
-  const avatarBg = '#3b82f6';
-  const initials = (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  const categories = prof.workCategory || [];
-
-  return (
-    <div className="dl-modal-overlay" onClick={onClose}>
-      <div className="dl-modal-card" onClick={e => e.stopPropagation()}>
-        <button className="dl-modal-close" onClick={onClose}><X size={20} /></button>
-        <div className="dl-modal-header" style={{ background: `linear-gradient(135deg, ${avatarBg}18 0%, #eff6ff 100%)` }}>
-          <div className="dl-modal-avatar" style={{ backgroundColor: avatarBg }}>{initials}</div>
-          <div className="dl-modal-title-block">
-            <h2>{prof.fullName} <CheckCircle2 size={16} style={{ color: '#3b82f6', marginLeft: 8, verticalAlign: 'middle' }} /></h2>
-            <p className="dl-modal-firm">{prof.contractorType || 'General Contractor'}</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.85rem', color: '#6b7280', marginTop: 4 }}>
-              <MapPin size={13} /> {prof.city || 'India'}
-            </div>
-          </div>
-        </div>
-        <div className="dl-modal-stats-row">
-          <div className="dl-stat-box"><strong>{prof.projects || '—'}</strong><span>Projects</span></div>
-          <div className="dl-stat-box"><strong>{prof.reviews || '—'}</strong><span>Reviews</span></div>
-          <div className="dl-stat-box" style={{ color: '#f59e0b' }}>
-            <strong style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Star size={14} fill="#f59e0b" /> {prof.rating || '4.5'}
-            </strong>
-            <span>Rating</span>
-          </div>
-          <div className="dl-stat-box"><strong>{prof.followers || '—'}</strong><span>Followers</span></div>
-        </div>
-        <div className="dl-modal-body">
-          <div className="dl-modal-row"><label>Experience</label><span>{prof.experience || 'Not specified'}</span></div>
-          <div className="dl-modal-row"><label>Contractor Type</label><span>{prof.contractorType || 'General Contractor'}</span></div>
-          {prof.teamSize && <div className="dl-modal-row"><label>Team Size</label><span>{prof.teamSize}</span></div>}
-          {categories.length > 0 && (
-            <div className="dl-modal-row">
-              <label>Work Categories</label>
-              <div className="dl-tag-group">
-                {categories.map((c, i) => <span key={i} className="dl-tag blue">{c}</span>)}
-              </div>
-            </div>
-          )}
-          {prof.serviceLocation?.length > 0 && (
-            <div className="dl-modal-row">
-              <label>Service Locations</label>
-              <div className="dl-tag-group">
-                {prof.serviceLocation.map((l, i) => <span key={i} className="dl-tag grey">{l}</span>)}
-              </div>
-            </div>
-          )}
-          <div className="dl-modal-actions">
-            {prof.whatsappNumber && (
-              <a href={`https://wa.me/${prof.whatsappNumber}`} target="_blank" rel="noopener noreferrer" className="dl-modal-btn wa">
-                <Phone size={15} /> WhatsApp
-              </a>
-            )}
-            <button className="dl-modal-btn blue" onClick={onClose}>Close Profile</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const ContractorsPage = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const [contractors, setContractors] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState(location.state?.searchVal || '');
-  const [locationFilter, setLocationFilter] = useState('');
-  const [ratingFilter, setRatingFilter] = useState('');
-  const [showRatingDrop, setShowRatingDrop] = useState(false);
-  const [selectedProf, setSelectedProf] = useState(null);
+
+  // Filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [locationQuery, setLocationQuery] = useState('');
+  const [minRating, setMinRating] = useState('0');
 
   useEffect(() => {
     fetch('http://localhost:5000/api/professionals/Contractor')
-      .then(r => r.json())
-      .then(d => { setContractors(d.professionals || []); setLoading(false); })
-      .catch(() => { setContractors([]); setLoading(false); });
+      .then(res => res.json())
+      .then(data => {
+        setContractors(data.professionals || []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Error fetching contractors:', err);
+        setLoading(false);
+      });
   }, []);
 
-  const displayList = contractors;
-
-  const filtered = displayList.filter(p => {
-    const nameMatch = (p.fullName || '').toLowerCase().includes(search.toLowerCase());
-    const typeMatch = (p.contractorType || '').toLowerCase().includes(search.toLowerCase());
-    const categoryMatch = (p.workCategory || []).some(cat => cat.toLowerCase().includes(search.toLowerCase()));
-    
-    return (
-      (!search || nameMatch || typeMatch || categoryMatch) &&
-      (!locationFilter || (p.city || '').toLowerCase().includes(locationFilter.toLowerCase())) &&
-      (!ratingFilter || (p.rating || 4.5) >= parseFloat(ratingFilter))
-    );
+  const filteredContractors = contractors.filter(c => {
+    const nameMatch = (c.fullName || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const locMatch = (c.city || c.location || '').toLowerCase().includes(locationQuery.toLowerCase());
+    const ratingMatch = (c.rating || 0) >= Number(minRating);
+    return nameMatch && locMatch && ratingMatch;
   });
 
   return (
-    <DashboardLayout pageTitle="Find Contractors" pageSubtitle="Hire verified contractors for your construction project" accentColor="#3b82f6">
-      {/* Filter Bar */}
-      <div className="listing-filter-bar">
-        <div className="listing-search-field">
-          <Search size={16} />
-          <input placeholder="Search by name or type..." value={search} onChange={e => setSearch(e.target.value)} />
+    <DashboardLayout pageTitle="Contractors" pageSubtitle="Find the best contractors for your project" accentColor="#10b981">
+      <div className="labour-list-page">
+        {/* Mobile-like Header & Filters */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
+          <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0f172a' }}>
+            <ArrowLeft size={24} />
+          </button>
+          <div style={{ flex: 1, textAlign: 'center' }}>
+            <h2 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: '#0f172a' }}>Contractor</h2>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: 0 }}>Find the best contractors for your project</p>
+          </div>
+          <div style={{ width: '24px' }}></div> {/* Spacer for centering */}
         </div>
-        <div className="listing-search-field">
-          <MapPin size={16} />
-          <input placeholder="Filter by location..." value={locationFilter} onChange={e => setLocationFilter(e.target.value)} />
-        </div>
-        <div className="listing-rating-selector" onClick={() => setShowRatingDrop(!showRatingDrop)}>
-          <Star size={15} />
-          <span>{ratingFilter ? `${ratingFilter}+ Stars` : 'Min Rating'}</span>
-          <ChevronDown size={15} />
-          {showRatingDrop && (
-            <div className="listing-rating-menu">
-              {['', '3', '3.5', '4', '4.5'].map(r => (
-                <div key={r} className="listing-rating-opt" onClick={() => { setRatingFilter(r); setShowRatingDrop(false); }}>
-                  {r ? `${r}+ Stars` : 'All Ratings'}
-                </div>
-              ))}
+
+        <div className="labour-search-container">
+          <div className="labour-search-input">
+            <Search className="icon" size={20} />
+            <input 
+              type="text" 
+              placeholder="Enter contractor name" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          
+          <div className="labour-search-input">
+            <MapPin className="icon" size={20} />
+            <input 
+              type="text" 
+              placeholder="Enter location" 
+              value={locationQuery}
+              onChange={(e) => setLocationQuery(e.target.value)}
+            />
+          </div>
+
+          <div className="labour-search-input" style={{ justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
+              <Star className="icon" size={20} />
+              <select 
+                value={minRating} 
+                onChange={(e) => setMinRating(e.target.value)}
+                style={{ appearance: 'none', cursor: 'pointer' }}
+              >
+                <option value="0">Select rating</option>
+                <option value="4">4.0+ Stars</option>
+                <option value="4.5">4.5+ Stars</option>
+              </select>
             </div>
-          )}
+            <ChevronDown size={20} className="icon" />
+          </div>
         </div>
-      </div>
 
-      {/* Status banner */}
-      <div className={`listing-status-banner ${contractors.length > 0 ? 'blue' : 'grey'}`}>
-        {contractors.length > 0
-          ? <><CheckCircle2 size={14} /> {contractors.length} registered contractor{contractors.length !== 1 ? 's' : ''} on platform</>
-          : <><SlidersHorizontal size={14} /> No contractors registered yet — register as Contractor to appear here!</>}
-      </div>
+        {/* Contractor List */}
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>Loading contractors...</div>
+        ) : filteredContractors.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>No contractors found matching your criteria.</div>
+        ) : (
+          <div className="labour-list-cards">
+            {filteredContractors.map(prof => {
+              const avatarLetter = (prof.fullName || 'U')[0].toUpperCase();
+              const cats = prof.workCategory || [];
+              const desc = prof.shortDesc || `Building your dream with strength, precision and reliability. Specialists in ${cats.slice(0, 2).join(' and ').toLowerCase()}.`;
+              
+              return (
+                <div key={prof._id} className="labour-list-card">
+                  <div className="llc-left">
+                    {prof.avatarUrl ? (
+                      <img src={prof.avatarUrl} alt={prof.fullName} className="llc-avatar" />
+                    ) : (
+                      <div className="llc-avatar" style={{ background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.5rem', fontWeight: 'bold', color: 'white' }}>
+                        {avatarLetter}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="llc-middle">
+                    <div className="llc-name-row">
+                      {prof.fullName} <CheckCircle2 size={16} color="#10b981" fill="#10b981" style={{ color: 'white' }} />
+                    </div>
+                    
+                    <div className="llc-rating-row">
+                      <Star size={14} fill="#f59e0b" color="#f59e0b" />
+                      <span style={{ color: '#0f172a', fontWeight: '800' }}>{prof.rating || 4.7}</span>
+                      <span>({prof.reviews || Math.floor(Math.random() * 100 + 50)} Reviews)</span>
+                    </div>
 
-      {/* Cards Grid */}
-      {loading ? (
-        <div className="listing-loader">Loading contractors...</div>
-      ) : (
-        <div className="listing-cards-grid">
-          {filtered.map(prof => {
-            const initials = (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-            const avatarBg = '#3b82f6';
-            const cats = prof.workCategory || [];
-            return (
-              <div key={prof._id} className="listing-pro-card blue-card">
-                <div className="lpc-top">
-                  <div className="lpc-avatar" style={{ backgroundColor: avatarBg }}>{initials}</div>
-                  <div className="lpc-title-block">
-                    <div className="lpc-name">{prof.fullName} <CheckCircle2 size={13} className="lpc-verified" style={{ color: '#3b82f6' }} /></div>
-                    <div className="lpc-firm">{prof.contractorType || 'General Contractor'}</div>
-                    <div className="lpc-rating-row">
-                      <Star size={12} fill="#f59e0b" color="#f59e0b" />
-                      <span className="lpc-rating">{prof.rating || 4.5}</span>
-                      <span className="lpc-reviews">({prof.reviews || 50} reviews)</span>
+                    <div className="llc-meta" style={{ marginBottom: '0.5rem' }}>
+                      <div className="llc-meta-item">
+                        <MapPin size={14} /> {prof.city || prof.location || 'Mumbai, Maharashtra'}
+                      </div>
+                      <div className="llc-meta-item" style={{ gridColumn: '1 / -1' }}>
+                        <Briefcase size={14} /> <span style={{ fontWeight: '600' }}>{prof.experience || '10+ Years'}</span> Experience
+                      </div>
+                    </div>
+
+                    <p className="llc-desc">
+                      {desc}
+                    </p>
+
+                    <div className="llc-stats">
+                      <div className="llc-stat-item">
+                        <Building2 size={14} /> {prof.projects || Math.floor(Math.random() * 100 + 50)} Projects
+                      </div>
+                      <div className="llc-stat-item">
+                        <Users size={14} /> {prof.followers || Math.floor(Math.random() * 300 + 100)} Followers
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="lpc-meta">
-                  <span><MapPin size={12} /> {prof.city || 'India'}</span>
-                  <span><Briefcase size={12} /> {prof.experience || '5+ Years'}</span>
-                </div>
-                <p className="lpc-desc">{prof.shortDesc || `Expert in ${cats.slice(0, 2).join(' & ').toLowerCase()} work.`}</p>
-                {cats.length > 0 && (
-                  <div className="lpc-tags">
-                    {cats.slice(0, 3).map((c, i) => <span key={i} className="dl-tag blue">{c}</span>)}
-                  </div>
-                )}
-                <div className="lpc-stats">
-                  <span><Briefcase size={11} /> {prof.projects || '—'} Projects</span>
-                  <span><Users size={11} /> {prof.followers || '—'} Followers</span>
-                </div>
-                <button className="lpc-view-btn blue" onClick={() => navigate(`/contractor/${prof._id}`)}>View Profile</button>
-              </div>
-            );
-          })}
-          {filtered.length === 0 && <p className="listing-empty">No contractors match your filters.</p>}
-        </div>
-      )}
 
-      {selectedProf && <ProfileModal prof={selectedProf} onClose={() => setSelectedProf(null)} />}
+                  <div className="llc-right">
+                    <button className="llc-view-btn" onClick={() => navigate(`/contractor/${prof._id}`)}>
+                      View Profile
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </DashboardLayout>
   );
 };

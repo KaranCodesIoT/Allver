@@ -30,7 +30,8 @@ const MOCK_TEAM = [
   { id: 't2', name: 'BuildWell Contractors', role: 'Contractor', experience: '8 Years Experience', specialization: 'Specializes in Commercial Projects', img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80' },
   { id: 't3', name: 'Shree Builders', role: 'Contractor', experience: '10 Years Experience', specialization: 'Specializes in Villas & Bungalows', img: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=150&q=80' },
   { id: 't4', name: 'Nexus Constructions', role: 'Contractor', experience: '6 Years Experience', specialization: 'Specializes in Interiors & Renovation', img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80' },
-  { id: 't5', name: 'Reliable Buildcon', role: 'Contractor', experience: '9 Years Experience', specialization: 'Specializes in Structural Masonry', img: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80' }
+  { id: 't5', name: 'Reliable Buildcon', role: 'Contractor', experience: '9 Years Experience', specialization: 'Specializes in Structural Masonry', img: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80' },
+  { id: 'team-member', name: 'Akash Chauhan', role: 'Labour', experience: '5 Years Experience', specialization: 'Specializes in Masonry and Brickwork', img: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80' }
 ];
 
 const MOCK_REVIEWS = [
@@ -66,6 +67,8 @@ const ArchitectProfilePage = () => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followersCount, setFollowersCount] = useState(256);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
+  const [contractRequests, setContractRequests] = useState([]);
+  const [realWorkspaces, setRealWorkspaces] = useState([]);
   
   const [currentUser, setCurrentUser] = useState(null);
   const [showHireModal, setShowHireModal] = useState(false);
@@ -79,12 +82,54 @@ const ArchitectProfilePage = () => {
     description: ''
   });
 
+  const handleRequestAction = async (requestId, status) => {
+    try {
+      const response = await fetch(`http://localhost:5000/api/contract-requests/${requestId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status })
+      });
+      
+      const data = await response.json();
+      if (response.ok) {
+        if (currentUser) {
+          fetch(`http://localhost:5000/api/contract-requests/user/${currentUser._id}`)
+            .then(res => res.json())
+            .then(d => setContractRequests(d.requests || []))
+            .catch(err => console.error(err));
+          fetch(`http://localhost:5000/api/project-workspaces/user/${currentUser._id}`)
+            .then(res => res.json())
+            .then(d => setRealWorkspaces(d.workspaces || []))
+            .catch(err => console.error(err));
+        }
+        
+        if (status === 'Accepted' && data.workspace) {
+          alert(`Contract request accepted! Redirecting to workspace...`);
+          navigate('/', { state: { activeTab: 'workspaces', selectedWorkspace: data.workspace._id } });
+        } else {
+          alert(`Contract request ${status.toLowerCase()}!`);
+        }
+      } else {
+        alert(data.message || 'Failed to update request');
+      }
+    } catch (err) {
+      console.error('Error updating request status:', err);
+    }
+  };
+
   useEffect(() => {
     const userStr = localStorage.getItem('currentUser');
     let currUser = null;
     if (userStr) {
       currUser = JSON.parse(userStr);
       setCurrentUser(currUser);
+      // Fetch contract requests
+      fetch(`http://localhost:5000/api/contract-requests/user/${currUser._id}`)
+        .then(res => res.json())
+        .then(data => setContractRequests(data.requests || []))
+        .catch(err => console.error('Error fetching requests in profile:', err));
     }
 
     // Reset ownership flag on every navigation
@@ -124,6 +169,12 @@ const ArchitectProfilePage = () => {
         }
         setLoading(false);
       });
+
+    // Fetch real workspaces for the profile user
+    fetch(`http://localhost:5000/api/project-workspaces/user/${profileId}`)
+      .then(res => res.json())
+      .then(data => setRealWorkspaces(data.workspaces || []))
+      .catch(err => console.error('Error fetching profile workspaces:', err));
   }, [id]);
 
   const handleHireSubmit = async (e) => {
@@ -140,10 +191,10 @@ const ArchitectProfilePage = () => {
           client: currentUser._id,
           professional: profile._id,
           title: hireForm.title,
-          projectType: hireForm.projectType,
+          projectType: 'General',
           location: hireForm.location,
           budget: hireForm.budget,
-          startDate: hireForm.startDate,
+          startDate: new Date().toISOString().split('T')[0],
           description: hireForm.description
         })
       });
@@ -156,7 +207,7 @@ const ArchitectProfilePage = () => {
           setShowHireModal(false);
           setHireForm({
             title: '',
-            projectType: 'Residential',
+            projectType: 'General',
             location: '',
             budget: '',
             startDate: '',
@@ -381,7 +432,19 @@ const ArchitectProfilePage = () => {
         'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=300&q=80'
       ];
 
-  const projectsList = profile.portfolioImages && profile.portfolioImages.length > 0
+  const dbProjects = realWorkspaces.map(ws => ({
+    id: ws._id,
+    name: ws.title,
+    location: ws.client?.city || ws.client?.location || 'Mumbai',
+    status: ws.status === 'Active' ? 'In Progress' : ws.status,
+    year: new Date(ws.createdAt).getFullYear() || 2026,
+    img: ws.projectType === 'Interior' 
+      ? 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=600&q=80' 
+      : 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80',
+    isReal: true
+  }));
+
+  const baseProjectsList = profile.portfolioImages && profile.portfolioImages.length > 0
     ? profile.portfolioImages.map((img, index) => ({
         id: `p-${index}`,
         name: `Project ${index + 1}`,
@@ -392,9 +455,74 @@ const ArchitectProfilePage = () => {
       }))
     : MOCK_PROJECTS;
 
+  const projectsList = [...dbProjects, ...baseProjectsList];
+
   return (
     <DashboardLayout pageTitle={pageTitle} pageSubtitle={pageSubtitle} accentColor={accentColor}>
       
+      {/* Pending Hires / Contract Requests Alert Banner */}
+      {isOwnProfile && contractRequests.filter(r => {
+        const profId = (r.professional?._id || r.professional || '').toString();
+        const currId = (currentUser?._id || '').toString();
+        return profId === currId && r.status === 'Pending';
+      }).length > 0 && (
+        <div style={{
+          background: '#eff6ff',
+          border: '1px solid #bfdbfe',
+          borderRadius: '0.75rem',
+          padding: '1rem 1.25rem',
+          marginBottom: '1.5rem',
+          textAlign: 'left'
+        }}>
+          <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 'bold', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            🔔 You have pending work requests!
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
+            {contractRequests.filter(r => {
+              const profId = (r.professional?._id || r.professional || '').toString();
+              const currId = (currentUser?._id || '').toString();
+              return profId === currId && r.status === 'Pending';
+            }).map(req => (
+              <div key={req._id} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', background: 'white', padding: '1rem', borderRadius: '0.5rem', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <span style={{ fontSize: '0.72rem', background: '#dbeafe', color: '#1e40af', padding: '0.15rem 0.4rem', borderRadius: '0.25rem', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                      New Work Request
+                    </span>
+                    <div style={{ fontSize: '0.92rem', color: '#0f172a', fontWeight: 'bold', marginTop: '4px' }}>
+                      Project: {req.title}
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: '#475569', marginTop: '2px' }}>
+                      <strong>From:</strong> {req.client?.fullName || 'Someone'}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button
+                      onClick={() => handleRequestAction(req._id, 'Accepted')}
+                      style={{ background: '#3b82f6', color: 'white', border: 'none', padding: '0.45rem 1rem', borderRadius: '0.375rem', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      Accept Discussion
+                    </button>
+                    <button
+                      onClick={() => handleRequestAction(req._id, 'Rejected')}
+                      style={{ background: '#ef4444', color: 'white', border: 'none', padding: '0.45rem 1rem', borderRadius: '0.375rem', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+                
+                <div style={{ background: '#f8fafc', padding: '0.5rem 0.75rem', borderRadius: '0.375rem', fontSize: '0.78rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <div><strong>Location:</strong> {req.location}</div>
+                  <div><strong>Budget:</strong> {req.budget}</div>
+                  {req.description && <div style={{ marginTop: '2px', borderTop: '1px solid #e2e8f0', paddingTop: '4px' }}><strong>Description:</strong> {req.description}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Return Arrow Button ── */}
       {!isOwnProfile && (
         <button className="prof-page-back-nav" onClick={() => navigate(-1)}>
@@ -598,7 +726,13 @@ const ArchitectProfilePage = () => {
                       <div 
                         key={proj.id} 
                         className="tab-project-row clickable-row" 
-                        onClick={() => navigate(`/project/${proj.id}`)}
+                        onClick={() => {
+                          if (proj.isReal) {
+                            navigate('/', { state: { activeTab: 'workspaces', selectedWorkspace: proj.id } });
+                          } else {
+                            navigate(`/project/${proj.id}`);
+                          }
+                        }}
                         style={{ cursor: 'pointer' }}
                       >
                         <img src={proj.img} alt={proj.name} className="tpr-thumb" />
@@ -680,8 +814,17 @@ const ArchitectProfilePage = () => {
                           <p className="ttr-exp">{member.experience}</p>
                           <p className="ttr-spec">{member.specialization}</p>
                         </div>
-                        <button className="ttr-view-profile-btn" onClick={() => navigate('/contractors')}>
-                          <span>View Profile</span>
+                        <button 
+                          className="ttr-view-profile-btn" 
+                          onClick={() => {
+                            if (member.role === 'Labour' || member.id === 'team-member') {
+                              navigate('/labour/manage/team-member');
+                            } else {
+                              navigate(`/contractor/${member.id}`);
+                            }
+                          }}
+                        >
+                          <span>Project Dashboard</span>
                           <ExternalLink size={12} />
                         </button>
                       </div>
@@ -799,10 +942,10 @@ const ArchitectProfilePage = () => {
               <div className="dl-modal-title-block">
                 <h2 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <Briefcase size={24} style={{ color: accentColor }} />
-                  Hire / Give Contract
+                  Hire {profile.role || 'Contractor'}
                 </h2>
                 <p style={{ fontSize: '0.85rem', color: '#6b7280', marginTop: 4 }}>
-                  Send project details to {profile.fullName} to initiate a contract discussion
+                  Send work request details to {profile.fullName} to initiate a contract discussion
                 </p>
               </div>
             </div>
@@ -812,7 +955,7 @@ const ArchitectProfilePage = () => {
                 <div style={{ color: '#10b981', display: 'flex', justifyContent: 'center' }}>
                   <CheckCircle2 size={64} />
                 </div>
-                <h4 style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#0f172a' }}>Contract Request Sent!</h4>
+                <h4 style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#0f172a' }}>Work Request Sent!</h4>
                 <p style={{ color: '#64748b', fontSize: '0.95rem', maxWidth: '380px', margin: '0 auto', lineHeight: '1.5' }}>
                   Your request has been sent to {profile.fullName}. You will be notified once they review and accept the discussion.
                 </p>
@@ -820,11 +963,11 @@ const ArchitectProfilePage = () => {
             ) : (
               <form onSubmit={handleHireSubmit} className="dl-modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
                 <div className="form-row">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Project Title *</label>
+                   <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Project Name *</label>
                   <input 
                     type="text" 
                     required
-                    placeholder="e.g. 2BHK Electrical Work"
+                    placeholder="e.g. 2BHK Plumbing & Electrical Work"
                     value={hireForm.title}
                     onChange={(e) => setHireForm({...hireForm, title: e.target.value})}
                     style={{
@@ -838,31 +981,6 @@ const ArchitectProfilePage = () => {
                       boxSizing: 'border-box'
                     }}
                   />
-                </div>
-
-                <div className="form-row">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Project Type *</label>
-                  <select
-                    style={{
-                      padding: '0.65rem 0.85rem',
-                      border: '1.5px solid #e2e8f0',
-                      borderRadius: '0.5rem',
-                      fontSize: '0.9rem',
-                      background: '#fafbfd',
-                      outline: 'none',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                    value={hireForm.projectType}
-                    onChange={(e) => setHireForm({...hireForm, projectType: e.target.value})}
-                  >
-                    <option value="Residential">Residential</option>
-                    <option value="Commercial">Commercial</option>
-                    <option value="Renovation">Renovation</option>
-                    <option value="Interior">Interior</option>
-                    <option value="Electrical">Electrical</option>
-                    <option value="Plumbing">Plumbing</option>
-                  </select>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -887,11 +1005,11 @@ const ArchitectProfilePage = () => {
                     />
                   </div>
                   <div className="form-row">
-                    <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Budget Range *</label>
+                     <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Expected Budget *</label>
                     <input 
                       type="text" 
                       required
-                      placeholder="e.g. ₹2L–₹4L"
+                      placeholder="e.g. ₹2L - ₹4L"
                       value={hireForm.budget}
                       onChange={(e) => setHireForm({...hireForm, budget: e.target.value})}
                       style={{
@@ -909,31 +1027,11 @@ const ArchitectProfilePage = () => {
                 </div>
 
                 <div className="form-row">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Start Date *</label>
-                  <input 
-                    type="date" 
-                    required
-                    value={hireForm.startDate}
-                    onChange={(e) => setHireForm({...hireForm, startDate: e.target.value})}
-                    style={{
-                      padding: '0.65rem 0.85rem',
-                      border: '1.5px solid #e2e8f0',
-                      borderRadius: '0.5rem',
-                      fontSize: '0.9rem',
-                      background: '#fafbfd',
-                      outline: 'none',
-                      width: '100%',
-                      boxSizing: 'border-box'
-                    }}
-                  />
-                </div>
-
-                <div className="form-row">
-                  <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Description *</label>
+                   <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '4px' }}>Short Requirement *</label>
                   <textarea 
                     required
                     rows={4}
-                    placeholder="Provide details of the work, timeline, and requirements..."
+                    placeholder="Provide a brief summary of the work and requirements..."
                     style={{
                       padding: '0.65rem 0.85rem',
                       border: '1.5px solid #e2e8f0',
@@ -984,7 +1082,7 @@ const ArchitectProfilePage = () => {
                       boxShadow: `0 4px 14px 0 rgba(59, 130, 246, 0.3)`
                     }}
                   >
-                    Send Contract Request
+                    Send Request
                   </button>
                 </div>
               </form>

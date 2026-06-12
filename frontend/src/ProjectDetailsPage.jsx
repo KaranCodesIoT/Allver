@@ -83,7 +83,24 @@ const ProjectDetailsPage = () => {
     };
   };
 
-  const project = getProjectMeta(id);
+  const [projectState, setProjectState] = useState(() => {
+    const saved = localStorage.getItem(`allver_proj_state_${id}`);
+    if (saved) return JSON.parse(saved);
+    const meta = getProjectMeta(id);
+    return {
+      name: meta.name,
+      location: meta.location,
+      status: meta.status,
+      year: meta.year,
+      img: meta.img
+    };
+  });
+
+  useEffect(() => {
+    localStorage.setItem(`allver_proj_state_${id}`, JSON.stringify(projectState));
+  }, [projectState, id]);
+
+  const project = projectState;
   const architect = getArchitectInfo();
 
   // Detect current user and role
@@ -100,53 +117,134 @@ const ProjectDetailsPage = () => {
   const isContractor = currentUserRole === 'Contractor';
   const isClient = currentUserRole === 'Client';
 
-  // Project members state (claiming logic)
+  // Project members state (explicit assignment, no auto-claiming)
   const [projectMembers, setProjectMembers] = useState(() => {
     const saved = localStorage.getItem(`allver_proj_members_${id}`);
     if (saved) return JSON.parse(saved);
+
+    // Default mock memberships for portfolio projects
+    const isP2 = id === 'p2';
+    const isP5 = id === 'p5';
+
     return {
-      contractorId: null,
-      contractorName: '',
-      clientId: null,
-      clientName: '',
-      architectId: null,
-      architectName: ''
+      contractorId: 'mock-contractor-id',
+      contractorName: 'Karan Chaubey',
+      clientId: 'mock-client-id',
+      clientName: 'OM client',
+      architectId: (isP2 || isP5) ? null : 'mock-architect-id',
+      architectName: (isP2 || isP5) ? '' : 'Neha Sharma',
+      labourTeam: [] // array of user objects: { _id, fullName, skillType }
     };
   });
 
-  // Effect to handle automatic claiming on first visit of registered roles
-  useEffect(() => {
-    if (!currentUser) return;
-    
-    let updated = false;
-    const newMembers = { ...projectMembers };
-    
-    if (currentUser.role === 'Contractor' && !newMembers.contractorId) {
-      newMembers.contractorId = currentUser._id;
-      newMembers.contractorName = currentUser.fullName;
-      updated = true;
-    } else if (currentUser.role === 'Client' && !newMembers.clientId) {
-      newMembers.clientId = currentUser._id;
-      newMembers.clientName = currentUser.fullName;
-      updated = true;
-    } else if (currentUser.role === 'Architect' && !newMembers.architectId) {
-      newMembers.architectId = currentUser._id;
-      newMembers.architectName = currentUser.fullName;
-      updated = true;
-    }
-    
-    if (updated) {
-      localStorage.setItem(`allver_proj_members_${id}`, JSON.stringify(newMembers));
-      setProjectMembers(newMembers);
-    }
-  }, [id, currentUser, projectMembers]);
+  const [registeredArchitects, setRegisteredArchitects] = useState([]);
+  const [registeredLabours, setRegisteredLabours] = useState([]);
 
-  const isAssignedContractor = currentUser && currentUser.role === 'Contractor' && projectMembers.contractorId === currentUser._id;
-  const isAssignedClient = currentUser && currentUser.role === 'Client' && projectMembers.clientId === currentUser._id;
-  const isAssignedArchitect = currentUser && currentUser.role === 'Architect' && projectMembers.architectId === currentUser._id;
-  
-  const isProjectMember = isAssignedContractor || isAssignedClient || isAssignedArchitect;
-  const canPostUpdates = isAssignedContractor || isAssignedClient;
+  useEffect(() => {
+    fetch('http://localhost:5000/api/professionals/Architect')
+      .then(res => res.json())
+      .then(data => setRegisteredArchitects(data.professionals || []))
+      .catch(err => console.error('Error fetching architects:', err));
+
+    fetch('http://localhost:5000/api/professionals/Labour')
+      .then(res => res.json())
+      .then(data => setRegisteredLabours(data.professionals || []))
+      .catch(err => console.error('Error fetching labours:', err));
+  }, []);
+
+  const isAssignedContractor = currentUser && currentUser.role === 'Contractor' && (
+    currentUser._id === projectMembers.contractorId ||
+    currentUser.fullName.toLowerCase() === (projectMembers.contractorName || '').toLowerCase()
+  );
+
+  const isAssignedClient = currentUser && currentUser.role === 'Client' && (
+    currentUser._id === projectMembers.clientId ||
+    currentUser.fullName.toLowerCase() === (projectMembers.clientName || '').toLowerCase()
+  );
+
+  const isAssignedArchitect = currentUser && currentUser.role === 'Architect' && (
+    currentUser._id === projectMembers.architectId ||
+    currentUser.fullName.toLowerCase() === (projectMembers.architectName || '').toLowerCase()
+  );
+
+  const isAssignedLabour = currentUser && currentUser.role === 'Labour' && (
+    projectMembers.labourTeam?.some(l => 
+      l._id === currentUser._id || 
+      l.fullName.toLowerCase() === currentUser.fullName.toLowerCase()
+    )
+  );
+
+  const isProjectMember = isAssignedContractor || isAssignedClient || isAssignedArchitect || isAssignedLabour;
+  const canPostUpdates = isProjectMember;
+
+  // Handlers for Client to assign Architect / add Labourer
+  const handleAssignArchitect = (archId) => {
+    const arch = registeredArchitects.find(a => a._id === archId);
+    if (!arch) return;
+    const updated = {
+      ...projectMembers,
+      architectId: arch._id,
+      architectName: arch.fullName
+    };
+    setProjectMembers(updated);
+    localStorage.setItem(`allver_proj_members_${id}`, JSON.stringify(updated));
+
+    // Append system message in Chat
+    const sysMsg = {
+      id: Date.now(),
+      sender: 'client',
+      name: `${currentUser?.fullName || 'Client'} (Client)`,
+      text: `📢 Client assigned Architect: ${arch.fullName}`,
+      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      type: 'text'
+    };
+    setChatMessages(prev => [...prev, sysMsg]);
+  };
+
+  const handleAddLabour = (labourId) => {
+    const lab = registeredLabours.find(l => l._id === labourId);
+    if (!lab) return;
+    if (projectMembers.labourTeam?.some(l => l._id === labourId)) return;
+
+    const updated = {
+      ...projectMembers,
+      labourTeam: [...(projectMembers.labourTeam || []), { _id: lab._id, fullName: lab.fullName, skillType: lab.skillType || 'Labourer' }]
+    };
+    setProjectMembers(updated);
+    localStorage.setItem(`allver_proj_members_${id}`, JSON.stringify(updated));
+
+    // Append system message in Chat
+    const sysMsg = {
+      id: Date.now(),
+      sender: 'client',
+      name: `${currentUser?.fullName || 'Client'} (Client)`,
+      text: `📢 Client added Labour Team member: ${lab.fullName} (${lab.skillType || 'Labourer'})`,
+      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      type: 'text'
+    };
+    setChatMessages(prev => [...prev, sysMsg]);
+  };
+
+  const handleRemoveLabour = (labourId) => {
+    const lab = projectMembers.labourTeam?.find(l => l._id === labourId);
+    const updated = {
+      ...projectMembers,
+      labourTeam: (projectMembers.labourTeam || []).filter(l => l._id !== labourId)
+    };
+    setProjectMembers(updated);
+    localStorage.setItem(`allver_proj_members_${id}`, JSON.stringify(updated));
+
+    // Append system message in Chat
+    const sysMsg = {
+      id: Date.now(),
+      sender: 'client',
+      name: `${currentUser?.fullName || 'Client'} (Client)`,
+      text: `📢 Client removed Labour Team member: ${lab ? lab.fullName : 'Labourer'}`,
+      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      type: 'text'
+    };
+    setChatMessages(prev => [...prev, sysMsg]);
+  };
 
   // --- STATE PERSISTENCE KEYS ---
   const KEY_UPDATES = `allver_proj_upd_${id}`;
@@ -300,6 +398,24 @@ const ProjectDetailsPage = () => {
     localStorage.setItem(KEY_CHATS, JSON.stringify(chatMessages));
   }, [chatMessages, KEY_CHATS]);
 
+  const handleStatusChange = (newStatus) => {
+    const oldStatus = projectState.status;
+    setProjectState(prev => ({ ...prev, status: newStatus }));
+
+    const roleStr = currentUser?.role || 'User';
+    const senderKey = roleStr.toLowerCase() === 'client' ? 'client' : (roleStr.toLowerCase() === 'contractor' ? 'contractor' : 'architect');
+
+    const sysMsg = {
+      id: Date.now(),
+      sender: senderKey,
+      name: `${currentUser?.fullName || 'User'} (${roleStr})`,
+      text: `📢 Project status changed from "${oldStatus}" to "${newStatus}"`,
+      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      type: 'text'
+    };
+    setChatMessages(prev => [...prev, sysMsg]);
+  };
+
   // Scroll chat to bottom
   useEffect(() => {
     if (activeTab === 'chats') {
@@ -435,10 +551,10 @@ const ProjectDetailsPage = () => {
     setPaymentProcessing(false);
   };
 
-  // Architect: Open Payment Request Modal
+  // Contractor or Architect: Open Payment Request Modal
   const openPayReqModal = (milestone) => {
-    if (!isAssignedArchitect) {
-      alert("Only the assigned Architect can request payment.");
+    if (!isAssignedArchitect && !isAssignedContractor) {
+      alert("Only the assigned Contractor or Architect can request payment.");
       return;
     }
     setPayReqModal(milestone);
@@ -448,7 +564,7 @@ const ProjectDetailsPage = () => {
     setPayReqSending(false);
   };
 
-  // Architect: Handle file selection
+  // Contractor or Architect: Handle file selection
   const handlePayReqFiles = (e) => {
     const selected = Array.from(e.target.files).map(f => f.name);
     setPayReqFiles(prev => [...prev, ...selected]);
@@ -458,10 +574,10 @@ const ProjectDetailsPage = () => {
     setPayReqFiles(prev => prev.filter((_, i) => i !== idx));
   };
 
-  // Architect: Submit Payment Request → status becomes 'Payment Requested'
+  // Contractor or Architect: Submit Payment Request → status becomes 'Payment Requested'
   const handleSendPayReq = () => {
-    if (!isAssignedArchitect) {
-      alert("Only the assigned Architect can request payment.");
+    if (!isAssignedArchitect && !isAssignedContractor) {
+      alert("Only the assigned Contractor or Architect can request payment.");
       return;
     }
     setPayReqSending(true);
@@ -477,12 +593,16 @@ const ProjectDetailsPage = () => {
             : ms
         )
       }));
+
+      const roleStr = currentUser?.role || 'Professional';
+      const senderKey = roleStr.toLowerCase() === 'client' ? 'client' : (roleStr.toLowerCase() === 'contractor' ? 'contractor' : 'architect');
+
       setChatMessages(prev => [
         ...prev,
         {
           id: Date.now(),
-          sender: 'architect',
-          name: `${currentUser?.fullName || 'Architect'} (Architect)`,
+          sender: senderKey,
+          name: `${currentUser?.fullName || 'Professional'} (${roleStr})`,
           text: `📩 Payment Request Submitted for milestone "${payReqModal.name}" — ₹${payReqModal.amount.toLocaleString('en-IN')}. ${payReqNote || 'Milestone completed. Kindly review and approve payment.'}`,
           time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
           type: 'text'
@@ -733,9 +853,36 @@ const ProjectDetailsPage = () => {
         <div className="pdb-image" style={{ backgroundImage: `url(${project.img})` }}>
           <div className="pdb-overlay" />
           <div className="pdb-content">
-            <span className={`pdb-status ${project.status.toLowerCase().replace(' ', '-')}`}>
-              {project.status}
-            </span>
+            {isProjectMember ? (
+              <select
+                value={project.status}
+                onChange={(e) => handleStatusChange(e.target.value)}
+                className={`pdb-status ${project.status.toLowerCase().replace(' ', '-')}`}
+                style={{
+                  border: 'none',
+                  borderRadius: '1rem',
+                  padding: '0.25rem 0.75rem',
+                  fontSize: '0.75rem',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                  display: 'inline-block',
+                  color: 'white',
+                  textTransform: 'uppercase',
+                  appearance: 'none',
+                  textAlign: 'center'
+                }}
+              >
+                <option value="Discussion" style={{ color: '#000', textTransform: 'none' }}>Discussion</option>
+                <option value="Active" style={{ color: '#000', textTransform: 'none' }}>Active</option>
+                <option value="Completed" style={{ color: '#000', textTransform: 'none' }}>Completed</option>
+              </select>
+            ) : (
+              <span className={`pdb-status ${project.status.toLowerCase().replace(' ', '-')}`}>
+                {project.status}
+              </span>
+            )}
             <h1>{project.name}</h1>
             <p className="pdb-meta">
               <MapPin size={16} /> {project.location} <span className="sep">•</span> <Calendar size={16} /> Started: {project.year}
@@ -758,16 +905,30 @@ const ProjectDetailsPage = () => {
           </button>
           <button 
             className={`pd-tab-btn ${activeTab === 'payments' ? 'active' : ''}`}
-            onClick={() => setActiveTab('payments')}
+            onClick={() => {
+              if (!isProjectMember) {
+                alert("Only project members can access payments & milestones.");
+                return;
+              }
+              setActiveTab('payments');
+            }}
+            style={!isProjectMember ? { opacity: 0.6 } : {}}
           >
-            <DollarSign size={18} />
+            {isProjectMember ? <DollarSign size={18} /> : <span>🔒</span>}
             <span>Payments & Milestones</span>
           </button>
           <button 
             className={`pd-tab-btn ${activeTab === 'chats' ? 'active' : ''}`}
-            onClick={() => setActiveTab('chats')}
+            onClick={() => {
+              if (!isProjectMember) {
+                alert("Only project members can access messages / chats.");
+                return;
+              }
+              setActiveTab('chats');
+            }}
+            style={!isProjectMember ? { opacity: 0.6 } : {}}
           >
-            <MessageCircle size={18} />
+            {isProjectMember ? <MessageCircle size={18} /> : <span>🔒</span>}
             <span>Messages / Chats</span>
           </button>
         </div>
@@ -854,7 +1015,7 @@ const ProjectDetailsPage = () => {
                         className="update-search-input"
                       />
                       <div className="category-pills">
-                        {['All'].map(cat => (
+                        {['All', 'Structure', 'MEP', 'Finishing', 'Progress Photos', 'Material Usage', 'Quotation'].map(cat => (
                           <button
                             key={cat}
                             className={`cat-pill ${updateCategoryFilter === cat ? 'active' : ''}`}
@@ -903,6 +1064,9 @@ const ProjectDetailsPage = () => {
                             <option value="Structure">Structure</option>
                             <option value="MEP">MEP</option>
                             <option value="Finishing">Finishing</option>
+                            <option value="Progress Photos">Progress Photos</option>
+                            <option value="Material Usage">Material Usage</option>
+                            <option value="Quotation">Quotation</option>
                           </select>
                         </div>
                       </div>
@@ -1020,8 +1184,98 @@ const ProjectDetailsPage = () => {
                       </div>
                       <div className="member-list-item">
                         <span className="role">📐 Architect:</span>
-                        <span className="name">{projectMembers.architectName || 'Not Assigned'}</span>
+                        {projectMembers.architectName ? (
+                          <span className="name">{projectMembers.architectName}</span>
+                        ) : isAssignedClient ? (
+                          <div className="assign-select-wrapper" style={{ marginTop: '0.25rem' }}>
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                if (e.target.value) handleAssignArchitect(e.target.value);
+                              }}
+                              className="assign-select"
+                              style={{
+                                width: '100%',
+                                padding: '0.35rem',
+                                borderRadius: '0.375rem',
+                                border: '1px solid #cbd5e1',
+                                fontSize: '0.75rem',
+                                outline: 'none',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <option value="">+ Assign Architect</option>
+                              {registeredArchitects.map(a => (
+                                <option key={a._id} value={a._id}>{a.fullName}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <span className="name text-slate-400" style={{ color: '#94a3b8', fontStyle: 'italic' }}>Not Assigned</span>
+                        )}
                       </div>
+
+                      {/* Labour Team Section */}
+                      <div className="member-list-item-group" style={{ marginTop: '0.75rem', borderTop: '1px dashed #e2e8f0', paddingTop: '0.75rem' }}>
+                        <span className="role" style={{ display: 'block', fontWeight: 'bold', marginBottom: '0.35rem' }}>🧱 Labour Team:</span>
+                        {projectMembers.labourTeam && projectMembers.labourTeam.length > 0 ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                            {projectMembers.labourTeam.map(l => (
+                              <div key={l._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', background: '#f8fafc', padding: '0.25rem 0.5rem', borderRadius: '0.25rem' }}>
+                                <span style={{ color: '#334155' }}>🔨 {l.fullName} <span style={{ fontSize: '0.7rem', color: '#64748b' }}>({l.skillType})</span></span>
+                                {isAssignedClient && (
+                                  <button
+                                    onClick={() => handleRemoveLabour(l._id)}
+                                    style={{
+                                      background: 'none',
+                                      border: 'none',
+                                      color: '#ef4444',
+                                      fontSize: '1rem',
+                                      cursor: 'pointer',
+                                      padding: '0 2px',
+                                      lineHeight: 1
+                                    }}
+                                    title="Remove Labourer"
+                                  >
+                                    &times;
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic', marginBottom: '0.35rem' }}>No Labourers Assigned</div>
+                        )}
+
+                        {isAssignedClient && (
+                          <div className="assign-select-wrapper" style={{ marginTop: '0.35rem' }}>
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                if (e.target.value) handleAddLabour(e.target.value);
+                              }}
+                              className="assign-select"
+                              style={{
+                                width: '100%',
+                                padding: '0.35rem',
+                                borderRadius: '0.375rem',
+                                border: '1px solid #cbd5e1',
+                                fontSize: '0.75rem',
+                                outline: 'none',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <option value="">+ Add Labourer</option>
+                              {registeredLabours
+                                .filter(l => !projectMembers.labourTeam?.some(existing => existing._id === l._id))
+                                .map(l => (
+                                  <option key={l._id} value={l._id}>{l.fullName} ({l.skillType || 'Labour'})</option>
+                                ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+
                     </div>
                   </div>
 
@@ -1102,10 +1356,17 @@ const ProjectDetailsPage = () => {
              TAB 2: PAYMENTS PORTAL
              ========================================== */}
           {activeTab === 'payments' && (
-            <div className="pd-tab-pane animated-fade-in">
+            !isProjectMember ? (
+              <div className="pd-tab-pane animated-fade-in" style={{ padding: '3rem 2rem', textAlign: 'center', background: 'white', borderRadius: '1rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', margin: '1rem auto', maxWidth: '600px' }}>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#1e293b' }}>Access Restricted</h3>
+                <p style={{ color: '#64748b', marginTop: '0.5rem' }}>Only assigned project members can access payments & milestones.</p>
+              </div>
+            ) : (
+              <div className="pd-tab-pane animated-fade-in">
 
-              {/* ---- Architect Banner ---- */}
-              {isArchitect && (
+              {/* ---- Professional Payment Request Banner ---- */}
+              {(isArchitect || isContractor) && (
                 <div className="arch-pay-req-banner">
                   <div className="arch-pay-req-banner-left">
                     <div className="arch-pay-req-icon"><BellRing size={22} /></div>
@@ -1211,8 +1472,8 @@ const ProjectDetailsPage = () => {
                               </div>
                             )}
 
-                            {/* PAYMENT REQUESTED — Architect view */}
-                            {ms.status === 'Payment Requested' && isAssignedArchitect && (
+                            {/* PAYMENT REQUESTED — Architect/Contractor view */}
+                            {ms.status === 'Payment Requested' && (isAssignedArchitect || isAssignedContractor) && (
                               <span className="ms-waiting-badge">
                                 <Clock size={12} />
                                 Waiting for Approval
@@ -1232,23 +1493,23 @@ const ProjectDetailsPage = () => {
                             )}
 
                             {/* PAYMENT REQUESTED — Guest view */}
-                            {ms.status === 'Payment Requested' && !isAssignedArchitect && !isAssignedClient && (
+                            {ms.status === 'Payment Requested' && !isAssignedArchitect && !isAssignedContractor && !isAssignedClient && (
                               <span className="ms-waiting-badge">
                                 <Clock size={12} />
                                 Awaiting Approval
                               </span>
                             )}
 
-                            {/* PENDING — Architect view */}
-                            {ms.status === 'Pending' && isAssignedArchitect && (
+                            {/* PENDING — Contractor / Architect view */}
+                            {ms.status === 'Pending' && (isAssignedArchitect || isAssignedContractor) && (
                               <button className="btn-pay-req-action" onClick={() => openPayReqModal(ms)}>
                                 <BellRing size={13} />
                                 Request Payment
                               </button>
                             )}
 
-                            {/* PENDING — Non-Architect view */}
-                            {ms.status === 'Pending' && !isAssignedArchitect && (
+                            {/* PENDING — Non-Professional view */}
+                            {ms.status === 'Pending' && !isAssignedArchitect && !isAssignedContractor && (
                               <span className="ms-client-pending">—</span>
                             )}
                           </td>
@@ -1259,13 +1520,21 @@ const ProjectDetailsPage = () => {
                 </div>
               </div>
             </div>
-          )}
+          )
+        )}
 
           {/* ==========================================
              TAB 3: CHAT PANEL
              ========================================== */}
           {activeTab === 'chats' && (
-            <div className="pd-tab-pane animated-fade-in chat-layout-pane">
+            !isProjectMember ? (
+              <div className="pd-tab-pane animated-fade-in chat-layout-pane" style={{ padding: '3rem 2rem', textAlign: 'center', background: 'white', borderRadius: '1rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', margin: '1rem auto', maxWidth: '600px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔒</div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#1e293b' }}>Access Restricted</h3>
+                <p style={{ color: '#64748b', marginTop: '0.5rem' }}>Only assigned project members can access messages / chats.</p>
+              </div>
+            ) : (
+              <div className="pd-tab-pane animated-fade-in chat-layout-pane">
               
               {/* Left Panel - Chat Members */}
               <div className="chat-members-sidebar">
@@ -1360,9 +1629,9 @@ const ProjectDetailsPage = () => {
                   </div>
                 )}
               </div>
-
             </div>
-          )}
+          )
+        )}
 
         </div>
       </div>

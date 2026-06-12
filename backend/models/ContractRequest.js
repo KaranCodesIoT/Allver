@@ -6,12 +6,12 @@ const contractRequestSchema = new mongoose.Schema({
   title: { type: String, required: true },
   projectType: { 
     type: String, 
-    enum: ['Residential', 'Commercial', 'Renovation', 'Interior', 'Electrical', 'Plumbing'],
-    required: true 
+    enum: ['Residential', 'Commercial', 'Renovation', 'Interior', 'Electrical', 'Plumbing', 'General'],
+    default: 'General'
   },
   location: { type: String, required: true },
   budget: { type: String, required: true },
-  startDate: { type: Date, required: true },
+  startDate: { type: Date },
   description: { type: String, default: '' },
   status: { 
     type: String, 

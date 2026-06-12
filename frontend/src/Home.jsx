@@ -55,6 +55,7 @@ import architectImg from './assets/architect_home.png';
 import contractorImg from './assets/contractor_site.png';
 import labourImg from './assets/labour_working.png';
 import allverLogo from './assets/allver-logo.svg';
+import LabourManagementTab from './LabourManagementTab';
 
 const ROLE_ROUTES = { Architect: '/architects', Contractor: '/contractors', Labour: '/labour' };
 
@@ -76,6 +77,14 @@ const Home = () => {
   const [attName, setAttName] = useState('');
   const [attType, setAttType] = useState('file'); // 'file' or 'drawing'
   const [showAttModal, setShowAttModal] = useState(false);
+  const [registeredArchitects, setRegisteredArchitects] = useState([]);
+  const [registeredLabours, setRegisteredLabours] = useState([]);
+
+  // Timeline sub-tab states
+  const [showPostUpdateForm, setShowPostUpdateForm] = useState(false);
+  const [timelineForm, setTimelineForm] = useState({ title: '', category: 'General', description: '', img: '' });
+  const [activeCommentUpdateId, setActiveCommentUpdateId] = useState(null);
+  const [updateCommentTexts, setUpdateCommentTexts] = useState({});
 
   // Post Project Modal States
   const [showPostProjectModal, setShowPostProjectModal] = useState(false);
@@ -229,6 +238,10 @@ const Home = () => {
         navigate('/profile');
       } else {
         setActiveTab(location.state.activeTab);
+        if (location.state.activeTab === 'workspaces' && location.state.selectedWorkspace) {
+          setSelectedWorkspace(location.state.selectedWorkspace);
+          fetchWorkspaceDetail(location.state.selectedWorkspace);
+        }
       }
     }
   }, [location.state, navigate]);
@@ -477,14 +490,24 @@ const Home = () => {
   };
 
   const fetchWorkspaceDetail = async (workspaceId) => {
+    const userStr = localStorage.getItem('currentUser');
+    if (!userStr) return;
+    const userObj = JSON.parse(userStr);
     try {
-      const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceId}`);
+      const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceId}?userId=${userObj._id}`);
       if (res.ok) {
         const data = await res.json();
         setWorkspaceDetail(data.workspace);
+      } else {
+        const errData = await res.json();
+        alert(errData.message || 'Access denied to workspace');
+        setWorkspaceDetail(null);
+        setSelectedWorkspace(null);
       }
     } catch (err) {
       console.error('Error fetching workspace detail:', err);
+      setWorkspaceDetail(null);
+      setSelectedWorkspace(null);
     }
   };
 
@@ -546,6 +569,28 @@ const Home = () => {
     }
   };
 
+  const handleSendSystemMessage = async (text) => {
+    if (!workspaceDetail) return;
+    try {
+      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: currentUser._id,
+          text: `📢 ${text}`
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setWorkspaceDetail(data.workspace);
+      }
+    } catch (err) {
+      console.error('Error sending system message:', err);
+    }
+  };
+
   const handleSendQuotation = async (e) => {
     e.preventDefault();
     if (!workspaceDetail) return;
@@ -570,7 +615,8 @@ const Home = () => {
         body: JSON.stringify({
           items,
           totalCost,
-          status: 'Sent'
+          status: 'Sent',
+          userId: currentUser._id
         })
       });
       
@@ -596,7 +642,8 @@ const Home = () => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          status
+          status,
+          userId: currentUser._id
         })
       });
       
@@ -651,6 +698,91 @@ const Home = () => {
     }
   };
 
+  const handlePostTimelineUpdate = async (e) => {
+    e.preventDefault();
+    if (!timelineForm.title.trim() || !workspaceDetail) return;
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/updates`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title: timelineForm.title,
+          description: timelineForm.description,
+          category: timelineForm.category,
+          img: timelineForm.img,
+          senderId: currentUser._id
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setWorkspaceDetail(data.workspace);
+        setTimelineForm({ title: '', category: 'General', description: '', img: '' });
+        setShowPostUpdateForm(false);
+      } else {
+        alert(data.message || 'Failed to post progress update');
+      }
+    } catch (err) {
+      console.error('Error posting timeline update:', err);
+    }
+  };
+
+  const handleLikeUpdate = async (updateId) => {
+    if (!workspaceDetail) return;
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/updates/${updateId}/like`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: currentUser._id
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setWorkspaceDetail(data.workspace);
+      } else {
+        alert(data.message || 'Failed to toggle like');
+      }
+    } catch (err) {
+      console.error('Error toggling like:', err);
+    }
+  };
+
+  const handleCommentUpdate = async (updateId, text) => {
+    if (!text?.trim() || !workspaceDetail) return;
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/updates/${updateId}/comments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: currentUser._id,
+          senderName: currentUser.fullName,
+          text: text
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setWorkspaceDetail(data.workspace);
+        setUpdateCommentTexts({ ...updateCommentTexts, [updateId]: '' });
+      } else {
+        alert(data.message || 'Failed to add comment');
+      }
+    } catch (err) {
+      console.error('Error adding comment:', err);
+    }
+  };
+
   const renderQuotationSummary = () => {
     if (!workspaceDetail?.quotation) return null;
     return (
@@ -683,6 +815,18 @@ const Home = () => {
       // Initial fetch and set interval polling for new hire requests/workspaces
       fetchNotificationsAndWorkspaces();
       const interval = setInterval(fetchNotificationsAndWorkspaces, 7000);
+
+      // Fetch registered architects and labours
+      fetch('http://localhost:5000/api/professionals/Architect')
+        .then(res => res.json())
+        .then(data => setRegisteredArchitects(data.professionals || []))
+        .catch(err => console.error('Error fetching architects:', err));
+
+      fetch('http://localhost:5000/api/professionals/Labour')
+        .then(res => res.json())
+        .then(data => setRegisteredLabours(data.professionals || []))
+        .catch(err => console.error('Error fetching labours:', err));
+
       return () => clearInterval(interval);
     }
   }, []);
@@ -944,7 +1088,11 @@ const Home = () => {
           <div className="sidebar-footer">
             <div className="user-badge">
               <div className="avatar-circle">
-                {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'U'}
+                {currentUser.fullName && currentUser.fullName.charAt(0).toUpperCase() === 'Q' ? (
+                  <User size={16} />
+                ) : (
+                  currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'U'
+                )}
               </div>
               <div className="user-details">
                 <span className="name">{currentUser.fullName}</span>
@@ -973,7 +1121,7 @@ const Home = () => {
                 style={{ position: 'relative' }}
               >
                 <Bell size={20} />
-                {contractRequests.filter(r => r.status === 'Pending' && r.professional && r.professional._id === currentUser?._id).length > 0 && (
+                {contractRequests.filter(r => r.status === 'Pending' && r.professional && (r.professional._id || r.professional).toString() === (currentUser?._id || '').toString()).length > 0 && (
                   <span className="badge" style={{ position: 'absolute', top: 0, right: 0, width: '8px', height: '8px', background: '#ef4444', borderRadius: '50%' }}></span>
                 )}
               </button>
@@ -1005,24 +1153,36 @@ const Home = () => {
                     </button>
                   </div>
 
-                  {contractRequests.filter(r => (r.professional && r.professional._id === currentUser?._id && r.status === 'Pending') || (r.client && r.client._id === currentUser?._id)).length === 0 ? (
+                  {contractRequests.filter(r => {
+                    const profId = (r.professional?._id || r.professional || '').toString();
+                    const clId = (r.client?._id || r.client || '').toString();
+                    const currId = (currentUser?._id || '').toString();
+                    return (profId === currId && r.status === 'Pending') || clId === currId;
+                  }).length === 0 ? (
                     <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.85rem', padding: '1.5rem', margin: 0 }}>No new notifications</p>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       {contractRequests.map(req => {
-                        const isProfessional = req.professional && req.professional._id === currentUser?._id;
-                        const isClient = req.client && req.client._id === currentUser?._id;
+                        const profId = (req.professional?._id || req.professional || '').toString();
+                        const clId = (req.client?._id || req.client || '').toString();
+                        const currId = (currentUser?._id || '').toString();
+                        const isProfessional = profId && currId && profId === currId;
+                        const isClient = clId && currId && clId === currId;
                         
                         if (isProfessional && req.status === 'Pending') {
                           return (
                             <div key={req._id} style={{ padding: '1rem', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                              <div style={{ fontSize: '0.85rem', color: '#1e293b', lineHeight: '1.4' }}>
-                                🔔 <strong>{req.client.fullName}</strong> wants to hire you.
+                              <div style={{ fontSize: '0.82rem', fontWeight: 'bold', color: '#1e40af', background: '#eff6ff', padding: '0.15rem 0.4rem', borderRadius: '0.25rem', width: 'fit-content' }}>
+                                New Work Request
                               </div>
-                              <div style={{ background: '#f8fafc', padding: '0.5rem', borderRadius: '0.375rem', fontSize: '0.75rem', color: '#475569' }}>
+                              <div style={{ fontSize: '0.85rem', color: '#1e293b', lineHeight: '1.4' }}>
+                                <strong>From:</strong> {req.client?.fullName || 'Someone'}
+                              </div>
+                              <div style={{ background: '#f8fafc', padding: '0.5rem', borderRadius: '0.375rem', fontSize: '0.75rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                 <div style={{ fontWeight: '600' }}>Project: {req.title}</div>
                                 <div>Location: {req.location}</div>
                                 <div>Budget: {req.budget}</div>
+                                {req.description && <div style={{ marginTop: '2px', borderTop: '1px solid #e2e8f0', paddingTop: '2px' }}>Description: {req.description}</div>}
                               </div>
                               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
                                 <button 
@@ -1033,9 +1193,9 @@ const Home = () => {
                                 </button>
                                 <button 
                                   onClick={() => handleRequestAction(req._id, 'Rejected')}
-                                  style={{ padding: '0.35rem 0.75rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer' }}
+                                  style={{ flex: 1, padding: '0.35rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer' }}
                                 >
-                                  Reject
+                                  Decline
                                 </button>
                               </div>
                             </div>
@@ -1058,7 +1218,11 @@ const Home = () => {
               )}
 
               <div className="avatar" onClick={() => navigate('/profile')}>
-                {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'U'}
+                {currentUser.fullName && currentUser.fullName.charAt(0).toUpperCase() === 'Q' ? (
+                  <User size={16} />
+                ) : (
+                  currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'U'
+                )}
               </div>
             </div>
           </header>
@@ -2490,7 +2654,11 @@ const Home = () => {
                   
                   <div className="profile-info-row">
                     <div className="profile-avatar-large">
-                      {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'U'}
+                      {currentUser.fullName && currentUser.fullName.charAt(0).toUpperCase() === 'Q' ? (
+                        <User size={36} />
+                      ) : (
+                        currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'U'
+                      )}
                     </div>
                     <div className="profile-title-block">
                       <h2>{currentUser.fullName}</h2>
@@ -2598,6 +2766,48 @@ const Home = () => {
                     <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>Your project workspaces</p>
                   </div>
                   
+                  {contractRequests.filter(r => r.status === 'Pending' && r.professional && (r.professional._id || r.professional || '').toString() === (currentUser?._id || '').toString()).length > 0 && (
+                    <div style={{ padding: '0.75rem 1rem', background: '#eff6ff', borderBottom: '1px solid #bfdbfe', display: 'flex', flexDirection: 'column', gap: '0.5rem', textAlign: 'left' }}>
+                      <strong style={{ fontSize: '0.72rem', color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Pending Work Requests
+                      </strong>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        {contractRequests.filter(r => r.status === 'Pending' && r.professional && (r.professional._id || r.professional || '').toString() === (currentUser?._id || '').toString()).map(req => (
+                          <div key={req._id} style={{ background: 'white', border: '1px solid #bfdbfe', borderRadius: '0.375rem', padding: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                            <div style={{ fontSize: '0.72rem', fontWeight: 'bold', color: '#1e40af', background: '#eff6ff', padding: '0.1rem 0.3rem', borderRadius: '0.2rem', width: 'fit-content' }}>
+                              New Work Request
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: '#0f172a', fontWeight: '600', lineHeight: '1.2' }}>
+                              Project: {req.title}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: '#475569' }}>
+                              <strong>From:</strong> {req.client?.fullName || 'Someone'}
+                            </div>
+                            <div style={{ fontSize: '0.68rem', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '2px', background: '#f8fafc', padding: '4px', borderRadius: '4px' }}>
+                              <div>Loc: {req.location}</div>
+                              <div>Budget: {req.budget}</div>
+                              {req.description && <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '2px', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>Desc: {req.description}</div>}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.25rem' }}>
+                              <button 
+                                onClick={() => handleRequestAction(req._id, 'Accepted')}
+                                style={{ flex: 1, padding: '0.25rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '0.25rem', fontSize: '0.68rem', fontWeight: 'bold', cursor: 'pointer' }}
+                              >
+                                Accept Discussion
+                              </button>
+                              <button 
+                                onClick={() => handleRequestAction(req._id, 'Rejected')}
+                                style={{ flex: 0.5, padding: '0.25rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '0.25rem', fontSize: '0.68rem', fontWeight: 'bold', cursor: 'pointer' }}
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
                     {workspaces.length === 0 ? (
                       <div style={{ textAlign: 'center', padding: '2rem 1rem', color: '#64748b', fontSize: '0.8rem' }}>
@@ -2664,369 +2874,557 @@ const Home = () => {
 
                 {/* Right Side: Active Workspace Detail */}
                 <div className="workspace-detail-panel" style={{ flex: 1, background: 'white', borderRadius: '1rem', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                  {workspaceDetail ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                      
-                      {/* Workspace Header */}
-                      <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <h3 style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#0f172a', margin: 0 }}>Project: {workspaceDetail.title}</h3>
-                            <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', borderRadius: '1rem', background: '#e0f2fe', color: '#0369a1', fontWeight: '600' }}>
-                              {workspaceDetail.projectType}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
-                            Client: <strong>{workspaceDetail.client?.fullName}</strong> • Contractor: <strong>{workspaceDetail.professional?.fullName}</strong>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '0.8rem', color: '#475569' }}>Status:</span>
-                          <strong style={{
-                            fontSize: '0.85rem',
-                            color: workspaceDetail.status === 'Discussion' ? '#f59e0b' : '#10b981',
-                            background: workspaceDetail.status === 'Discussion' ? '#fef3c7' : '#dcfce7',
-                            padding: '0.25rem 0.75rem',
-                            borderRadius: '0.5rem',
-                            border: workspaceDetail.status === 'Discussion' ? '1px solid #fde68a' : '1px solid #bbf7d0'
-                          }}>
-                            {workspaceDetail.status}
-                          </strong>
-                        </div>
-                      </div>
+                  {workspaceDetail ? (() => {
+                    const isWorkspaceClient = currentUser && (workspaceDetail.client?._id === currentUser._id || workspaceDetail.client === currentUser._id);
+                    const isWorkspaceContractor = currentUser && (
+                      workspaceDetail.contractor?._id === currentUser._id || 
+                      workspaceDetail.contractor === currentUser._id || 
+                      workspaceDetail.professional?._id === currentUser._id || 
+                      workspaceDetail.professional === currentUser._id
+                    );
+                    const isWorkspaceArchitect = currentUser && (
+                      workspaceDetail.architect?._id === currentUser._id || 
+                      workspaceDetail.architect === currentUser._id
+                    );
+                    const isWorkspaceLabour = currentUser && workspaceDetail.labourTeam?.some(l => 
+                      (l._id === currentUser._id || l === currentUser._id)
+                    );
+                    const isWorkspaceMember = isWorkspaceClient || isWorkspaceContractor || isWorkspaceArchitect || isWorkspaceLabour;
 
-                      {/* Sub-tabs Selection */}
-                      <div style={{ display: 'flex', borderBottom: '1px solid #f1f5f9', padding: '0 1.25rem', background: '#fafbfd' }}>
-                        {[
-                          { id: 'chat', label: 'Workspace Chat', icon: <MessageSquare size={16} /> },
-                          { id: 'quotation', label: 'Quotation Manager', icon: <Briefcase size={16} /> },
-                          { id: 'files', label: 'Files & Drawings', icon: <Building2 size={16} /> }
-                        ].map(t => (
-                          <button
-                            key={t.id}
-                            onClick={() => setWorkspaceTab(t.id)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              padding: '1rem 1.25rem',
-                              border: 'none',
-                              borderBottom: workspaceTab === t.id ? '2px solid #3b82f6' : '2px solid transparent',
-                              background: 'transparent',
-                              color: workspaceTab === t.id ? '#3b82f6' : '#64748b',
-                              fontSize: '0.88rem',
-                              fontWeight: '600',
-                              cursor: 'pointer',
-                              transition: 'all 0.15s ease'
-                            }}
-                          >
-                            {t.icon}
-                            {t.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Content Panel based on sub-tab */}
-                      <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                         
-                        {/* 1. CHAT SUB-TAB */}
-                        {workspaceTab === 'chat' && (
-                          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.85rem', paddingRight: '0.5rem', marginBottom: '1rem' }}>
-                              {workspaceDetail.messages?.length === 0 ? (
-                                <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem', marginTop: '2rem' }}>No messages yet. Start the discussion!</p>
-                              ) : (
-                                workspaceDetail.messages.map((msg, idx) => {
-                                  const isSystem = msg.text.startsWith('📢') || msg.text.startsWith('📁');
-                                  const isMe = msg.sender?._id === currentUser?._id || msg.sender === currentUser?._id;
-                                  
-                                  if (isSystem) {
+                        {/* Workspace Header */}
+                        <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <h3 style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#0f172a', margin: 0 }}>
+                                {workspaceDetail.status === 'Discussion' ? 'Contract Discussion' : 'Project Workspace'}: {workspaceDetail.title}
+                              </h3>
+                              <span style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem', borderRadius: '1rem', background: '#e0f2fe', color: '#0369a1', fontWeight: '600' }}>
+                                {workspaceDetail.projectType}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <div>
+                                Client: <strong>{workspaceDetail.client?.fullName}</strong> • 
+                                Contractor: <strong>{workspaceDetail.contractor?.fullName || workspaceDetail.professional?.fullName || 'Not Assigned'}</strong> • 
+                                Architect: <strong>{workspaceDetail.architect?.fullName || 'Not Assigned'}</strong>
+                                {(isWorkspaceClient || isWorkspaceContractor) && !workspaceDetail.architect && (
+                                  <select
+                                    value=""
+                                    onChange={async (e) => {
+                                      if (!e.target.value) return;
+                                      const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/assign-architect`, {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ architectId: e.target.value, userId: currentUser._id })
+                                      });
+                                      if (res.ok) {
+                                        const data = await res.json();
+                                        setWorkspaceDetail(data.workspace);
+                                        fetchNotificationsAndWorkspaces();
+                                      }
+                                    }}
+                                    style={{ marginLeft: '10px', padding: '0.1rem 0.3rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.7rem', cursor: 'pointer' }}
+                                  >
+                                    <option value="">+ Assign Architect</option>
+                                    {registeredArchitects.map(a => (
+                                      <option key={a._id} value={a._id}>{a.fullName}</option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                                <span>Labour Team:</span>
+                                {workspaceDetail.labourTeam && workspaceDetail.labourTeam.length > 0 ? (
+                                  workspaceDetail.labourTeam.map(l => (
+                                    <span key={l._id} style={{ background: '#e2e8f0', padding: '0.1rem 0.4rem', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem' }}>
+                                      🔨 {l.fullName} ({l.skillType || 'Labourer'})
+                                      {(isWorkspaceClient || isWorkspaceContractor) && (
+                                        <button
+                                          onClick={async () => {
+                                            const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/remove-labour`, {
+                                              method: 'PUT',
+                                              headers: { 'Content-Type': 'application/json' },
+                                              body: JSON.stringify({ labourId: l._id, userId: currentUser._id })
+                                            });
+                                            if (res.ok) {
+                                              const data = await res.json();
+                                              setWorkspaceDetail(data.workspace);
+                                              fetchNotificationsAndWorkspaces();
+                                            }
+                                          }}
+                                          style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, fontWeight: 'bold' }}
+                                        >
+                                          &times;
+                                        </button>
+                                      )}
+                                    </span>
+                                  ))
+                                ) : (
+                          <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>No Labours assigned</span>
+                                )}
+                                {(isWorkspaceClient || isWorkspaceContractor) && (
+                                  <select
+                                    value=""
+                                    onChange={async (e) => {
+                                      if (!e.target.value) return;
+                                      const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/add-labour`, {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ labourId: e.target.value, userId: currentUser._id })
+                                      });
+                                      if (res.ok) {
+                                        const data = await res.json();
+                                        setWorkspaceDetail(data.workspace);
+                                        fetchNotificationsAndWorkspaces();
+                                      }
+                                    }}
+                                    style={{ padding: '0.1rem 0.3rem', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '0.7rem', cursor: 'pointer' }}
+                                  >
+                                    <option value="">+ Add Labourer</option>
+                                    {registeredLabours
+                                      .filter(l => !workspaceDetail.labourTeam?.some(existing => existing._id === l._id))
+                                      .map(l => (
+                                        <option key={l._id} value={l._id}>{l.fullName} ({l.skillType || 'Labour'})</option>
+                                      ))}
+                                  </select>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '0.8rem', color: '#475569' }}>Status:</span>
+                            {(isWorkspaceClient || isWorkspaceContractor || isWorkspaceArchitect) ? (
+                              <select
+                                value={workspaceDetail.status}
+                                onChange={async (e) => {
+                                  const res = await fetch(`http://localhost:5000/api/project-workspaces/${workspaceDetail._id}/project-status`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ status: e.target.value, senderId: currentUser._id })
+                                  });
+                                  if (res.ok) {
+                                    const data = await res.json();
+                                    setWorkspaceDetail(data.workspace);
+                                    fetchNotificationsAndWorkspaces();
+                                  }
+                                }}
+                                style={{
+                                  fontSize: '0.82rem',
+                                  color: workspaceDetail.status === 'Discussion' ? '#f59e0b' : '#10b981',
+                                  background: workspaceDetail.status === 'Discussion' ? '#fef3c7' : '#dcfce7',
+                                  padding: '0.25rem 0.5rem',
+                                  borderRadius: '0.5rem',
+                                  border: workspaceDetail.status === 'Discussion' ? '1px solid #fde68a' : '1px solid #bbf7d0',
+                                  fontWeight: 'bold',
+                                  cursor: 'pointer',
+                                  outline: 'none'
+                                }}
+                              >
+                                <option value="Discussion">Discussion</option>
+                                <option value="Active">Active</option>
+                                <option value="Completed">Completed</option>
+                              </select>
+                            ) : (
+                              <strong style={{
+                                fontSize: '0.85rem',
+                                color: workspaceDetail.status === 'Discussion' ? '#f59e0b' : '#10b981',
+                                background: workspaceDetail.status === 'Discussion' ? '#fef3c7' : '#dcfce7',
+                                padding: '0.25rem 0.75rem',
+                                borderRadius: '0.5rem',
+                                border: workspaceDetail.status === 'Discussion' ? '1px solid #fde68a' : '1px solid #bbf7d0'
+                              }}>
+                                {workspaceDetail.status}
+                              </strong>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Sub-tabs Selection */}
+                        <div style={{ display: 'flex', borderBottom: '1px solid #f1f5f9', padding: '0 1.25rem', background: '#fafbfd' }}>
+                          {[
+                            { id: 'chat', label: 'Workspace Chat', icon: <MessageSquare size={16} /> },
+                            { id: 'quotation', label: 'Quotation Manager', icon: <Briefcase size={16} /> },
+                            { id: 'files', label: 'Files & Drawings', icon: <Building2 size={16} /> },
+                            { id: 'timeline', label: 'Project Timeline', icon: <Sparkles size={16} /> },
+                            { id: 'labour', label: 'Labour Management', icon: <Users size={16} /> }
+                          ].filter(t => {
+                            if (t.id === 'timeline' && workspaceDetail.status === 'Discussion') return false;
+                            if (t.id === 'quotation' && currentUser?.role === 'Labour') return false;
+                            if (t.id === 'labour' && workspaceDetail.status === 'Discussion') return false;
+                            if (t.id === 'labour' && currentUser?.role === 'Architect') return false;
+                            return true;
+                          }).map(t => (
+                            <button
+                              key={t.id}
+                              onClick={() => setWorkspaceTab(t.id)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '1rem 1.25rem',
+                                border: 'none',
+                                borderBottom: workspaceTab === t.id ? '2px solid #3b82f6' : '2px solid transparent',
+                                background: 'transparent',
+                                color: workspaceTab === t.id ? '#3b82f6' : '#64748b',
+                                fontSize: '0.88rem',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease'
+                              }}
+                            >
+                              {t.icon}
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Content Panel based on sub-tab */}
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                          
+                          {/* 1. CHAT SUB-TAB */}
+                          {workspaceTab === 'chat' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.85rem', paddingRight: '0.5rem', marginBottom: '1rem' }}>
+                                {workspaceDetail.messages?.length === 0 ? (
+                                  <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem', marginTop: '2rem' }}>No messages yet. Start the discussion!</p>
+                                ) : (
+                                  workspaceDetail.messages.map((msg, idx) => {
+                                    const isSystem = msg.text.startsWith('📢') || msg.text.startsWith('📁');
+                                    const isMe = msg.sender?._id === currentUser?._id || msg.sender === currentUser?._id;
+                                    
+                                    if (isSystem) {
+                                      return (
+                                        <div key={idx} style={{ display: 'flex', justifyContent: 'center', margin: '0.5rem 0' }}>
+                                          <div style={{ background: '#f1f5f9', color: '#475569', padding: '0.4rem 1rem', borderRadius: '1.5rem', fontSize: '0.78rem', fontWeight: '600', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
+                                            {msg.text}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    
                                     return (
-                                      <div key={idx} style={{ display: 'flex', justifyContent: 'center', margin: '0.5rem 0' }}>
-                                        <div style={{ background: '#f1f5f9', color: '#475569', padding: '0.4rem 1rem', borderRadius: '1.5rem', fontSize: '0.78rem', fontWeight: '600', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.02)' }}>
-                                          {msg.text}
+                                      <div key={idx} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
+                                        <div style={{
+                                          maxWidth: '70%',
+                                          padding: '0.75rem 1rem',
+                                          borderRadius: isMe ? '1rem 1rem 0 1rem' : '1rem 1rem 1rem 0',
+                                          background: isMe ? '#3b82f6' : '#f8fafc',
+                                          color: isMe ? 'white' : '#1e293b',
+                                          border: isMe ? 'none' : '1px solid #e2e8f0',
+                                          boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                                        }}>
+                                          <div style={{ fontSize: '0.72rem', color: isMe ? '#dbeafe' : '#64748b', fontWeight: 'bold', marginBottom: '2px' }}>
+                                            {isMe ? 'You' : msg.sender?.fullName || 'User'}
+                                          </div>
+                                          <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: '1.45', wordBreak: 'break-word', fontWeight: '500' }}>
+                                            {msg.text}
+                                          </p>
+                                          
+                                          {msg.attachment && (
+                                            <div style={{
+                                              marginTop: '0.5rem',
+                                              background: isMe ? 'rgba(255,255,255,0.15)' : '#f1f5f9',
+                                              padding: '0.5rem',
+                                              borderRadius: '0.5rem',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '8px',
+                                              fontSize: '0.78rem',
+                                              border: isMe ? 'none' : '1px solid #cbd5e1'
+                                            }}>
+                                              <span>{msg.attachment.type === 'drawing' ? '📐' : '📄'}</span>
+                                              <a 
+                                                href="#" 
+                                                onClick={(e) => { e.preventDefault(); alert(`Downloading file: ${msg.attachment.name}`); }}
+                                                style={{ color: isMe ? 'white' : '#1e40af', fontWeight: 'bold', textDecoration: 'underline' }}
+                                              >
+                                                {msg.attachment.name}
+                                              </a>
+                                            </div>
+                                          )}
+                                          
+                                          <span style={{ display: 'block', textAlign: 'right', fontSize: '0.65rem', color: isMe ? '#bfdbfe' : '#94a3b8', marginTop: '4px' }}>
+                                            {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                          </span>
                                         </div>
                                       </div>
                                     );
-                                  }
-                                  
-                                  return (
-                                    <div key={idx} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start' }}>
-                                      <div style={{
-                                        maxWidth: '70%',
-                                        padding: '0.75rem 1rem',
-                                        borderRadius: isMe ? '1rem 1rem 0 1rem' : '1rem 1rem 1rem 0',
-                                        background: isMe ? '#3b82f6' : '#f8fafc',
-                                        color: isMe ? 'white' : '#1e293b',
-                                        border: isMe ? 'none' : '1px solid #e2e8f0',
-                                        boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
-                                      }}>
-                                        <div style={{ fontSize: '0.72rem', color: isMe ? '#dbeafe' : '#64748b', fontWeight: 'bold', marginBottom: '2px' }}>
-                                          {isMe ? 'You' : msg.sender?.fullName || 'User'}
-                                        </div>
-                                        <p style={{ margin: 0, fontSize: '0.88rem', lineHeight: '1.45', wordBreak: 'break-word', fontWeight: '500' }}>
-                                          {msg.text}
-                                        </p>
-                                        
-                                        {msg.attachment && (
-                                          <div style={{
-                                            marginTop: '0.5rem',
-                                            background: isMe ? 'rgba(255,255,255,0.15)' : '#f1f5f9',
-                                            padding: '0.5rem',
-                                            borderRadius: '0.5rem',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
-                                            fontSize: '0.78rem',
-                                            border: isMe ? 'none' : '1px solid #cbd5e1'
-                                          }}>
-                                            <span>{msg.attachment.type === 'drawing' ? '📐' : '📄'}</span>
-                                            <a 
-                                              href="#" 
-                                              onClick={(e) => { e.preventDefault(); alert(`Downloading file: ${msg.attachment.name}`); }}
-                                              style={{ color: isMe ? 'white' : '#1e40af', fontWeight: 'bold', textDecoration: 'underline' }}
-                                            >
-                                              {msg.attachment.name}
-                                            </a>
-                                          </div>
-                                        )}
-                                        
-                                        <span style={{ display: 'block', textAlign: 'right', fontSize: '0.65rem', color: isMe ? '#bfdbfe' : '#94a3b8', marginTop: '4px' }}>
-                                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  );
-                                })
+                                  })
+                                )}
+                              </div>
+
+                              {/* Input Form with Attachment trigger */}
+                              {isWorkspaceMember ? (
+                                <form onSubmit={handleSendWsMessage} style={{ display: 'flex', gap: '0.75rem', padding: '0.75rem 0 0', borderTop: '1px solid #f1f5f9' }}>
+                                  {(isWorkspaceClient || isWorkspaceContractor) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setAttType('file'); setAttName(''); setShowAttModal(true); }}
+                                      style={{
+                                        padding: '0.5rem 0.85rem',
+                                        background: '#f1f5f9',
+                                        color: '#475569',
+                                        border: '1px solid #cbd5e1',
+                                        borderRadius: '0.5rem',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold',
+                                        fontSize: '0.8rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                      }}
+                                    >
+                                      📎 File
+                                    </button>
+                                  )}
+                                  {isWorkspaceArchitect && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setAttType('drawing'); setAttName(''); setShowAttModal(true); }}
+                                      style={{
+                                        padding: '0.5rem 0.85rem',
+                                        background: '#f1f5f9',
+                                        color: '#475569',
+                                        border: '1px solid #cbd5e1',
+                                        borderRadius: '0.5rem',
+                                        cursor: 'pointer',
+                                        fontWeight: 'bold',
+                                        fontSize: '0.8rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                      }}
+                                    >
+                                      📐 Drawing
+                                    </button>
+                                  )}
+                                  <input
+                                    type="text"
+                                    placeholder="Type your message..."
+                                    value={wsMessageText}
+                                    onChange={e => setWsMessageText(e.target.value)}
+                                    style={{
+                                      flex: 1,
+                                      padding: '0.65rem 0.85rem',
+                                      border: '1px solid #cbd5e1',
+                                      borderRadius: '0.5rem',
+                                      fontSize: '0.9rem',
+                                      outline: 'none'
+                                    }}
+                                  />
+                                  <button
+                                    type="submit"
+                                    style={{
+                                      background: '#3b82f6',
+                                      color: 'white',
+                                      border: 'none',
+                                      borderRadius: '0.5rem',
+                                      padding: '0.5rem 1rem',
+                                      fontWeight: 'bold',
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    Send
+                                  </button>
+                                </form>
+                              ) : (
+                                <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem', background: '#f8fafc', borderTop: '1px solid #f1f5f9', borderRadius: '0.5rem', color: '#64748b', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                  🔒 Chat is read-only for guests
+                                </div>
                               )}
                             </div>
+                          )}
 
-                            {/* Input Form with Attachment trigger */}
-                            <form onSubmit={handleSendWsMessage} style={{ display: 'flex', gap: '0.75rem', padding: '0.75rem 0 0', borderTop: '1px solid #f1f5f9' }}>
-                              <button
-                                type="button"
-                                onClick={() => { setAttType('file'); setAttName(''); setShowAttModal(true); }}
-                                style={{
-                                  padding: '0.5rem 0.85rem',
-                                  background: '#f1f5f9',
-                                  color: '#475569',
-                                  border: '1px solid #cbd5e1',
-                                  borderRadius: '0.5rem',
-                                  cursor: 'pointer',
-                                  fontWeight: 'bold',
-                                  fontSize: '0.8rem',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                              >
-                                📎 File
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => { setAttType('drawing'); setAttName(''); setShowAttModal(true); }}
-                                style={{
-                                  padding: '0.5rem 0.85rem',
-                                  background: '#f1f5f9',
-                                  color: '#475569',
-                                  border: '1px solid #cbd5e1',
-                                  borderRadius: '0.5rem',
-                                  cursor: 'pointer',
-                                  fontWeight: 'bold',
-                                  fontSize: '0.8rem',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                              >
-                                📐 Drawing
-                              </button>
-                              <input
-                                type="text"
-                                placeholder="Type your message..."
-                                value={wsMessageText}
-                                onChange={e => setWsMessageText(e.target.value)}
-                                style={{
-                                  flex: 1,
-                                  padding: '0.65rem 0.85rem',
-                                  border: '1px solid #cbd5e1',
-                                  borderRadius: '0.5rem',
-                                  fontSize: '0.9rem',
-                                  outline: 'none'
-                                }}
-                              />
-                              <button
-                                type="submit"
-                                style={{
-                                  background: '#3b82f6',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '0.5rem',
-                                  padding: '0.5rem 1rem',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                Send
-                              </button>
-                            </form>
-                          </div>
-                        )}
-
-                        {/* 2. QUOTATION SUB-TAB */}
-                        {workspaceTab === 'quotation' && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '500px', width: '100%', textAlign: 'left' }}>
-                            <h4 style={{ fontSize: '1.05rem', fontWeight: 'bold', color: '#0f172a', margin: 0 }}>Project Quotation</h4>
-                            
-                            {/* Contractor view */}
-                            {currentUser?.role !== 'Client' ? (
-                              <>
-                                {(workspaceDetail.quotation?.status === 'Draft' || workspaceDetail.quotation?.status === 'Rejected') && (
-                                  <form onSubmit={handleSendQuotation} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                    <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0 }}>
-                                      {workspaceDetail.quotation?.status === 'Rejected' 
-                                        ? '❌ The client rejected your previous quotation. Please submit a revised quote below:' 
-                                        : 'Prepare and send an itemized quotation to the client. Total cost will be automatically calculated.'}
-                                    </p>
-                                    
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                      <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#475569' }}>Quotation Line Items</label>
-                                      {quoteItems.map((item, idx) => (
-                                        <div key={idx} style={{ display: 'flex', gap: '0.5rem' }}>
-                                          <input 
-                                            type="text" 
-                                            placeholder="e.g. Electrical wiring & setup"
-                                            value={item.name}
-                                            onChange={e => {
-                                              const newItems = [...quoteItems];
-                                              newItems[idx].name = e.target.value;
-                                              setQuoteItems(newItems);
-                                            }}
-                                            required
-                                            style={{ flex: 1, padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.85rem' }}
-                                          />
-                                          <input 
-                                            type="number" 
-                                            placeholder="Cost (₹)"
-                                            value={item.cost}
-                                            onChange={e => {
-                                              const newItems = [...quoteItems];
-                                              newItems[idx].cost = e.target.value;
-                                              setQuoteItems(newItems);
-                                            }}
-                                            required
-                                            style={{ width: '120px', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.85rem' }}
-                                          />
-                                          {quoteItems.length > 1 && (
-                                            <button 
-                                              type="button" 
-                                              onClick={() => setQuoteItems(quoteItems.filter((_, i) => i !== idx))}
-                                              style={{ padding: '0.5rem', background: 'none', border: 'none', color: '#ef4444', fontSize: '1.1rem', cursor: 'pointer' }}
-                                            >
-                                              &times;
-                                            </button>
-                                          )}
-                                        </div>
-                                      ))}
+                          {/* 2. QUOTATION SUB-TAB */}
+                          {workspaceTab === 'quotation' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxWidth: '500px', width: '100%', textAlign: 'left' }}>
+                              <h4 style={{ fontSize: '1.05rem', fontWeight: 'bold', color: '#0f172a', margin: 0 }}>Project Quotation</h4>
+                              
+                              {/* Contractor/Professional view */}
+                              {isWorkspaceContractor ? (
+                                <>
+                                  {(workspaceDetail.quotation?.status === 'Draft' || workspaceDetail.quotation?.status === 'Rejected' || workspaceDetail.quotation?.status === 'Changes Requested') && (
+                                    <form onSubmit={handleSendQuotation} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                      <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0 }}>
+                                        {workspaceDetail.quotation?.status === 'Rejected' 
+                                          ? '❌ The client rejected your previous quotation. Please submit a revised quote below:' 
+                                          : workspaceDetail.quotation?.status === 'Changes Requested'
+                                            ? '📝 The client requested changes to your quotation. Please submit a revised quote below:'
+                                            : 'Prepare and send an itemized quotation to the client. Total cost will be automatically calculated.'}
+                                      </p>
+                                      
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#475569' }}>Quotation Line Items</label>
+                                        {quoteItems.map((item, idx) => (
+                                          <div key={idx} style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <input 
+                                              type="text" 
+                                              placeholder="e.g. Electrical wiring & setup"
+                                              value={item.name}
+                                              onChange={e => {
+                                                const newItems = [...quoteItems];
+                                                newItems[idx].name = e.target.value;
+                                                setQuoteItems(newItems);
+                                              }}
+                                              required
+                                              style={{ flex: 1, padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.85rem' }}
+                                            />
+                                            <input 
+                                              type="number" 
+                                              placeholder="Cost (₹)"
+                                              value={item.cost}
+                                              onChange={e => {
+                                                const newItems = [...quoteItems];
+                                                newItems[idx].cost = e.target.value;
+                                                setQuoteItems(newItems);
+                                              }}
+                                              required
+                                              style={{ width: '120px', padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.85rem' }}
+                                            />
+                                            {quoteItems.length > 1 && (
+                                              <button 
+                                                type="button" 
+                                                onClick={() => setQuoteItems(quoteItems.filter((_, i) => i !== idx))}
+                                                style={{ padding: '0.5rem', background: 'none', border: 'none', color: '#ef4444', fontSize: '1.1rem', cursor: 'pointer' }}
+                                              >
+                                                &times;
+                                              </button>
+                                            )}
+                                          </div>
+                                        ))}
+                                        
+                                        <button 
+                                          type="button" 
+                                          onClick={() => setQuoteItems([...quoteItems, { name: '', cost: '' }])}
+                                          style={{ width: 'fit-content', background: 'none', border: 'none', color: '#3b82f6', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', padding: '4px 0' }}
+                                        >
+                                          + Add Item
+                                        </button>
+                                      </div>
                                       
                                       <button 
-                                        type="button" 
-                                        onClick={() => setQuoteItems([...quoteItems, { name: '', cost: '' }])}
-                                        style={{ width: 'fit-content', background: 'none', border: 'none', color: '#3b82f6', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', padding: '4px 0' }}
+                                        type="submit"
+                                        style={{ padding: '0.65rem 1rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 10px rgba(59,130,246,0.2)' }}
                                       >
-                                        + Add Item
+                                        Send Quotation
                                       </button>
+                                    </form>
+                                  )}
+                                  
+                                  {workspaceDetail.quotation?.status === 'Sent' && (
+                                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '1.25rem', borderRadius: '0.75rem' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#d97706', marginBottom: '1rem' }}>
+                                        <span>⏳</span>
+                                        <strong style={{ fontSize: '0.9rem' }}>Quotation Sent — Review Pending</strong>
+                                      </div>
+                                      {renderQuotationSummary()}
                                     </div>
-                                    
-                                    <button 
-                                      type="submit"
-                                      style={{ padding: '0.65rem 1rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 10px rgba(59,130,246,0.2)' }}
-                                    >
-                                      Send Quotation
-                                    </button>
-                                  </form>
-                                )}
-                                
-                                {workspaceDetail.quotation?.status === 'Sent' && (
-                                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '1.25rem', borderRadius: '0.75rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#d97706', marginBottom: '1rem' }}>
+                                  )}
+                                  
+                                  {workspaceDetail.quotation?.status === 'Accepted' && (
+                                    <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '1.25rem', borderRadius: '0.75rem' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#16a34a', marginBottom: '1rem' }}>
+                                        <span>✅</span>
+                                        <strong style={{ fontSize: '0.95rem' }}>Quotation Approved by Client</strong>
+                                      </div>
+                                      {renderQuotationSummary()}
+                                    </div>
+                                  )}
+                                </>
+                              ) : isWorkspaceClient ? (
+                                /* Client view */
+                                <>
+                                  {workspaceDetail.quotation?.status === 'Draft' && (
+                                    <div style={{ padding: '2rem 1rem', textAlign: 'center', color: '#64748b' }}>
                                       <span>⏳</span>
-                                      <strong style={{ fontSize: '0.9rem' }}>Quotation Sent — Review Pending</strong>
+                                      <h5 style={{ fontWeight: 'bold', margin: '0.5rem 0' }}>Quotation in Preparation</h5>
+                                      <p style={{ fontSize: '0.82rem', margin: 0 }}>The professional is currently drafting the project quotation. You will be notified here once it is sent.</p>
                                     </div>
-                                    {renderQuotationSummary()}
-                                  </div>
-                                )}
-                                
-                                {workspaceDetail.quotation?.status === 'Accepted' && (
-                                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '1.25rem', borderRadius: '0.75rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#16a34a', marginBottom: '1rem' }}>
-                                      <span>✅</span>
-                                      <strong style={{ fontSize: '0.95rem' }}>Quotation Approved by Client</strong>
+                                  )}
+                                  
+                                  {workspaceDetail.quotation?.status === 'Sent' && (
+                                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '1.25rem', borderRadius: '0.75rem' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#1e40af', marginBottom: '1rem' }}>
+                                        <span>📢</span>
+                                        <strong style={{ fontSize: '0.9rem' }}>Quotation Received for Approval</strong>
+                                      </div>
+                                      
+                                      {renderQuotationSummary()}
+                                      
+                                      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+                                        <button 
+                                          onClick={() => handleQuotationDecision('Accepted')}
+                                          style={{ flex: 1, padding: '0.6rem', background: '#22c55e', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: 'bold', cursor: 'pointer' }}
+                                        >
+                                          Approve
+                                        </button>
+                                        <button 
+                                          onClick={() => handleQuotationDecision('Changes Requested')}
+                                          style={{ flex: 1.2, padding: '0.6rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: 'bold', cursor: 'pointer' }}
+                                        >
+                                          Request Changes
+                                        </button>
+                                        <button 
+                                          onClick={() => handleQuotationDecision('Rejected')}
+                                          style={{ padding: '0.6rem 1.25rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: 'bold', cursor: 'pointer' }}
+                                        >
+                                          Reject
+                                        </button>
+                                      </div>
                                     </div>
-                                    {renderQuotationSummary()}
-                                  </div>
-                                )}
-                              </>
-                            ) : (
-                              /* Client view */
-                              <>
-                                {workspaceDetail.quotation?.status === 'Draft' && (
-                                  <div style={{ padding: '2rem 1rem', textAlign: 'center', color: '#64748b' }}>
-                                    <span>⏳</span>
-                                    <h5 style={{ fontWeight: 'bold', margin: '0.5rem 0' }}>Quotation in Preparation</h5>
-                                    <p style={{ fontSize: '0.82rem', margin: 0 }}>The professional is currently drafting the project quotation. You will be notified here once it is sent.</p>
-                                  </div>
-                                )}
-                                
-                                {workspaceDetail.quotation?.status === 'Sent' && (
-                                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '1.25rem', borderRadius: '0.75rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#1e40af', marginBottom: '1rem' }}>
-                                      <span>📢</span>
-                                      <strong style={{ fontSize: '0.9rem' }}>Quotation Received for Approval</strong>
+                                  )}
+                                  
+                                  {workspaceDetail.quotation?.status === 'Accepted' && (
+                                    <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '1.25rem', borderRadius: '0.75rem' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#16a34a', marginBottom: '1rem' }}>
+                                        <span>✅</span>
+                                        <strong style={{ fontSize: '0.95rem' }}>Quotation Approved</strong>
+                                      </div>
+                                      {renderQuotationSummary()}
                                     </div>
-                                    
-                                    {renderQuotationSummary()}
-                                    
-                                    <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
-                                      <button 
-                                        onClick={() => handleQuotationDecision('Accepted')}
-                                        style={{ flex: 1, padding: '0.6rem', background: '#22c55e', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: 'bold', cursor: 'pointer' }}
-                                      >
-                                        Accept & Approve
-                                      </button>
-                                      <button 
-                                        onClick={() => handleQuotationDecision('Rejected')}
-                                        style={{ padding: '0.6rem 1.25rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '0.5rem', fontWeight: 'bold', cursor: 'pointer' }}
-                                      >
-                                        Reject
-                                      </button>
+                                  )}
+                                  
+                                  {workspaceDetail.quotation?.status === 'Rejected' && (
+                                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '1.25rem', borderRadius: '0.75rem', textAlign: 'center' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#dc2626', marginBottom: '0.5rem' }}>
+                                        <span>❌</span>
+                                        <strong style={{ fontSize: '0.9rem' }}>Quotation Rejected</strong>
+                                      </div>
+                                      <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>You rejected the quotation. Waiting for the contractor to send a revised quote.</p>
                                     </div>
-                                  </div>
-                                )}
-                                
-                                {workspaceDetail.quotation?.status === 'Accepted' && (
-                                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '1.25rem', borderRadius: '0.75rem' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#16a34a', marginBottom: '1rem' }}>
-                                      <span>✅</span>
-                                      <strong style={{ fontSize: '0.95rem' }}>Quotation Approved</strong>
+                                  )}
+
+                                  {workspaceDetail.quotation?.status === 'Changes Requested' && (
+                                    <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '1.25rem', borderRadius: '0.75rem', textAlign: 'center' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#1e40af', marginBottom: '0.5rem' }}>
+                                        <span>⏳</span>
+                                        <strong style={{ fontSize: '0.9rem' }}>Changes Requested</strong>
+                                      </div>
+                                      <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>You requested changes to this quotation. Waiting for the contractor to send a revised quote.</p>
                                     </div>
-                                    {renderQuotationSummary()}
+                                  )}
+                                </>
+                              ) : (
+                                /* Guest / Read-Only view for Architect/Labour/Others */
+                                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '1.25rem', borderRadius: '0.75rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', marginBottom: '1rem' }}>
+                                    <span>📄</span>
+                                    <strong style={{ fontSize: '0.9rem' }}>
+                                      Quotation Status: {workspaceDetail.quotation?.status || 'Draft'}
+                                    </strong>
                                   </div>
-                                )}
-                                
-                                {workspaceDetail.quotation?.status === 'Rejected' && (
-                                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '1.25rem', borderRadius: '0.75rem', textAlign: 'center' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#dc2626', marginBottom: '0.5rem' }}>
-                                      <span>❌</span>
-                                      <strong style={{ fontSize: '0.9rem' }}>Quotation Rejected</strong>
-                                    </div>
-                                    <p style={{ fontSize: '0.8rem', color: '#64748b', margin: 0 }}>You rejected the quotation. Waiting for the contractor to send a revised quote.</p>
-                                  </div>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        )}
+                                  {(!workspaceDetail.quotation || workspaceDetail.quotation.status === 'Draft') ? (
+                                    <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0 }}>The quotation is currently being drafted by the contractor.</p>
+                                  ) : (
+                                    renderQuotationSummary()
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                         {/* 3. FILES & DRAWINGS SUB-TAB */}
                         {workspaceTab === 'files' && (
@@ -3084,10 +3482,440 @@ const Home = () => {
                           </div>
                         )}
 
-                      </div>
+                        {/* 4. TIMELINE SUB-TAB */}
+                        {workspaceTab === 'timeline' && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', width: '100%', textAlign: 'left' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div>
+                                <h4 style={{ fontSize: '1.05rem', fontWeight: 'bold', color: '#0f172a', margin: 0 }}>Project Updates & Timeline</h4>
+                                <p style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>Track daily progress, photos, and milestones</p>
+                              </div>
+                              {/* Client actions vs Professional post progress update */}
+                              {isWorkspaceClient ? (
+                                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                  <button
+                                    onClick={async () => {
+                                      alert('👍 Milestone approved! A system notification has been sent in the chat.');
+                                      await handleSendSystemMessage('Client approved the current milestone.');
+                                    }}
+                                    style={{
+                                      background: '#10b981',
+                                      color: 'white',
+                                      border: 'none',
+                                      padding: '0.45rem 0.85rem',
+                                      borderRadius: '0.5rem',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 'bold',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px'
+                                    }}
+                                  >
+                                    👍 Approve Milestone
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setWorkspaceTab('chat');
+                                    }}
+                                    style={{
+                                      background: '#3b82f6',
+                                      color: 'white',
+                                      border: 'none',
+                                      padding: '0.45rem 0.85rem',
+                                      borderRadius: '0.5rem',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 'bold',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px'
+                                    }}
+                                  >
+                                    💬 Comment
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const contractorObj = workspaceDetail.contractor || workspaceDetail.professional;
+                                      alert(`📞 Contacting Contractor ${contractorObj?.fullName || 'Professional'} at ${contractorObj?.phoneNumber || '9876543210'}`);
+                                    }}
+                                    style={{
+                                      background: '#475569',
+                                      color: 'white',
+                                      border: 'none',
+                                      padding: '0.45rem 0.85rem',
+                                      borderRadius: '0.5rem',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 'bold',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px'
+                                    }}
+                                  >
+                                    📞 Contact Contractor
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      const amount = prompt('Enter payment amount to release:', '₹50,000');
+                                      if (amount) {
+                                        alert(`💰 Payment of ${amount} released successfully!`);
+                                        await handleSendSystemMessage(`Client released payment of ${amount}.`);
+                                      }
+                                    }}
+                                    style={{
+                                      background: '#f59e0b',
+                                      color: 'white',
+                                      border: 'none',
+                                      padding: '0.45rem 0.85rem',
+                                      borderRadius: '0.5rem',
+                                      fontSize: '0.78rem',
+                                      fontWeight: 'bold',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px'
+                                    }}
+                                  >
+                                    💰 Release Payment
+                                  </button>
+                                </div>
+                              ) : (
+                                (isWorkspaceContractor || isWorkspaceArchitect || isWorkspaceLabour) && (
+                                  <button
+                                    onClick={() => setShowPostUpdateForm(!showPostUpdateForm)}
+                                    style={{
+                                      background: '#3b82f6',
+                                      color: 'white',
+                                      border: 'none',
+                                      padding: '0.5rem 1rem',
+                                      borderRadius: '0.5rem',
+                                      fontSize: '0.82rem',
+                                      fontWeight: 'bold',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px'
+                                    }}
+                                  >
+                                    {showPostUpdateForm ? 'Hide Form' : 'Post Update'}
+                                  </button>
+                                )
+                              )}
+                            </div>
 
+                            {/* Post Progress Update Form */}
+                            {showPostUpdateForm && isWorkspaceMember && !isWorkspaceClient && (
+                              <form onSubmit={handlePostTimelineUpdate} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '0.75rem', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <strong style={{ fontSize: '0.88rem', color: '#1e293b' }}>Post Progress Update</strong>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                    <label style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#475569' }}>Title *</label>
+                                    <input
+                                      type="text"
+                                      required
+                                      placeholder="e.g., Brickwork level 1 complete"
+                                      value={timelineForm.title}
+                                      onChange={e => setTimelineForm({ ...timelineForm, title: e.target.value })}
+                                      style={{ padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.85rem' }}
+                                    />
+                                    {/* Quick suggestions based on role */}
+                                    <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                                      {currentUser.role === 'Contractor' && [
+                                        'Foundation completed',
+                                        'Electrical work started',
+                                        'Plumbing finished',
+                                        'Material delivered'
+                                      ].map(sug => (
+                                        <button
+                                          key={sug}
+                                          type="button"
+                                          onClick={() => setTimelineForm({ ...timelineForm, title: sug, category: sug.includes('Foundation') ? 'Foundation' : sug.includes('Electrical') ? 'Finishing' : sug.includes('Plumbing') ? 'Finishing' : 'General' })}
+                                          style={{ fontSize: '0.7rem', background: '#e2e8f0', border: 'none', borderRadius: '0.25rem', padding: '0.2rem 0.4rem', cursor: 'pointer', color: '#1e293b' }}
+                                        >
+                                          {sug}
+                                        </button>
+                                      ))}
+                                      {currentUser.role === 'Architect' && [
+                                        'Floor plan uploaded',
+                                        'Elevation approved',
+                                        '3D render updated',
+                                        'Design revision submitted'
+                                      ].map(sug => (
+                                        <button
+                                          key={sug}
+                                          type="button"
+                                          onClick={() => setTimelineForm({ ...timelineForm, title: sug, category: 'General' })}
+                                          style={{ fontSize: '0.7rem', background: '#e2e8f0', border: 'none', borderRadius: '0.25rem', padding: '0.2rem 0.4rem', cursor: 'pointer', color: '#1e293b' }}
+                                        >
+                                          {sug}
+                                        </button>
+                                      ))}
+                                      {currentUser.role === 'Labour' && [
+                                        '15 workers on site',
+                                        'Brickwork completed',
+                                        'Painting started'
+                                      ].map(sug => (
+                                        <button
+                                          key={sug}
+                                          type="button"
+                                          onClick={() => setTimelineForm({ ...timelineForm, title: sug, category: sug.includes('Brickwork') ? 'Masonry' : sug.includes('Painting') ? 'Finishing' : 'General' })}
+                                          style={{ fontSize: '0.7rem', background: '#e2e8f0', border: 'none', borderRadius: '0.25rem', padding: '0.2rem 0.4rem', cursor: 'pointer', color: '#1e293b' }}
+                                        >
+                                          {sug}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                    <label style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#475569' }}>Category</label>
+                                    <select
+                                      value={timelineForm.category}
+                                      onChange={e => setTimelineForm({ ...timelineForm, category: e.target.value })}
+                                      style={{ padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.85rem' }}
+                                    >
+                                      {currentUser.role === 'Labour' ? (
+                                        <>
+                                          <option value="General">General</option>
+                                          <option value="Masonry">Masonry</option>
+                                          <option value="Finishing">Finishing</option>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <option value="General">General</option>
+                                          <option value="Excavation">Excavation</option>
+                                          <option value="Foundation">Foundation</option>
+                                          <option value="Masonry">Masonry</option>
+                                          <option value="Roofing">Roofing</option>
+                                          <option value="Finishing">Finishing</option>
+                                        </>
+                                      )}
+                                    </select>
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                  <label style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#475569' }}>Description</label>
+                                  <textarea
+                                    placeholder="Enter details of work completed..."
+                                    rows="3"
+                                    value={timelineForm.description}
+                                    onChange={e => setTimelineForm({ ...timelineForm, description: e.target.value })}
+                                    style={{ padding: '0.5rem', border: '1px solid #cbd5e1', borderRadius: '0.375rem', fontSize: '0.85rem', resize: 'vertical' }}
+                                  />
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                                  <label style={{ fontSize: '0.78rem', fontWeight: 'bold', color: '#475569' }}>Progress Image (Optional)</label>
+                                  <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
+                                    {[
+                                      { name: 'Brickwork Site', url: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=400&q=80' },
+                                      { name: 'Foundation Pouring', url: 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=400&q=80' },
+                                      { name: 'Electrical Work', url: 'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?auto=format&fit=crop&w=400&q=80' },
+                                      { name: 'Interior Plaster', url: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=400&q=80' }
+                                    ].map(imgOpt => (
+                                      <button
+                                        key={imgOpt.url}
+                                        type="button"
+                                        onClick={() => setTimelineForm({ ...timelineForm, img: imgOpt.url })}
+                                        style={{
+                                          display: 'flex',
+                                          flexDirection: 'column',
+                                          alignItems: 'center',
+                                          border: timelineForm.img === imgOpt.url ? '2px solid #3b82f6' : '1px solid #cbd5e1',
+                                          borderRadius: '0.375rem',
+                                          padding: '0.25rem',
+                                          background: 'white',
+                                          cursor: 'pointer',
+                                          flexShrink: 0
+                                        }}
+                                      >
+                                        <img src={imgOpt.url} alt={imgOpt.name} style={{ width: '80px', height: '50px', objectFit: 'cover', borderRadius: '0.25rem' }} />
+                                        <span style={{ fontSize: '0.65rem', color: '#475569', marginTop: '2px' }}>{imgOpt.name}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowPostUpdateForm(false)}
+                                    style={{ padding: '0.45rem 1rem', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '0.375rem', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    style={{ padding: '0.45rem 1rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '0.375rem', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer' }}
+                                  >
+                                    Post Update
+                                  </button>
+                                </div>
+                              </form>
+                            )}
+
+                            {/* Vertical Progress Feed */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                              {!workspaceDetail.updates || workspaceDetail.updates.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#64748b', background: '#f8fafc', borderRadius: '0.75rem', border: '1px dashed #cbd5e1' }}>
+                                  <span>📅</span>
+                                  <h5 style={{ fontWeight: 'bold', margin: '0.5rem 0' }}>No updates posted yet</h5>
+                                  <p style={{ fontSize: '0.8rem', margin: 0 }}>Progress updates posted by workspace members will appear here in chronological order.</p>
+                                </div>
+                              ) : (
+                                [...workspaceDetail.updates].reverse().map(update => {
+                                  const isLiked = update.likedBy?.includes(currentUser?._id);
+                                  return (
+                                    <div key={update._id} style={{ display: 'flex', gap: '1rem', background: 'white', border: '1px solid #e2e8f0', borderRadius: '0.75rem', padding: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                                      {/* Left timeline indicator */}
+                                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                        <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#3b82f6', border: '4px solid #dbeafe', flexShrink: 0 }}></div>
+                                        <div style={{ flex: 1, width: '2px', background: '#e2e8f0', margin: '4px 0' }}></div>
+                                      </div>
+
+                                      {/* Content */}
+                                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                          <div>
+                                            {update.postedBy?.senderRole && (
+                                              <div style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0f766e', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '0.3rem' }}>
+                                                [{update.postedBy.senderRole}] {update.postedBy.senderName}
+                                              </div>
+                                            )}
+                                            <span style={{ fontSize: '0.68rem', fontWeight: 'bold', textTransform: 'uppercase', color: '#3b82f6', background: '#eff6ff', padding: '0.15rem 0.4rem', borderRadius: '0.25rem', marginRight: '6px' }}>
+                                              {update.category}
+                                            </span>
+                                            <h5 style={{ margin: '0.35rem 0 0.15rem', fontSize: '0.95rem', fontWeight: 'bold', color: '#0f172a' }}>{update.title}</h5>
+                                            <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                                              {new Date(update.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} at {new Date(update.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        {update.description && (
+                                          <p style={{ margin: 0, fontSize: '0.85rem', color: '#475569', lineHeight: '1.45' }}>
+                                            {update.description}
+                                          </p>
+                                        )}
+
+                                        {update.img && (
+                                          <img
+                                            src={update.img}
+                                            alt={update.title}
+                                            style={{ maxWidth: '100%', maxHeight: '240px', objectFit: 'cover', borderRadius: '0.5rem', border: '1px solid #f1f5f9', marginTop: '0.25rem' }}
+                                          />
+                                        )}
+
+                                        {/* Action buttons (Like & Comment triggers) */}
+                                        <div style={{ display: 'flex', gap: '1rem', borderTop: '1px solid #f1f5f9', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
+                                          <button
+                                            onClick={() => handleLikeUpdate(update._id)}
+                                            style={{
+                                              background: 'none',
+                                              border: 'none',
+                                              color: isLiked ? '#ef4444' : '#64748b',
+                                              fontSize: '0.8rem',
+                                              fontWeight: '600',
+                                              cursor: 'pointer',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '4px',
+                                              padding: 0
+                                            }}
+                                          >
+                                            {isLiked ? '❤️' : '🤍'} {update.likes || 0} {update.likes === 1 ? 'Like' : 'Likes'}
+                                          </button>
+                                          <button
+                                            onClick={() => setActiveCommentUpdateId(activeCommentUpdateId === update._id ? null : update._id)}
+                                            style={{
+                                              background: 'none',
+                                              border: 'none',
+                                              color: '#64748b',
+                                              fontSize: '0.8rem',
+                                              fontWeight: '600',
+                                              cursor: 'pointer',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '4px',
+                                              padding: 0
+                                            }}
+                                          >
+                                            💬 {update.comments?.length || 0} {update.comments?.length === 1 ? 'Comment' : 'Comments'}
+                                          </button>
+                                        </div>
+
+                                        {/* Comments list & post form */}
+                                        {activeCommentUpdateId === update._id && (
+                                          <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.25rem' }}>
+                                            {/* List of comments */}
+                                            {update.comments && update.comments.length > 0 && (
+                                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.5rem' }}>
+                                                {update.comments.map((comment, cIdx) => (
+                                                  <div key={cIdx} style={{ fontSize: '0.78rem', lineHeight: '1.35' }}>
+                                                    <strong style={{ color: '#1e293b' }}>{comment.senderName}</strong>
+                                                    <span style={{ color: '#94a3b8', fontSize: '0.68rem', marginLeft: '6px' }}>
+                                                      {new Date(comment.createdAt).toLocaleDateString()}
+                                                    </span>
+                                                    <p style={{ margin: '2px 0 0', color: '#475569' }}>{comment.text}</p>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            )}
+
+                                            {/* Submit new comment form */}
+                                            {isWorkspaceMember ? (
+                                              <form
+                                                onSubmit={(e) => {
+                                                  e.preventDefault();
+                                                  handleCommentUpdate(update._id, updateCommentTexts[update._id]);
+                                                }}
+                                                style={{ display: 'flex', gap: '0.5rem' }}
+                                              >
+                                                <input
+                                                  type="text"
+                                                  required
+                                                  placeholder="Write a comment..."
+                                                  value={updateCommentTexts[update._id] || ''}
+                                                  onChange={e => setUpdateCommentTexts({ ...updateCommentTexts, [update._id]: e.target.value })}
+                                                  style={{ flex: 1, padding: '0.35rem 0.5rem', border: '1px solid #cbd5e1', borderRadius: '0.25rem', fontSize: '0.78rem' }}
+                                                />
+                                                <button
+                                                  type="submit"
+                                                  style={{ background: '#3b82f6', color: 'white', border: 'none', padding: '0.25rem 0.75rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
+                                                >
+                                                  Post
+                                                </button>
+                                              </form>
+                                            ) : (
+                                              <span style={{ fontSize: '0.72rem', color: '#64748b', fontStyle: 'italic' }}>Only workspace members can comment</span>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 5. LABOUR MANAGEMENT SUB-TAB */}
+                        {workspaceTab === 'labour' && (
+                          <div style={{ padding: '0.5rem 0' }}>
+                            <LabourManagementTab 
+                              workspaceDetail={workspaceDetail} 
+                              currentUser={currentUser} 
+                              setWorkspaceDetail={setWorkspaceDetail}
+                            />
+                          </div>
+                        )}
+
+                      </div>
                     </div>
-                  ) : (
+                  )
+                })() : (
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#64748b', padding: '2rem', textAlign: 'center' }}>
                       <Briefcase size={48} style={{ color: '#cbd5e1', marginBottom: '1rem', margin: '0 auto' }} />
                       <h4 style={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '0.5rem' }}>Select a Workspace</h4>

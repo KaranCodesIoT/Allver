@@ -138,9 +138,11 @@ app.post('/api/login', async (req, res) => {
     }
     
     // Successful login - return user object
+    const userObj = user.toObject();
+    delete userObj.password;
     res.status(200).json({ 
       message: 'Login successful', 
-      user: { _id: user._id, fullName: user.fullName, email: user.email, phoneNumber: user.phoneNumber, role: user.role, city: user.city } 
+      user: userObj
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -236,7 +238,7 @@ app.post('/api/contract-requests', async (req, res) => {
   try {
     const { client, professional, title, projectType, location, budget, startDate, description } = req.body;
     
-    if (!client || !professional || !title || !projectType || !location || !budget || !startDate) {
+    if (!client || !professional || !title || !location || !budget) {
       return res.status(400).json({ message: 'Missing required project details' });
     }
 
@@ -244,11 +246,11 @@ app.post('/api/contract-requests', async (req, res) => {
       client,
       professional,
       title,
-      projectType,
+      projectType: projectType || 'General',
       location,
       budget,
-      startDate: new Date(startDate),
-      description
+      startDate: startDate ? new Date(startDate) : new Date(),
+      description: description || ''
     });
 
     await newRequest.save();
@@ -304,12 +306,22 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
       // Check if a workspace already exists for this request
       const existing = await ProjectWorkspace.findOne({ contractRequest: id });
       if (!existing) {
+        const clientUser = await User.findById(request.client);
+        const professionalUser = await User.findById(request.professional);
+        
+        const isContractor = professionalUser?.role === 'Contractor';
+        const isArchitect = professionalUser?.role === 'Architect';
+        const isLabour = professionalUser?.role === 'Labour';
+
         workspace = new ProjectWorkspace({
           contractRequest: id,
           client: request.client,
           professional: request.professional,
+          contractor: isContractor ? request.professional : (clientUser?.role === 'Contractor' ? request.client : null),
+          architect: isArchitect ? request.professional : (clientUser?.role === 'Architect' ? request.client : null),
+          labourTeam: isLabour ? [request.professional] : [],
           title: request.title,
-          projectType: request.projectType,
+          projectType: request.projectType || 'General',
           status: 'Discussion'
         });
         await workspace.save();
@@ -334,10 +346,19 @@ app.get('/api/project-workspaces/user/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     const workspaces = await ProjectWorkspace.find({
-      $or: [{ client: userId }, { professional: userId }]
+      $or: [
+        { client: userId },
+        { professional: userId },
+        { contractor: userId },
+        { architect: userId },
+        { labourTeam: userId }
+      ]
     })
     .populate('client', 'fullName email phoneNumber role city')
     .populate('professional', 'fullName email phoneNumber role city')
+    .populate('contractor', 'fullName email phoneNumber role city')
+    .populate('architect', 'fullName email phoneNumber role city')
+    .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
     .sort({ createdAt: -1 });
 
     res.status(200).json({ workspaces });
@@ -347,12 +368,20 @@ app.get('/api/project-workspaces/user/:userId', async (req, res) => {
   }
 });
 
-// 5. Get workspace details by ID
+// 5. Get workspace details by ID (With membership check)
 app.get('/api/project-workspaces/:id', async (req, res) => {
   try {
+    const { userId } = req.query;
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required for access validation' });
+    }
+
     const workspace = await ProjectWorkspace.findById(req.params.id)
       .populate('client', 'fullName email phoneNumber role city')
       .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
       .populate({
         path: 'messages.sender',
         select: 'fullName email role'
@@ -362,6 +391,21 @@ app.get('/api/project-workspaces/:id', async (req, res) => {
       return res.status(404).json({ message: 'Workspace not found' });
     }
 
+    const isMember = 
+      workspace.client?._id?.toString() === userId || 
+      workspace.client?.toString() === userId ||
+      workspace.professional?._id?.toString() === userId || 
+      workspace.professional?.toString() === userId ||
+      workspace.contractor?._id?.toString() === userId || 
+      workspace.contractor?.toString() === userId ||
+      workspace.architect?._id?.toString() === userId || 
+      workspace.architect?.toString() === userId ||
+      workspace.labourTeam?.some(l => (l._id?.toString() === userId || l.toString() === userId));
+
+    if (!isMember) {
+      return res.status(403).json({ message: 'Forbidden: You are not assigned to this project workspace' });
+    }
+
     res.status(200).json({ workspace });
   } catch (error) {
     console.error('Error fetching workspace details:', error);
@@ -369,7 +413,7 @@ app.get('/api/project-workspaces/:id', async (req, res) => {
   }
 });
 
-// 6. Send message in a workspace
+// 6. Send message in a workspace (With membership check)
 app.post('/api/project-workspaces/:id/messages', async (req, res) => {
   try {
     const { id } = req.params;
@@ -382,6 +426,17 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
     const workspace = await ProjectWorkspace.findById(id);
     if (!workspace) {
       return res.status(404).json({ message: 'Workspace not found' });
+    }
+
+    const isMember = 
+      workspace.client?.toString() === sender ||
+      workspace.professional?.toString() === sender ||
+      workspace.contractor?.toString() === sender ||
+      workspace.architect?.toString() === sender ||
+      workspace.labourTeam?.some(l => l.toString() === sender);
+
+    if (!isMember) {
+      return res.status(403).json({ message: 'Forbidden: You are not a member of this workspace' });
     }
 
     const newMessage = {
@@ -408,6 +463,9 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
     const updatedWorkspace = await ProjectWorkspace.findById(id)
       .populate('client', 'fullName email phoneNumber role city')
       .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
       .populate({
         path: 'messages.sender',
         select: 'fullName email role'
@@ -420,15 +478,38 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
   }
 });
 
-// 7. Update quotation details or status
+// 7. Update quotation details or status (With role enforcement)
 app.put('/api/project-workspaces/:id/quotation', async (req, res) => {
   try {
     const { id } = req.params;
-    const { items, totalCost, status } = req.body;
+    const { items, totalCost, status, userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
 
     const workspace = await ProjectWorkspace.findById(id);
     if (!workspace) {
       return res.status(404).json({ message: 'Workspace not found' });
+    }
+
+    // Role-based quotation checks:
+    if (status === 'Sent') {
+      const isContractor = workspace.contractor?.toString() === userId || workspace.professional?.toString() === userId;
+      if (!isContractor) {
+        return res.status(403).json({ message: 'Forbidden: Only the assigned contractor can send a quotation' });
+      }
+    } else if (status === 'Accepted' || status === 'Rejected' || status === 'Changes Requested') {
+      const isClient = workspace.client?.toString() === userId;
+      if (!isClient) {
+        return res.status(403).json({ message: 'Forbidden: Only the client can accept, reject, or request changes on the quotation' });
+      }
+    } else {
+      // Modify draft items
+      const isContractor = workspace.contractor?.toString() === userId || workspace.professional?.toString() === userId;
+      if (!isContractor) {
+        return res.status(403).json({ message: 'Forbidden: Only the contractor can prepare quotation drafts' });
+      }
     }
 
     if (items) workspace.quotation.items = items;
@@ -444,6 +525,8 @@ app.put('/api/project-workspaces/:id/quotation', async (req, res) => {
       workspace.status = 'Active'; // Automatically promote project status to Active when quotation is accepted!
     } else if (status === 'Rejected') {
       statusText = `Client rejected the quotation`;
+    } else if (status === 'Changes Requested') {
+      statusText = `Client requested changes to the quotation`;
     }
 
     if (statusText) {
@@ -460,6 +543,9 @@ app.put('/api/project-workspaces/:id/quotation', async (req, res) => {
     const updatedWorkspace = await ProjectWorkspace.findById(id)
       .populate('client', 'fullName email phoneNumber role city')
       .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
       .populate({
         path: 'messages.sender',
         select: 'fullName email role'
@@ -472,7 +558,7 @@ app.put('/api/project-workspaces/:id/quotation', async (req, res) => {
   }
 });
 
-// 8. Upload a file directly to the workspace
+// 8. Upload a file directly to the workspace (With membership check)
 app.post('/api/project-workspaces/:id/files', async (req, res) => {
   try {
     const { id } = req.params;
@@ -485,6 +571,17 @@ app.post('/api/project-workspaces/:id/files', async (req, res) => {
     const workspace = await ProjectWorkspace.findById(id);
     if (!workspace) {
       return res.status(404).json({ message: 'Workspace not found' });
+    }
+
+    const isMember = 
+      workspace.client?.toString() === uploadedBy ||
+      workspace.professional?.toString() === uploadedBy ||
+      workspace.contractor?.toString() === uploadedBy ||
+      workspace.architect?.toString() === uploadedBy ||
+      workspace.labourTeam?.some(l => l.toString() === uploadedBy);
+
+    if (!isMember) {
+      return res.status(403).json({ message: 'Forbidden: You are not a member of this workspace' });
     }
 
     workspace.files.push({
@@ -506,6 +603,9 @@ app.post('/api/project-workspaces/:id/files', async (req, res) => {
     const updatedWorkspace = await ProjectWorkspace.findById(id)
       .populate('client', 'fullName email phoneNumber role city')
       .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
       .populate({
         path: 'messages.sender',
         select: 'fullName email role'
@@ -515,6 +615,476 @@ app.post('/api/project-workspaces/:id/files', async (req, res) => {
   } catch (error) {
     console.error('Error uploading file:', error);
     res.status(500).json({ message: 'Error uploading file: ' + error.message });
+  }
+});
+
+// 9. Assign Architect to a project (With role enforcement)
+app.put('/api/project-workspaces/:id/assign-architect', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { architectId, userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+    const isClient = workspace.client?.toString() === userId;
+    const isContractor = workspace.contractor?.toString() === userId || workspace.professional?.toString() === userId;
+    if (!isClient && !isContractor) {
+      return res.status(403).json({ message: 'Forbidden: Only the client or contractor can assign an architect' });
+    }
+    
+    const arch = await User.findById(architectId);
+    if (!arch || arch.role !== 'Architect') {
+      return res.status(400).json({ message: 'Invalid Architect selected' });
+    }
+    
+    workspace.architect = architectId;
+    workspace.messages.push({
+      sender: userId,
+      text: `📢 Architect assigned: ${arch.fullName}`,
+      createdAt: new Date()
+    });
+    await workspace.save();
+    
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city')
+      .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      
+    res.status(200).json({ message: 'Architect assigned successfully', workspace: updated });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// 10. Add Labour to a project (With role enforcement)
+app.put('/api/project-workspaces/:id/add-labour', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { labourId, userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+    const isClient = workspace.client?.toString() === userId;
+    const isContractor = workspace.contractor?.toString() === userId || workspace.professional?.toString() === userId;
+    if (!isClient && !isContractor) {
+      return res.status(403).json({ message: 'Forbidden: Only the client or contractor can add labour to the project' });
+    }
+    
+    const lab = await User.findById(labourId);
+    if (!lab || lab.role !== 'Labour') {
+      return res.status(400).json({ message: 'Invalid Labour user selected' });
+    }
+    
+    if (workspace.labourTeam.includes(labourId)) {
+      return res.status(400).json({ message: 'Labourer already in the team' });
+    }
+    
+    workspace.labourTeam.push(labourId);
+    workspace.messages.push({
+      sender: userId,
+      text: `📢 Added to Labour Team: ${lab.fullName} (${lab.skillType || 'Labour'})`,
+      createdAt: new Date()
+    });
+    await workspace.save();
+    
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city')
+      .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      
+    res.status(200).json({ message: 'Labour added successfully', workspace: updated });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// 11. Remove Labour from a project (With role enforcement)
+app.put('/api/project-workspaces/:id/remove-labour', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { labourId, userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+    const isClient = workspace.client?.toString() === userId;
+    const isContractor = workspace.contractor?.toString() === userId || workspace.professional?.toString() === userId;
+    if (!isClient && !isContractor) {
+      return res.status(403).json({ message: 'Forbidden: Only the client or contractor can remove labour from the project' });
+    }
+    
+    workspace.labourTeam = workspace.labourTeam.filter(lId => lId.toString() !== labourId);
+    
+    const lab = await User.findById(labourId);
+    const name = lab ? lab.fullName : 'Labourer';
+    
+    workspace.messages.push({
+      sender: userId,
+      text: `📢 Removed from Labour Team: ${name}`,
+      createdAt: new Date()
+    });
+    await workspace.save();
+    
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city')
+      .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      
+    res.status(200).json({ message: 'Labour removed successfully', workspace: updated });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// 12. Update project status (by client/contractor/architect with check)
+app.put('/api/project-workspaces/:id/project-status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, senderId } = req.body; // 'Discussion', 'Active', 'Completed'
+    
+    if (!senderId) {
+      return res.status(400).json({ message: 'Sender ID is required' });
+    }
+
+    if (!['Discussion', 'Active', 'Completed'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+    
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+    
+    const oldStatus = workspace.status;
+    workspace.status = status;
+    
+    workspace.messages.push({
+      sender: senderId || workspace.client,
+      text: `📢 Project status changed from ${oldStatus} to ${status}`,
+      createdAt: new Date()
+    });
+    await workspace.save();
+    
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city')
+      .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      
+    res.status(200).json({ message: 'Status updated successfully', workspace: updated });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// 13. Post progress timeline update to workspace
+app.post('/api/project-workspaces/:id/updates', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, category, img, senderId } = req.body;
+
+    if (!title || !senderId) {
+      return res.status(400).json({ message: 'Title and Sender ID are required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found' });
+    }
+
+    // Membership check
+    const isMember = 
+      workspace.client?.toString() === senderId ||
+      workspace.professional?.toString() === senderId ||
+      workspace.contractor?.toString() === senderId ||
+      workspace.architect?.toString() === senderId ||
+      workspace.labourTeam?.some(l => l.toString() === senderId);
+
+    if (!isMember) {
+      return res.status(403).json({ message: 'Forbidden: You are not assigned to this workspace' });
+    }
+
+    const user = await User.findById(senderId);
+    let senderRoleName = user ? user.role : 'Member';
+    if (senderRoleName === 'Labour') {
+      senderRoleName = 'Labour Supervisor';
+    }
+
+    const newUpdate = {
+      title,
+      description: description || '',
+      category: category || 'General',
+      img: img || '',
+      postedBy: {
+        senderId,
+        senderName: user ? user.fullName : 'Unknown',
+        senderRole: senderRoleName
+      },
+      likes: 0,
+      likedBy: [],
+      comments: []
+    };
+
+    workspace.updates.push(newUpdate);
+
+    // Also send a system notification in the chat
+    workspace.messages.push({
+      sender: senderId,
+      text: `📢 Progress Update: "${title}" posted by [${senderRoleName}] ${user ? user.fullName : ''}. Check the Timeline tab.`,
+      createdAt: new Date()
+    });
+
+    await workspace.save();
+
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city')
+      .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate({ path: 'messages.sender', select: 'fullName email role' });
+
+    res.status(201).json({ message: 'Progress update posted successfully', workspace: updated });
+  } catch (error) {
+    console.error('Error posting update:', error);
+    res.status(500).json({ message: 'Error posting update: ' + error.message });
+  }
+});
+
+// 14. Like/Unlike a progress timeline update
+app.post('/api/project-workspaces/:id/updates/:updateId/like', async (req, res) => {
+  try {
+    const { id, updateId } = req.params;
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found' });
+    }
+
+    // Membership check
+    const isMember = 
+      workspace.client?.toString() === userId ||
+      workspace.professional?.toString() === userId ||
+      workspace.contractor?.toString() === userId ||
+      workspace.architect?.toString() === userId ||
+      workspace.labourTeam?.some(l => l.toString() === userId);
+
+    if (!isMember) {
+      return res.status(403).json({ message: 'Forbidden: You are not assigned to this workspace' });
+    }
+
+    const update = workspace.updates.id(updateId);
+    if (!update) {
+      return res.status(404).json({ message: 'Update not found' });
+    }
+
+    const userIndex = update.likedBy.indexOf(userId);
+    if (userIndex > -1) {
+      // Unlike
+      update.likedBy.splice(userIndex, 1);
+      update.likes = Math.max(0, update.likes - 1);
+    } else {
+      // Like
+      update.likedBy.push(userId);
+      update.likes += 1;
+    }
+
+    await workspace.save();
+
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city')
+      .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate({ path: 'messages.sender', select: 'fullName email role' });
+
+    res.status(200).json({ message: 'Like toggled successfully', workspace: updated });
+  } catch (error) {
+    console.error('Error toggling like:', error);
+    res.status(500).json({ message: 'Error toggling like: ' + error.message });
+  }
+});
+
+// 15. Comment on a progress timeline update
+app.post('/api/project-workspaces/:id/updates/:updateId/comments', async (req, res) => {
+  try {
+    const { id, updateId } = req.params;
+    const { sender, senderName, text } = req.body;
+
+    if (!sender || !senderName || !text) {
+      return res.status(400).json({ message: 'Sender, SenderName, and Text are required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found' });
+    }
+
+    // Membership check
+    const isMember = 
+      workspace.client?.toString() === sender ||
+      workspace.professional?.toString() === sender ||
+      workspace.contractor?.toString() === sender ||
+      workspace.architect?.toString() === sender ||
+      workspace.labourTeam?.some(l => l.toString() === sender);
+
+    if (!isMember) {
+      return res.status(403).json({ message: 'Forbidden: You are not assigned to this workspace' });
+    }
+
+    const update = workspace.updates.id(updateId);
+    if (!update) {
+      return res.status(404).json({ message: 'Update not found' });
+    }
+
+    update.comments.push({
+      sender,
+      senderName,
+      text,
+      createdAt: new Date()
+    });
+
+    await workspace.save();
+
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city')
+      .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate({ path: 'messages.sender', select: 'fullName email role' });
+
+    res.status(201).json({ message: 'Comment added successfully', workspace: updated });
+  } catch (error) {
+    console.error('Error adding comment:', error);
+    res.status(500).json({ message: 'Error adding comment: ' + error.message });
+  }
+});
+
+// 16. Record Labour Attendance
+app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { date, records, senderId } = req.body;
+
+    if (!date || !records || !senderId) {
+      return res.status(400).json({ message: 'Date, records, and senderId are required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+    // Membership check (Contractor only for editing, or Client/Architect depending on rules, but we'll allow Contractor)
+    const isContractor = workspace.contractor?.toString() === senderId || workspace.professional?.toString() === senderId;
+    if (!isContractor) {
+      return res.status(403).json({ message: 'Forbidden: Only contractor can mark attendance' });
+    }
+
+    if (!workspace.labourManagement) {
+      workspace.labourManagement = { attendance: [], payments: [] };
+    }
+
+    // Find if date already exists
+    const existingDateIndex = workspace.labourManagement.attendance.findIndex(a => a.date === date);
+    
+    if (existingDateIndex > -1) {
+      workspace.labourManagement.attendance[existingDateIndex].records = records;
+      workspace.labourManagement.attendance[existingDateIndex].markedBy = senderId;
+    } else {
+      workspace.labourManagement.attendance.push({
+        date,
+        records,
+        markedBy: senderId
+      });
+    }
+
+    await workspace.save();
+
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city')
+      .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate({ path: 'messages.sender', select: 'fullName email role' });
+
+    res.status(200).json({ message: 'Attendance recorded successfully', workspace: updated });
+  } catch (error) {
+    console.error('Error recording attendance:', error);
+    res.status(500).json({ message: 'Error recording attendance: ' + error.message });
+  }
+});
+
+// 17. Record Labour Payment/Advance
+app.post('/api/project-workspaces/:id/labour/payment', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { labourId, amount, type, senderId } = req.body;
+
+    if (!labourId || !amount || !type || !senderId) {
+      return res.status(400).json({ message: 'labourId, amount, type, and senderId are required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+    const isContractor = workspace.contractor?.toString() === senderId || workspace.professional?.toString() === senderId;
+    if (!isContractor) {
+      return res.status(403).json({ message: 'Forbidden: Only contractor can record payments' });
+    }
+
+    if (!workspace.labourManagement) {
+      workspace.labourManagement = { attendance: [], payments: [] };
+    }
+
+    workspace.labourManagement.payments.push({
+      date: new Date(),
+      labourId,
+      amount,
+      type,
+      recordedBy: senderId
+    });
+
+    await workspace.save();
+
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city')
+      .populate('professional', 'fullName email phoneNumber role city')
+      .populate('contractor', 'fullName email phoneNumber role city')
+      .populate('architect', 'fullName email phoneNumber role city')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate({ path: 'messages.sender', select: 'fullName email role' });
+
+    res.status(200).json({ message: 'Payment recorded successfully', workspace: updated });
+  } catch (error) {
+    console.error('Error recording payment:', error);
+    res.status(500).json({ message: 'Error recording payment: ' + error.message });
   }
 });
 
