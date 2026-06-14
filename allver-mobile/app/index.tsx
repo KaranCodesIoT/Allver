@@ -1,326 +1,360 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, ImageBackground, Alert, Platform } from 'react-native';
+import React from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ImageBackground,
+  Dimensions,
+  StatusBar,
+  Platform,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
-import { Link, useRouter } from 'expo-router';
+import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
+
+const { width, height } = Dimensions.get('window');
 
 const COLORS = {
-  green: '#16A34A',
-  textDark: '#111827',
-  textMuted: '#6B7280',
-  border: '#E5E7EB',
+  green: '#1BC47D',
+  greenDark: '#15A368',
   white: '#FFFFFF',
-  red: '#EF4444',
-  bgLight: '#F3F4F6'
+  textMuted: '#7A8BA0',
+  textLight: '#B0BEC5',
+  darkBg: '#02122B',
+  cardBg: 'rgba(255,255,255,0.04)',
+  cardBorder: 'rgba(255,255,255,0.06)',
+  greenGlow: 'rgba(27, 196, 125, 0.15)',
+  greenBorder: 'rgba(27, 196, 125, 0.25)',
 };
 
-import { BACKEND_URL } from '../constants/Config';
+const FEATURES = [
+  { icon: 'users', label: 'Find\nLabour', family: 'feather' },
+  { icon: 'hard-hat', label: 'Hire\nContractors', family: 'fa5' },
+  { icon: 'clipboard', label: 'Track\nProjects', family: 'feather' },
+  { icon: 'bar-chart-2', label: 'Manage\nTeams', family: 'feather' },
+];
 
-export default function SignupScreen() {
+const ROLES = ['Architect', 'Contractor', 'Labour', 'Client'];
+
+export default function WelcomeScreen() {
   const router = useRouter();
-  const [role, setRole] = useState('Architect');
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Form State
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [password, setPassword] = useState('');
-  const [city, setCity] = useState('');
-
-  const handleSignup = async () => {
-    if (!fullName || !email || !password || !city) {
-      Alert.alert('Missing Fields', 'Please fill in all mandatory fields.');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          fullName,
-          email,
-          phoneNumber,
-          password,
-          role,
-          city
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        Alert.alert('Success', 'Account created successfully!', [
-          { text: 'OK', onPress: () => router.push('/login') }
-        ]);
-      } else {
-        Alert.alert('Registration Failed', data.message || 'Something went wrong.');
-      }
-    } catch (error) {
-      Alert.alert('Network Error', 'Could not connect to the server. Make sure your backend is running.');
-      console.error(error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const RoleOption = ({ title, iconName, iconType }: { title: string, iconName: string, iconType: 'Feather' | 'FA5' }) => {
-    const isSelected = role === title;
-    return (
-      <TouchableOpacity 
-        style={[styles.roleOption, isSelected && styles.roleOptionSelected]}
-        onPress={() => setRole(title)}
-      >
-        {iconType === 'Feather' ? (
-          <Feather name={iconName as any} size={24} color={isSelected ? COLORS.green : COLORS.textDark} />
-        ) : (
-          <FontAwesome5 name={iconName} size={24} color={isSelected ? COLORS.green : COLORS.textDark} />
-        )}
-        <Text style={[styles.roleOptionText, isSelected && styles.roleOptionTextSelected]}>{title}</Text>
-      </TouchableOpacity>
-    );
-  };
 
   return (
     <View style={styles.container}>
-      <ScrollView bounces={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        
-        {/* Header Section with Illustration */}
-        <ImageBackground 
-          source={{ uri: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?q=80&w=1000&auto=format&fit=crop' }} 
-          style={styles.headerIllustration}
-          imageStyle={{ opacity: 0.2 }}
-        >
-          <SafeAreaView style={styles.safeArea}>
-            <View style={styles.headerTextContainer}>
-              <Text style={styles.headerTitle}>Create Your Account</Text>
-              <Text style={styles.headerSubtitle}>
-                Join and connect with trusted{'\n'}professionals in construction.
-              </Text>
-            </View>
-          </SafeAreaView>
-        </ImageBackground>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-        {/* White Form Card */}
-        <View style={styles.formCard}>
-          
-          {/* Full Name */}
-          <View style={styles.inputGroup}>
-            <View style={styles.inputIconCol}>
-              <Feather name="user" size={20} color={COLORS.green} />
-            </View>
-            <View style={styles.inputContentCol}>
-              <Text style={styles.inputLabel}>Full Name <Text style={styles.asterisk}>*</Text></Text>
-              <View style={styles.inputWrapper}>
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="Enter your full name" 
-                  placeholderTextColor={COLORS.textMuted}
-                  value={fullName}
-                  onChangeText={setFullName}
-                />
-              </View>
-            </View>
+      <ImageBackground
+        source={require('@/assets/images/bg-welcome.png')}
+        style={styles.backgroundImage}
+        resizeMode="cover"
+      >
+        {/* Multi-layer overlay — heavy on top, lighter on bottom for skyline */}
+        <View style={styles.overlayTop} />
+        <View style={styles.overlayBottom} />
+
+        <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+
+          {/* ─── LOGO SECTION ─── */}
+          <View style={styles.logoSection}>
+            <Image
+              source={require('@/assets/images/welcome-logo.png')}
+              style={styles.logo}
+              contentFit="contain"
+            />
+            <Text style={styles.tagline}>
+              Build. Connect.{' '}
+              <Text style={styles.taglineGreen}>Grow.</Text>
+            </Text>
           </View>
 
-          {/* Email */}
-          <View style={styles.inputGroup}>
-            <View style={styles.inputIconCol}>
-              <Feather name="mail" size={20} color={COLORS.green} />
-            </View>
-            <View style={styles.inputContentCol}>
-              <Text style={styles.inputLabel}>Email <Text style={styles.asterisk}>*</Text></Text>
-              <View style={styles.inputWrapper}>
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="Enter your email" 
-                  placeholderTextColor={COLORS.textMuted} 
-                  keyboardType="email-address" 
-                  autoCapitalize="none" 
-                  value={email}
-                  onChangeText={setEmail}
-                />
-              </View>
-            </View>
+          {/* ─── HERO COPY ─── */}
+          <View style={styles.heroSection}>
+            <Text style={styles.heroTitle}>
+              India's Construction{'\n'}
+              <Text style={styles.heroTitleGreen}>Network</Text>
+            </Text>
+            <View style={styles.accentBar} />
+            <Text style={styles.heroSubtitle}>
+              Connect with trusted professionals, hire the right people, and manage your projects easily.
+            </Text>
           </View>
 
-          {/* Phone Number */}
-          <View style={styles.inputGroup}>
-            <View style={styles.inputIconCol}>
-              <Feather name="phone" size={20} color={COLORS.green} />
-            </View>
-            <View style={styles.inputContentCol}>
-              <Text style={styles.inputLabel}>Phone Number</Text>
-              <View style={[styles.inputWrapper, { paddingLeft: 0 }]}>
-                <View style={styles.countryCodeBox}>
-                  <Text style={styles.countryCodeText}>+91</Text>
-                  <Feather name="chevron-down" size={16} color={COLORS.textDark} />
+          {/* ─── BOTTOM ACTIONS ─── */}
+          <View style={styles.bottomSection}>
+
+            {/* CTA Buttons */}
+            <TouchableOpacity
+              style={styles.primaryBtn}
+              activeOpacity={0.85}
+              onPress={() => router.push('/signup')}
+            >
+              <Feather name="user-plus" size={18} color={COLORS.white} />
+              <Text style={styles.primaryBtnText}>Create Account</Text>
+              <View style={styles.arrowCircle}>
+                <Feather name="arrow-right" size={16} color={COLORS.green} />
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.secondaryBtn}
+              activeOpacity={0.85}
+              onPress={() => router.push('/login')}
+            >
+              <Feather name="log-in" size={18} color={COLORS.green} />
+              <Text style={styles.secondaryBtnText}>Login</Text>
+            </TouchableOpacity>
+
+            {/* Features Row */}
+            <View style={styles.featuresRow}>
+              {FEATURES.map((f, i) => (
+                <View key={i} style={styles.featureCard}>
+                  <View style={styles.featureIconWrap}>
+                    {f.family === 'fa5' ? (
+                      <FontAwesome5 name={f.icon} size={16} color={COLORS.green} />
+                    ) : (
+                      <Feather name={f.icon as any} size={18} color={COLORS.green} />
+                    )}
+                  </View>
+                  <Text style={styles.featureLabel}>{f.label}</Text>
                 </View>
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="Enter your phone number" 
-                  placeholderTextColor={COLORS.textMuted} 
-                  keyboardType="phone-pad" 
-                  value={phoneNumber}
-                  onChangeText={setPhoneNumber}
-                />
-              </View>
-              <Text style={styles.inputHelper}>We will send OTP on this number</Text>
+              ))}
             </View>
+
+            {/* Role Pills */}
+            <View style={styles.rolesRow}>
+              {ROLES.map((role, i) => (
+                <View key={i} style={styles.rolePill}>
+                  <Text style={styles.rolePillText}>{role}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Footer */}
+            <Text style={styles.footer}>
+              By continuing, you agree to our{'\n'}
+              <Text style={styles.footerLink}>Terms & Conditions</Text>
+              {' '}and{' '}
+              <Text style={styles.footerLink}>Privacy Policy</Text>
+            </Text>
+
           </View>
 
-          {/* Password */}
-          <View style={styles.inputGroup}>
-            <View style={styles.inputIconCol}>
-              <Feather name="lock" size={20} color={COLORS.green} />
-            </View>
-            <View style={styles.inputContentCol}>
-              <Text style={styles.inputLabel}>Password <Text style={styles.asterisk}>*</Text></Text>
-              <View style={styles.inputWrapper}>
-                <TextInput 
-                  style={styles.input} 
-                  placeholder="Enter your password" 
-                  placeholderTextColor={COLORS.textMuted} 
-                  secureTextEntry={!showPassword} 
-                  value={password}
-                  onChangeText={setPassword}
-                />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-                  <Feather name={showPassword ? "eye" : "eye-off"} size={20} color={COLORS.textMuted} />
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.inputHelper}>Minimum 6 characters</Text>
-            </View>
-          </View>
-
-          {/* I am a... Role Selector */}
-          <View style={styles.inputGroup}>
-            <View style={styles.inputIconCol}>
-              <Feather name="users" size={20} color={COLORS.green} />
-            </View>
-            <View style={styles.inputContentCol}>
-              <Text style={styles.inputLabel}>I am a <Text style={styles.asterisk}>*</Text></Text>
-              <View style={styles.rolesRow}>
-                <RoleOption title="Architect" iconName="compass" iconType="Feather" />
-                <RoleOption title="Contractor" iconName="hard-hat" iconType="FA5" />
-                <RoleOption title="Labour" iconName="hammer" iconType="FA5" />
-                <RoleOption title="Client" iconName="user" iconType="Feather" />
-              </View>
-            </View>
-          </View>
-
-          {/* City */}
-          <View style={styles.inputGroup}>
-            <View style={styles.inputIconCol}>
-              <Feather name="map-pin" size={20} color={COLORS.green} />
-            </View>
-            <View style={styles.inputContentCol}>
-              <Text style={styles.inputLabel}>City <Text style={styles.asterisk}>*</Text></Text>
-              <View style={styles.inputWrapper}>
-                <TextInput 
-                  style={[styles.input, { marginTop: 0 }]} 
-                  placeholder="Select or enter your city" 
-                  placeholderTextColor={COLORS.textMuted}
-                  value={city}
-                  onChangeText={setCity}
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* Submit Button */}
-          <TouchableOpacity 
-            style={[styles.submitBtn, isLoading && { opacity: 0.7 }]} 
-            onPress={handleSignup}
-            disabled={isLoading}
-          >
-            <Text style={styles.submitBtnText}>{isLoading ? 'Creating Account...' : 'Create Account'}</Text>
-          </TouchableOpacity>
-
-          {/* Footer Link */}
-          <View style={styles.footerLinkContainer}>
-            <Text style={styles.footerText}>Already have an account? </Text>
-            <Link href="/login" asChild>
-              <TouchableOpacity>
-                <Text style={styles.footerLink}>Login</Text>
-              </TouchableOpacity>
-            </Link>
-          </View>
-
-        </View>
-      </ScrollView>
+        </SafeAreaView>
+      </ImageBackground>
     </View>
   );
 }
 
+/* ════════════════════════════════════════════════════════════════════════════ */
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bgLight },
-  scrollContent: { flexGrow: 1 },
-  headerIllustration: { width: '100%', height: 260, backgroundColor: '#E0F2FE' },
-  safeArea: { flex: 1, paddingHorizontal: 24, paddingTop: 10 },
-  headerTextContainer: { marginTop: 40 },
-  headerTitle: { fontSize: 26, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 },
-  headerSubtitle: { fontSize: 14, color: COLORS.textDark, lineHeight: 20 },
-  
-  formCard: {
-    backgroundColor: COLORS.white,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    marginTop: -40,
-    paddingHorizontal: 24,
-    paddingTop: 40,
-    paddingBottom: 50,
+  container: {
     flex: 1,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 5,
+    backgroundColor: COLORS.darkBg,
   },
-  
-  inputGroup: { flexDirection: 'row', marginBottom: 25 },
-  inputIconCol: { width: 40, paddingTop: 30, alignItems: 'center' },
-  inputContentCol: { flex: 1 },
-  inputLabel: { fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 },
-  asterisk: { color: COLORS.red },
-  inputWrapper: {
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+
+  /* Overlay layers — simulates gradient without expo-linear-gradient */
+  overlayTop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(2, 18, 43, 0.92)',
+  },
+  overlayBottom: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '45%',
+    backgroundColor: 'rgba(2, 18, 43, 0)',
+  },
+
+  safeArea: {
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingBottom: Platform.OS === 'android' ? 12 : 8,
+  },
+
+  /* ── Logo ── */
+  logoSection: {
+    alignItems: 'center',
+    marginTop: height * 0.02,
+  },
+  logo: {
+    width: 200,
+    height: 100,
+  },
+  tagline: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    fontWeight: '500',
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  taglineGreen: {
+    color: COLORS.green,
+    fontWeight: '700',
+  },
+
+  /* ── Hero ── */
+  heroSection: {
+    marginTop: -10,
+  },
+  heroTitle: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: COLORS.white,
+    lineHeight: 38,
+    letterSpacing: -0.3,
+  },
+  heroTitleGreen: {
+    color: COLORS.green,
+  },
+  accentBar: {
+    width: 40,
+    height: 3,
+    backgroundColor: COLORS.green,
+    borderRadius: 2,
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  heroSubtitle: {
+    fontSize: 13.5,
+    color: COLORS.textMuted,
+    lineHeight: 21,
+    maxWidth: 300,
+  },
+
+  /* ── Bottom ── */
+  bottomSection: {
+    width: '100%',
+  },
+
+  /* Primary CTA */
+  primaryBtn: {
+    backgroundColor: COLORS.green,
+    borderRadius: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    height: 48,
-    backgroundColor: COLORS.white
-  },
-  input: { flex: 1, fontSize: 14, color: COLORS.textDark },
-  inputHelper: { fontSize: 12, color: COLORS.textMuted, marginTop: 6 },
-  eyeIcon: { padding: 5 },
-  
-  countryCodeBox: { flexDirection: 'row', alignItems: 'center', borderRightWidth: 1, borderRightColor: COLORS.border, paddingHorizontal: 15, height: '100%', gap: 5 },
-  countryCodeText: { fontSize: 14, fontWeight: '600', color: COLORS.textDark },
-  
-  rolesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  roleOption: {
-    flex: 1,
-    minWidth: '45%',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
     paddingVertical: 15,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.green,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.3,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  primaryBtnText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+    marginLeft: 12,
+    letterSpacing: 0.2,
+  },
+  arrowCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  /* Secondary CTA */
+  secondaryBtn: {
+    borderWidth: 1.5,
+    borderColor: COLORS.greenBorder,
+    borderRadius: 16,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    paddingVertical: 14,
+    marginBottom: 20,
+    backgroundColor: 'rgba(27, 196, 125, 0.04)',
   },
-  roleOptionSelected: { borderColor: COLORS.green, backgroundColor: '#F0FDF4' },
-  roleOptionText: { fontSize: 12, fontWeight: '600', color: COLORS.textDark },
-  roleOptionTextSelected: { color: COLORS.green },
-  
-  submitBtn: { backgroundColor: COLORS.green, borderRadius: 8, paddingVertical: 16, alignItems: 'center', marginTop: 10, marginBottom: 25 },
-  submitBtnText: { color: COLORS.white, fontSize: 16, fontWeight: '700' },
-  
-  footerLinkContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  footerText: { color: COLORS.textMuted, fontSize: 14 },
-  footerLink: { color: COLORS.green, fontSize: 14, fontWeight: '700' }
+  secondaryBtnText: {
+    color: COLORS.green,
+    fontSize: 16,
+    fontWeight: '700',
+    marginLeft: 10,
+    letterSpacing: 0.2,
+  },
+
+  /* Features */
+  featuresRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  featureCard: {
+    alignItems: 'center',
+    width: '23%',
+  },
+  featureIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: COLORS.cardBg,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  featureLabel: {
+    color: COLORS.textLight,
+    fontSize: 10,
+    textAlign: 'center',
+    fontWeight: '600',
+    lineHeight: 13,
+    letterSpacing: 0.1,
+  },
+
+  /* Role Pills */
+  rolesRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  rolePill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.greenBorder,
+    backgroundColor: COLORS.greenGlow,
+  },
+  rolePillText: {
+    color: COLORS.green,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+
+  /* Footer */
+  footer: {
+    color: COLORS.textMuted,
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 17,
+  },
+  footerLink: {
+    color: COLORS.green,
+    fontWeight: '500',
+  },
 });

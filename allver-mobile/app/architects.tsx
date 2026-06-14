@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { BACKEND_URL } from '../constants/Config';
 
 const { width } = Dimensions.get('window');
 
@@ -88,13 +89,43 @@ export default function ArchitectsScreen() {
   const [locationQuery, setLocationQuery] = useState('');
   const [ratingQuery, setRatingQuery] = useState('');
   const [showRatingDropdown, setShowRatingDropdown] = useState(false);
+  const [architects, setArchitects] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchArchitects = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/professionals/Architect`);
+        const data = await response.json();
+        if (response.ok && data.professionals) {
+          setArchitects(data.professionals);
+        }
+      } catch (err) {
+        console.error('Error fetching architects:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchArchitects();
+  }, []);
 
   // Filter architects
-  const filteredArchitects = ARCHITECTS_DATA.filter((item) => {
-    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          item.specialization.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesLocation = item.location.toLowerCase().includes(locationQuery.toLowerCase());
-    const matchesRating = ratingQuery ? item.rating >= parseFloat(ratingQuery) : true;
+  const filteredArchitects = architects.filter((item) => {
+    const name = item.fullName || '';
+    const specs = Array.isArray(item.specialization) 
+      ? item.specialization.join(', ') 
+      : (item.specialization || '');
+    
+    const matchesSearch = 
+      name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      specs.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const location = item.city || '';
+    const matchesLocation = location.toLowerCase().includes(locationQuery.toLowerCase());
+    
+    const rating = item.rating || 4.5;
+    const matchesRating = ratingQuery ? rating >= parseFloat(ratingQuery) : true;
+    
     return matchesSearch && matchesLocation && matchesRating;
   });
 
@@ -103,26 +134,26 @@ export default function ArchitectsScreen() {
     setShowRatingDropdown(false);
   };
 
-  const navigateToDetail = (architect: typeof ARCHITECTS_DATA[0]) => {
+  const navigateToDetail = (architect: any) => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       (document.activeElement as HTMLElement)?.blur();
     }
     router.push({
       pathname: '/architect-detail',
       params: {
-        id: architect.id,
-        name: architect.name,
-        avatar: architect.avatar,
-        coverImage: architect.coverImage,
-        rating: architect.rating.toString(),
-        reviews: architect.reviews.toString(),
-        location: architect.location,
-        experience: architect.experience,
-        specialization: architect.specialization,
-        projects: architect.projects.toString(),
-        followers: architect.followers.toString(),
-        firmName: architect.firmName,
-        phone: architect.phone
+        id: architect._id,
+        name: architect.fullName,
+        avatar: architect.avatarUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
+        coverImage: architect.cover || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
+        rating: (architect.rating || 4.5).toString(),
+        reviews: (architect.reviews || 0).toString(),
+        location: architect.city,
+        experience: architect.experience || 'Entry Level',
+        specialization: Array.isArray(architect.specialization) ? architect.specialization.join(', ') : (architect.specialization || 'General Architecture'),
+        projects: (architect.projects || 0).toString(),
+        followers: '150',
+        firmName: architect.firmName || 'Independent Architect',
+        phone: architect.phoneNumber || architect.whatsappNumber || ''
       }
     });
   };
@@ -208,63 +239,74 @@ export default function ArchitectsScreen() {
         </View>
 
         {/* Architects List */}
-        <ScrollView bounces={true} contentContainerStyle={styles.scrollContent}>
-          {filteredArchitects.map((item) => (
-            <View key={item.id} style={styles.architectCard}>
-              <View style={styles.cardTopRow}>
-                <Image source={{ uri: item.avatar }} style={styles.avatarImage} contentFit="cover" />
-                <View style={styles.cardDetailsCol}>
-                  <View style={styles.nameRow}>
-                    <Text style={styles.nameText}>{item.name}</Text>
-                    <Feather name="check-circle" size={14} color={COLORS.green} style={styles.verifiedIcon} />
-                  </View>
-                  
-                  <View style={styles.ratingRow}>
-                    <Feather name="star" size={13} color={COLORS.gold} style={styles.starIcon} />
-                    <Text style={styles.ratingText}>{item.rating}</Text>
-                    <Text style={styles.reviewsText}>({item.reviews} Reviews)</Text>
+        {isLoading ? (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={COLORS.green} />
+          </View>
+        ) : (
+          <ScrollView bounces={true} contentContainerStyle={styles.scrollContent}>
+            {filteredArchitects.map((item) => {
+              const avatar = item.avatarUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80';
+              const specialization = Array.isArray(item.specialization) ? item.specialization.join(', ') : (item.specialization || 'General Architecture');
+              const followers = 150;
+              return (
+                <View key={item._id} style={styles.architectCard}>
+                  <View style={styles.cardTopRow}>
+                    <Image source={{ uri: avatar }} style={styles.avatarImage} contentFit="cover" />
+                    <View style={styles.cardDetailsCol}>
+                      <View style={styles.nameRow}>
+                        <Text style={styles.nameText}>{item.fullName}</Text>
+                        <Feather name="check-circle" size={14} color={COLORS.green} style={styles.verifiedIcon} />
+                      </View>
+                      
+                      <View style={styles.ratingRow}>
+                        <Feather name="star" size={13} color={COLORS.gold} style={styles.starIcon} />
+                        <Text style={styles.ratingText}>{item.rating || 4.5}</Text>
+                        <Text style={styles.reviewsText}>({item.reviews || 0} Reviews)</Text>
+                      </View>
+
+                      <View style={styles.metaRow}>
+                        <Feather name="map-pin" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
+                        <Text style={styles.metaText}>{item.city}</Text>
+                      </View>
+
+                      <View style={styles.metaRow}>
+                        <Feather name="briefcase" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
+                        <Text style={styles.metaText}>{item.experience || 'Entry Level'} Experience</Text>
+                      </View>
+                    </View>
+
+                    {/* View Profile Button */}
+                    <TouchableOpacity style={styles.viewProfileButton} onPress={() => navigateToDetail(item)}>
+                      <Text style={styles.viewProfileText}>View Profile</Text>
+                    </TouchableOpacity>
                   </View>
 
-                  <View style={styles.metaRow}>
-                    <Feather name="map-pin" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
-                    <Text style={styles.metaText}>{item.location}</Text>
-                  </View>
+                  <Text style={styles.specializationText}>{specialization}</Text>
 
-                  <View style={styles.metaRow}>
-                    <Feather name="briefcase" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
-                    <Text style={styles.metaText}>{item.experience} Experience</Text>
+                  {/* Stats Footer inside Card */}
+                  <View style={styles.cardStatsRow}>
+                    <View style={styles.statItem}>
+                      <FontAwesome5 name="briefcase" size={12} color={COLORS.textMuted} style={styles.statIcon} />
+                      <Text style={styles.statText}>{item.projects || 0} Projects</Text>
+                    </View>
+                    <View style={styles.statItem}>
+                      <FontAwesome5 name="users" size={12} color={COLORS.textMuted} style={styles.statIcon} />
+                      <Text style={styles.statText}>{followers} Followers</Text>
+                    </View>
                   </View>
                 </View>
+              );
+            })}
 
-                {/* View Profile Button */}
-                <TouchableOpacity style={styles.viewProfileButton} onPress={() => navigateToDetail(item)}>
-                  <Text style={styles.viewProfileText}>View Profile</Text>
-                </TouchableOpacity>
+            {filteredArchitects.length === 0 && (
+              <View style={styles.emptyContainer}>
+                <Feather name="alert-circle" size={48} color={COLORS.textMuted} style={{ marginBottom: 15 }} />
+                <Text style={styles.emptyText}>No architects found matching your criteria.</Text>
               </View>
-
-              <Text style={styles.specializationText}>{item.specialization}</Text>
-
-              {/* Stats Footer inside Card */}
-              <View style={styles.cardStatsRow}>
-                <View style={styles.statItem}>
-                  <FontAwesome5 name="briefcase" size={12} color={COLORS.textMuted} style={styles.statIcon} />
-                  <Text style={styles.statText}>{item.projects} Projects</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <FontAwesome5 name="users" size={12} color={COLORS.textMuted} style={styles.statIcon} />
-                  <Text style={styles.statText}>{item.followers} Followers</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-
-          {filteredArchitects.length === 0 && (
-            <View style={styles.emptyContainer}>
-              <Feather name="alert-circle" size={48} color={COLORS.textMuted} style={{ marginBottom: 15 }} />
-              <Text style={styles.emptyText}>No architects found matching your criteria.</Text>
-            </View>
-          )}
-        </ScrollView>
+            )}
+          </ScrollView>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

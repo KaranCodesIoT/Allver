@@ -1,30 +1,32 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import {
+  StyleSheet, View, Text, TextInput, TouchableOpacity,
+  KeyboardAvoidingView, ScrollView, Platform, Alert,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, FontAwesome5 } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { Link, useRouter } from 'expo-router';
-
 import { BACKEND_URL } from '../constants/Config';
 
-const { width } = Dimensions.get('window');
-const isDesktop = width > 768;
-
 const COLORS = {
-  blue: '#3B82F6', // Exact blue from the image
-  blueLight: '#EFF6FF',
-  textDark: '#111827',
-  textMuted: '#6B7280',
-  border: '#E5E7EB',
+  green: '#1BC47D',
+  greenLight: '#E8FAF0',
+  bg: '#F7F8FA',
   white: '#FFFFFF',
+  inputBg: '#FFFFFF',
+  inputBorder: '#E5E7EB',
+  textDark: '#111827',
+  textMuted: '#9CA3AF',
+  textLabel: '#374151',
   red: '#EF4444',
 };
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -37,9 +39,7 @@ export default function LoginScreen() {
     try {
       const response = await fetch(`${BACKEND_URL}/api/login`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
 
@@ -50,42 +50,30 @@ export default function LoginScreen() {
           localStorage.setItem('currentUser', JSON.stringify(data.user));
         }
         (global as any).currentUser = data.user;
-        // If the user is an Architect, send them to the profile completion screen ONLY if profile setup is not completed yet
-        if (data.user && data.user.role === 'Architect') {
-          const isProfileSetupDone = 
-            data.user.experience || 
-            data.user.firmName || 
-            (data.user.specialization && data.user.specialization.length > 0) ||
-            (data.user.portfolioImages && data.user.portfolioImages.length > 0);
 
-          if (isProfileSetupDone) {
-            router.push('/(tabs)');
-          } else {
-            router.push('/architect-profile');
-          }
-        } else if (data.user && data.user.role === 'Contractor') {
-          const isProfileSetupDone = 
-            data.user.contractorType || 
-            data.user.teamSize || 
-            (data.user.workCategory && data.user.workCategory.length > 0) ||
-            (data.user.serviceLocation && data.user.serviceLocation.length > 0) ||
+        if (data.user?.role === 'Architect') {
+          const done =
+            data.user.experience ||
+            data.user.firmName ||
+            (data.user.specialization?.length > 0) ||
+            (data.user.portfolioImages?.length > 0);
+          router.push(done ? '/(tabs)' : '/architect-profile');
+        } else if (data.user?.role === 'Contractor') {
+          const done =
+            data.user.contractorType ||
+            data.user.teamSize ||
+            (data.user.workCategory?.length > 0) ||
+            (data.user.serviceLocation?.length > 0) ||
             data.user.experience;
-
-          if (isProfileSetupDone) {
-            router.push('/(tabs)');
-          } else {
-            router.push('/contractor-profile');
-          }
+          router.push(done ? '/(tabs)' : '/contractor-profile');
         } else {
-          // Otherwise, go straight to the Dashboard (tabs)
           router.push('/(tabs)');
         }
       } else {
-        Alert.alert('Login Failed', data.message || 'Login failed. Please try again.');
+        Alert.alert('Login Failed', data.message || 'Please try again.');
       }
-    } catch (error) {
-      Alert.alert('Network Error', 'Could not connect to the server. Make sure your backend is running.');
-      console.error(error);
+    } catch {
+      Alert.alert('Network Error', 'Could not connect to the server.');
     } finally {
       setIsLoading(false);
     }
@@ -93,169 +81,186 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView bounces={false} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          
-          <View style={[styles.splitContainer, !isDesktop && styles.splitContainerMobile]}>
-            
-            {/* Left Side (Illustration) */}
-            <View style={[styles.leftSide, !isDesktop && styles.leftSideMobile]}>
-              <SafeAreaView edges={['top', 'left', 'bottom']} style={styles.leftSafeArea}>
-                
-                <Link href="/" asChild>
-                  <TouchableOpacity style={styles.backButton}>
-                    <Feather name="arrow-left" size={20} color={COLORS.textDark} />
-                  </TouchableOpacity>
-                </Link>
+      <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Back */}
+            <View style={styles.header}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (router.canGoBack()) {
+                    router.back();
+                  } else {
+                    router.replace('/');
+                  }
+                }}
+                style={styles.backBtn}
+              >
+                <Feather name="arrow-left" size={22} color={COLORS.textDark} />
+              </TouchableOpacity>
+            </View>
 
-                <View style={styles.leftContent}>
-                  <Image 
-                    source={{ uri: 'https://images.unsplash.com/photo-1541888086425-d81bb19240f5?q=80&w=800&auto=format&fit=crop' }} 
-                    style={styles.illustration} 
-                    contentFit="cover"
+            {/* Logo */}
+            <View style={styles.logoWrap}>
+              <Image
+                source={require('@/assets/images/welcome-logo.png')}
+                style={styles.logo}
+                contentFit="contain"
+              />
+            </View>
+
+            {/* Heading */}
+            <Text style={styles.title}>Welcome Back</Text>
+            <Text style={styles.subtitle}>Sign in to your Allver account</Text>
+
+            {/* ─── FORM ─── */}
+            <View style={styles.form}>
+
+              {/* Email */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Email <Text style={styles.req}>*</Text></Text>
+                <View style={styles.inputWrap}>
+                  <Feather name="mail" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your email"
+                    placeholderTextColor={COLORS.textMuted}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={email}
+                    onChangeText={setEmail}
                   />
-                  <Text style={styles.welcomeTitle}>Welcome Back to Allver</Text>
-                  <Text style={styles.welcomeSubtitle}>
-                    Manage your projects, discover skilled contractors, and collaborate with architects securely in one place.
-                  </Text>
                 </View>
+              </View>
 
-              </SafeAreaView>
-            </View>
-
-            {/* Right Side (Form) */}
-            <View style={[styles.rightSide, !isDesktop && styles.rightSideMobile]}>
-              <SafeAreaView edges={['top', 'right', 'bottom']} style={styles.rightSafeArea}>
-                
-                <View style={styles.themeToggleContainer}>
-                  <TouchableOpacity style={styles.themeToggle}>
-                    <Feather name="moon" size={20} color={COLORS.textDark} />
+              {/* Password */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Password <Text style={styles.req}>*</Text></Text>
+                <View style={styles.inputWrap}>
+                  <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your password"
+                    placeholderTextColor={COLORS.textMuted}
+                    secureTextEntry={!showPassword}
+                    value={password}
+                    onChangeText={setPassword}
+                  />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                    <Feather name={showPassword ? 'eye' : 'eye-off'} size={18} color={COLORS.textMuted} />
                   </TouchableOpacity>
                 </View>
+              </View>
 
-                <View style={styles.formContainer}>
-                  
-                  {/* Small Brand Tag */}
-                  <View style={styles.brandTag}>
-                    <FontAwesome5 name="building" size={14} color={COLORS.blue} />
-                    <Text style={styles.brandTagText}>Allver</Text>
-                  </View>
-
-                  <Text style={styles.formTitle}>Log In</Text>
-                  <Text style={styles.formSubtitle}>Access your construction dashboard</Text>
-
-                  {/* Email Input */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Email <Text style={styles.asterisk}>*</Text></Text>
-                    <View style={styles.inputWrapper}>
-                      <Feather name="mail" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
-                      <TextInput 
-                        style={styles.input} 
-                        placeholder="Enter your email address" 
-                        placeholderTextColor={COLORS.textMuted}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                        value={email}
-                        onChangeText={setEmail}
-                      />
-                    </View>
-                  </View>
-
-                  {/* Password Input */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Password <Text style={styles.asterisk}>*</Text></Text>
-                    <View style={styles.inputWrapper}>
-                      <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
-                      <TextInput 
-                        style={styles.input} 
-                        placeholder="Enter password" 
-                        placeholderTextColor={COLORS.textMuted}
-                        secureTextEntry={!showPassword}
-                        value={password}
-                        onChangeText={setPassword}
-                      />
-                      <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                        <Feather name={showPassword ? "eye" : "eye-off"} size={18} color={COLORS.textMuted} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {/* Submit Button */}
-                  <TouchableOpacity 
-                    style={[styles.submitBtn, isLoading && { opacity: 0.7 }]} 
-                    onPress={handleLogin}
-                    disabled={isLoading}
-                  >
-                    <Text style={styles.submitBtnText}>{isLoading ? 'Logging In...' : 'Log In'}</Text>
-                  </TouchableOpacity>
-
-                  {/* Footer Link */}
-                  <View style={styles.footerLinkContainer}>
-                    <Text style={styles.footerText}>Don't have an account yet? </Text>
-                    <Link href="/" asChild>
-                      <TouchableOpacity>
-                        <Text style={styles.footerLink}>Create Account</Text>
-                      </TouchableOpacity>
-                    </Link>
-                  </View>
-
-                </View>
-
-              </SafeAreaView>
+              {/* Forgot Password */}
+              <TouchableOpacity style={styles.forgotBtn}>
+                <Text style={styles.forgotText}>Forgot Password?</Text>
+              </TouchableOpacity>
             </View>
 
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+            {/* Submit */}
+            <TouchableOpacity
+              style={[styles.primaryBtn, isLoading && { opacity: 0.7 }]}
+              onPress={handleLogin}
+              disabled={isLoading}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.primaryBtnText}>
+                {isLoading ? 'Logging In...' : 'Log In'}
+              </Text>
+              {!isLoading && (
+                <View style={styles.arrowCircle}>
+                  <Feather name="arrow-right" size={16} color={COLORS.green} />
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Footer */}
+            <View style={styles.footerRow}>
+              <Text style={styles.footerText}>Don't have an account? </Text>
+              <Link href="/signup" asChild>
+                <TouchableOpacity>
+                  <Text style={styles.footerLink}>Create Account</Text>
+                </TouchableOpacity>
+              </Link>
+            </View>
+
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.white },
-  scrollContent: { flexGrow: 1 },
-  
-  splitContainer: { flex: 1, flexDirection: 'row' },
-  splitContainerMobile: { flexDirection: 'column' },
-  
-  /* Left Side */
-  leftSide: { flex: 1, backgroundColor: COLORS.blueLight },
-  leftSideMobile: { minHeight: 400 },
-  leftSafeArea: { flex: 1, padding: 24 },
-  backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.white, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: {width:0, height:2}, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
-  leftContent: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
-  illustration: { width: '100%', maxWidth: 400, height: 350, marginBottom: 40, borderRadius: 16 },
-  welcomeTitle: { fontSize: 24, fontWeight: '800', color: COLORS.textDark, marginBottom: 12, textAlign: 'center' },
-  welcomeSubtitle: { fontSize: 14, color: COLORS.textDark, textAlign: 'center', lineHeight: 22, maxWidth: 350 },
+  container: { flex: 1, backgroundColor: COLORS.bg },
+  scrollContent: { paddingHorizontal: 24, paddingBottom: 40, flexGrow: 1 },
 
-  /* Right Side */
-  rightSide: { flex: 1, backgroundColor: COLORS.white },
-  rightSideMobile: { flex: undefined },
-  rightSafeArea: { flex: 1, padding: 24 },
-  themeToggleContainer: { alignItems: 'flex-end', marginBottom: 20 },
-  themeToggle: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center' },
-  
-  formContainer: { flex: 1, justifyContent: 'center', maxWidth: 450, width: '100%', alignSelf: 'center', paddingVertical: 40 },
-  brandTag: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.blueLight, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, gap: 6, marginBottom: 20 },
-  brandTagText: { color: COLORS.blue, fontSize: 13, fontWeight: '700' },
-  formTitle: { fontSize: 32, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 },
-  formSubtitle: { fontSize: 14, color: COLORS.textMuted, marginBottom: 40 },
-  
-  inputGroup: { marginBottom: 20 },
-  inputLabel: { fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 },
-  asterisk: { color: COLORS.red },
-  inputWrapper: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, height: 48, backgroundColor: COLORS.white },
-  inputIcon: { paddingHorizontal: 15 },
-  input: { flex: 1, height: '100%', fontSize: 14, color: COLORS.textDark },
-  eyeBtn: { paddingHorizontal: 15, height: '100%', justifyContent: 'center' },
-  
-  submitBtn: { backgroundColor: COLORS.blue, borderRadius: 8, paddingVertical: 14, alignItems: 'center', marginTop: 10, marginBottom: 25 },
-  submitBtnText: { color: COLORS.white, fontSize: 16, fontWeight: '700' },
-  
-  footerLinkContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  footerText: { color: COLORS.textMuted, fontSize: 13 },
-  footerLink: { color: COLORS.blue, fontSize: 13, fontWeight: '700' }
+  header: { marginTop: 8, marginBottom: 16 },
+  backBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+  },
+
+  logoWrap: { alignItems: 'center', marginBottom: 32 },
+  logo: { width: 160, height: 80 },
+
+  title: { fontSize: 28, fontWeight: '800', color: COLORS.textDark, marginBottom: 6 },
+  subtitle: { fontSize: 14, color: COLORS.textMuted, marginBottom: 36 },
+
+  form: { gap: 20 },
+
+  inputGroup: {},
+  label: { fontSize: 13, fontWeight: '600', color: COLORS.textLabel, marginBottom: 8, letterSpacing: 0.2 },
+  req: { color: COLORS.red },
+
+  inputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBg,
+    borderWidth: 1,
+    borderColor: COLORS.inputBorder,
+    borderRadius: 14,
+    height: 52,
+  },
+  inputIcon: { paddingHorizontal: 14 },
+  input: { flex: 1, fontSize: 15, color: COLORS.textDark, height: '100%' },
+  eyeBtn: { paddingHorizontal: 14, height: '100%', justifyContent: 'center' },
+
+  forgotBtn: { alignSelf: 'flex-end', marginTop: -4 },
+  forgotText: { color: COLORS.green, fontSize: 13, fontWeight: '600' },
+
+  primaryBtn: {
+    backgroundColor: COLORS.green,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    marginTop: 36,
+    ...Platform.select({
+      ios: { shadowColor: COLORS.green, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 12 },
+      android: { elevation: 6 },
+    }),
+  },
+  primaryBtnText: { color: COLORS.white, fontSize: 16, fontWeight: '700', flex: 1, textAlign: 'center', marginLeft: 32 },
+  arrowCircle: { width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.white, justifyContent: 'center', alignItems: 'center' },
+
+  footerRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 28 },
+  footerText: { color: COLORS.textMuted, fontSize: 14 },
+  footerLink: { color: COLORS.green, fontSize: 14, fontWeight: '700' },
 });

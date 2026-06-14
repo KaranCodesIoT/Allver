@@ -1,70 +1,76 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 36" fill="none">
-  <defs>
-    <!-- Silver metallic gradient -->
-    <linearGradient id="silver" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#c8cad0"/>
-      <stop offset="15%" stop-color="#a0a3aa"/>
-      <stop offset="30%" stop-color="#bbbec5"/>
-      <stop offset="50%" stop-color="#d0d3d8"/>
-      <stop offset="65%" stop-color="#9a9da4"/>
-      <stop offset="80%" stop-color="#808590"/>
-      <stop offset="100%" stop-color="#606468"/>
-    </linearGradient>
+    <defs>
+        <!-- Silver metallic gradient -->
+        <linearGradient id="silver" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#c8cad0"/>
+            <stop offset="15%" stop-color="#a0a3aa"/>
+            <stop offset="30%" stop-color="#bbbec5"/>
+            <stop offset="50%" stop-color="#d0d3d8"/>
+            <stop offset="65%" stop-color="#9a9da4"/>
+            <stop offset="80%" stop-color="#808590"/>
+            <stop offset="100%" stop-color="#606468"/>
+        </linearGradient>
 
-    <!-- Gold gradient for the E -->
-    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ddb44e"/>
-      <stop offset="20%" stop-color="#c49a3d"/>
-      <stop offset="40%" stop-color="#e8c55a"/>
-      <stop offset="60%" stop-color="#d4a840"/>
-      <stop offset="80%" stop-color="#b8922e"/>
-      <stop offset="100%" stop-color="#9a7828"/>
-    </linearGradient>
+        <!-- Gold gradient for the E -->
+        <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#ddb44e"/>
+            <stop offset="20%" stop-color="#c49a3d"/>
+            <stop offset="40%" stop-color="#e8c55a"/>
+            <stop offset="60%" stop-color="#d4a840"/>
+            <stop offset="80%" stop-color="#b8922e"/>
+            <stop offset="100%" stop-color="#9a7828"/>
+        </linearGradient>
 
-    <!-- Subtle shadow -->
-    <filter id="ts" x="-3%" y="-10%" width="108%" height="130%">
-      <feDropShadow dx="0" dy="0.8" stdDeviation="0.6" flood-color="#0a0a1a" flood-opacity="0.25"/>
-    </filter>
-  </defs>
+        <!-- Subtle shadow -->
+        <filter id="ts" x="-3%" y="-10%" width="108%" height="130%">
+            <feDropShadow dx="0" dy="0.8" stdDeviation="0.6" flood-color="#0a0a1a" flood-opacity="0.25"/>
+        </filter>
+    </defs>
 
-  <g filter="url(#ts)">
-    <!-- A (open triangle, no crossbar) -->
-    <path d="
-      M0,34 L5,34 L18,4 L20,0 L22,4 L35,34 L40,34
-      L23,0 L17,0 Z
-      M8,34 L20,6 L32,34 L27,34 L20,16 L13,34 Z
-    " fill="url(#silver)" fill-rule="evenodd"/>
+    <g
+        filter="url(#ts)">
+        <!-- A (open triangle, no crossbar) -->
+        <path
+        d="
+                  M0,34 L5,34 L18,4 L20,0 L22,4 L35,34 L40,34
+                  L23,0 L17,0 Z
+                  M8,34 L20,6 L32,34 L27,34 L20,16 L13,34 Z
+                " fill="url(#silver)" fill-rule="evenodd"/>
 
-    <!-- L -->
-    <path d="
-      M50,0 L55,0 L55,29.5 L74,29.5 L74,34 L50,34 Z
-    " fill="url(#silver)"/>
+        <!-- L -->
+        <path
+        d="
+                  M50,0 L55,0 L55,29.5 L74,29.5 L74,34 L50,34 Z
+                " fill="url(#silver)"/>
 
-    <!-- L -->
-    <path d="
-      M84,0 L89,0 L89,29.5 L108,29.5 L108,34 L84,34 Z
-    " fill="url(#silver)"/>
+        <!-- L -->
+        <path
+        d="
+                  M84,0 L89,0 L89,29.5 L108,29.5 L108,34 L84,34 Z
+                " fill="url(#silver)"/>
 
-    <!-- V -->
-    <path d="
-      M118,0 L123,0 L138,28 L153,0 L158,0
-      L140.5,34 L135.5,34 Z
-    " fill="url(#silver)"/>
+        <!-- V -->
+        <path
+        d="
+                  M118,0 L123,0 L138,28 L153,0 L158,0
+                  L140.5,34 L135.5,34 Z
+                " fill="url(#silver)"/>
 
-    <!-- E (GOLD) -->
-    <path d="
-      M168,0 L202,0 L202,4.5 L173,4.5
-      L173,14.5 L198,14.5 L198,19 L173,19
-      L173,29.5 L202,29.5 L202,34 L168,34 Z
-    " fill="url(#gold)"/>
+        <!-- E (GOLD) -->
+        <path
+        d="
+                  M168,0 L202,0 L202,4.5 L173,4.5
+                  L173,14.5 L198,14.5 L198,19 L173,19
+                  L173,29.5 L202,29.5 L202,34 L168,34 Z
+                " fill="url(#gold)"/>
 
-    <!-- R -->
-    <path d="
-      M212,0 L238,0
-      Q250,0 250,11 Q250,18.5 241,20.5
-      L254,34 L248,34 L236,21.5 L217,21.5
-      L217,34 L212,34 Z
-      M217,4.5 L217,17 L236,17 Q245,17 245,11 Q245,4.5 236,4.5 Z
-    " fill="url(#silver)" fill-rule="evenodd"/>
-  </g>
+        <!-- R -->
+        <path d="
+                  M212,0 L238,0
+                  Q250,0 250,11 Q250,18.5 241,20.5
+                  L254,34 L248,34 L236,21.5 L217,21.5
+                  L217,34 L212,34 Z
+                  M217,4.5 L217,17 L236,17 Q245,17 245,11 Q245,4.5 236,4.5 Z
+                " fill="url(#silver)" fill-rule="evenodd"/>
+    </g>
 </svg>

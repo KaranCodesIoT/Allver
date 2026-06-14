@@ -21,12 +21,14 @@ const COLORS = {
   red: '#EF4444',
   redLight: '#FEE2E2',
   teal: '#0F766E', // Green/Teal
+  blue: '#3B82F6',
+  blueLight: '#EFF6FF',
 };
 
 interface CalendarDay {
   day: number;
   isCurrentMonth: boolean;
-  status?: 'Present' | 'Half Day' | 'Absent';
+  status?: 'Present' | 'Half Day' | 'Absent' | 'Overtime';
   hours?: number;
   advance?: number;
   remarks?: string;
@@ -44,7 +46,7 @@ const INITIAL_CALENDAR_DAYS: CalendarDay[] = [
   { day: 7, isCurrentMonth: true, status: 'Present', hours: 8, advance: 100, remarks: '-' },
   { day: 8, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
   { day: 9, isCurrentMonth: true, status: 'Present', hours: 8, advance: 100, remarks: '-' },
-  { day: 10, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
+  { day: 10, isCurrentMonth: true, status: 'Overtime', hours: 12, advance: 0, remarks: 'OT Shift' },
   { day: 11, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
   { day: 12, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
   { day: 13, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
@@ -92,7 +94,7 @@ export default function LabourDetailScreen() {
   const [selectedDay, setSelectedDay] = useState<CalendarDay | null>(null);
   
   // Form edit states
-  const [editStatus, setEditStatus] = useState<'Present' | 'Half Day' | 'Absent'>('Present');
+  const [editStatus, setEditStatus] = useState<'Present' | 'Half Day' | 'Absent' | 'Overtime'>('Present');
   const [editHours, setEditHours] = useState('8.0');
   const [editAdvance, setEditAdvance] = useState('0');
   const [editRemarks, setEditRemarks] = useState('');
@@ -139,11 +141,14 @@ export default function LabourDetailScreen() {
   const presentCount = days.filter(d => d.isCurrentMonth && d.status === 'Present').length;
   const halfCount = days.filter(d => d.isCurrentMonth && d.status === 'Half Day').length;
   const absentCount = days.filter(d => d.isCurrentMonth && d.status === 'Absent').length;
+  const overtimeCount = days.filter(d => d.isCurrentMonth && d.status === 'Overtime').length;
   
-  const totalWeight = presentCount + (halfCount * 0.5);
-  const activeDaysCount = presentCount + halfCount + absentCount;
+  const totalWeight = presentCount + (halfCount * 0.5) + (overtimeCount * 1.5);
+  const activeDaysCount = presentCount + halfCount + absentCount + overtimeCount;
   const attendancePercentage = activeDaysCount > 0 ? Math.round((totalWeight / activeDaysCount) * 100) : 100;
   const attendanceStatusLabel = attendancePercentage >= 90 ? 'Good' : (attendancePercentage >= 75 ? 'Average' : 'Low');
+  
+  const totalEarnings = presentCount * 400 + halfCount * 200 + overtimeCount * 600;
 
   // Load selected day into editing form states
   const handleDayPress = (dayObj: CalendarDay) => {
@@ -305,7 +310,7 @@ export default function LabourDetailScreen() {
           <View style={styles.statBox}>
             <MaterialCommunityIcons name="currency-inr" size={15} color={COLORS.textMuted} style={{ marginBottom: 3 }} />
             <Text style={styles.statLabel}>Total Payment</Text>
-            <Text style={styles.statValue}>₹ {(presentCount * 400 + halfCount * 200).toLocaleString()}</Text>
+            <Text style={styles.statValue}>₹ {totalEarnings.toLocaleString()}</Text>
             <Text style={styles.statSubText}>(This Month)</Text>
           </View>
 
@@ -319,7 +324,7 @@ export default function LabourDetailScreen() {
           <View style={styles.statBox}>
             <Feather name="file-text" size={14} color={COLORS.textMuted} style={{ marginBottom: 4 }} />
             <Text style={styles.statLabel}>Pending Payment</Text>
-            <Text style={styles.statValue}>₹ {((presentCount * 400 + halfCount * 200) - days.reduce((acc, d) => acc + (d.advance || 0), 0)).toLocaleString()}</Text>
+            <Text style={styles.statValue}>₹ {(totalEarnings - days.reduce((acc, d) => acc + (d.advance || 0), 0)).toLocaleString()}</Text>
             <Text style={styles.statSubText}>(This Month)</Text>
           </View>
         </View>
@@ -413,7 +418,7 @@ export default function LabourDetailScreen() {
                         {d.isCurrentMonth && d.status && (
                           <View style={[
                             styles.statusDot, 
-                            d.status === 'Present' ? styles.dotPresent : d.status === 'Half Day' ? styles.dotHalf : styles.dotAbsent
+                            d.status === 'Present' ? styles.dotPresent : d.status === 'Half Day' ? styles.dotHalf : d.status === 'Overtime' ? styles.dotOvertime : styles.dotAbsent
                           ]} />
                         )}
                       </TouchableOpacity>
@@ -430,6 +435,10 @@ export default function LabourDetailScreen() {
                   <View style={styles.legendItem}>
                     <View style={[styles.statusDot, styles.dotHalf, { position: 'relative', marginRight: 5 }]} />
                     <Text style={styles.legendText}>Half Day</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.statusDot, styles.dotOvertime, { position: 'relative', marginRight: 5 }]} />
+                    <Text style={styles.legendText}>Overtime</Text>
                   </View>
                   <View style={styles.legendItem}>
                     <View style={[styles.statusDot, styles.dotAbsent, { position: 'relative', marginRight: 5 }]} />
@@ -455,6 +464,11 @@ export default function LabourDetailScreen() {
                 <View style={styles.summaryStatItem}>
                   <Text style={styles.summaryStatLabel}>Half Days</Text>
                   <Text style={[styles.summaryStatValue, { color: COLORS.orange }]}>{halfCount}</Text>
+                </View>
+
+                <View style={styles.summaryStatItem}>
+                  <Text style={styles.summaryStatLabel}>Overtime Days</Text>
+                  <Text style={[styles.summaryStatValue, { color: COLORS.blue }]}>{overtimeCount}</Text>
                 </View>
 
                 <View style={styles.summaryStatItem}>
@@ -498,6 +512,11 @@ export default function LabourDetailScreen() {
                             <Feather name="clock" size={12} color={COLORS.orange} />
                           </View>
                         )}
+                        {act.status === 'Overtime' && (
+                          <View style={[styles.nodeCircle, styles.nodeOvertime]}>
+                            <Feather name="clock" size={12} color={COLORS.blue} />
+                          </View>
+                        )}
                         {act.status === 'Absent' && (
                           <View style={[styles.nodeCircle, styles.nodeAbsent]}>
                             <Feather name="x" size={12} color={COLORS.red} />
@@ -512,11 +531,11 @@ export default function LabourDetailScreen() {
                           <Text style={styles.timelineHours}>{act.hours}</Text>
                           <View style={[
                             styles.statusBadge,
-                            act.status === 'Present' ? styles.badgePresent : act.status === 'Half Day' ? styles.badgeHalf : styles.badgeAbsent
+                            act.status === 'Present' ? styles.badgePresent : act.status === 'Half Day' ? styles.badgeHalf : act.status === 'Overtime' ? styles.badgeOvertime : styles.badgeAbsent
                           ]}>
                             <Text style={[
                               styles.statusBadgeText,
-                              act.status === 'Present' ? { color: COLORS.green } : act.status === 'Half Day' ? { color: COLORS.orange } : { color: COLORS.red }
+                              act.status === 'Present' ? { color: COLORS.green } : act.status === 'Half Day' ? { color: COLORS.orange } : act.status === 'Overtime' ? { color: COLORS.blue } : { color: COLORS.red }
                             ]}>{act.status}</Text>
                           </View>
                         </View>
@@ -624,9 +643,9 @@ export default function LabourDetailScreen() {
             {/* Status Picker Row */}
             <Text style={styles.inputLabel}>Attendance Status</Text>
             <View style={styles.statusButtonsRow}>
-              {(['Present', 'Half Day', 'Absent'] as const).map(status => {
+              {(['Present', 'Half Day', 'Overtime', 'Absent'] as const).map(status => {
                 const isSelected = editStatus === status;
-                const statusColor = status === 'Present' ? COLORS.green : status === 'Half Day' ? COLORS.orange : COLORS.red;
+                const statusColor = status === 'Present' ? COLORS.green : status === 'Half Day' ? COLORS.orange : status === 'Overtime' ? COLORS.blue : COLORS.red;
                 return (
                   <TouchableOpacity
                     key={status}
@@ -636,13 +655,13 @@ export default function LabourDetailScreen() {
                     ]}
                     onPress={() => {
                       setEditStatus(status);
-                      setEditHours(status === 'Present' ? '8.0' : status === 'Half Day' ? '4.0' : '0.0');
+                      setEditHours(status === 'Present' ? '8.0' : status === 'Half Day' ? '4.0' : status === 'Overtime' ? '12.0' : '0.0');
                     }}
                   >
                     <View style={[
                       styles.statusDot, 
                       { position: 'relative', marginTop: 0, marginRight: 6 },
-                      status === 'Present' ? styles.dotPresent : status === 'Half Day' ? styles.dotHalf : styles.dotAbsent
+                      status === 'Present' ? styles.dotPresent : status === 'Half Day' ? styles.dotHalf : status === 'Overtime' ? styles.dotOvertime : styles.dotAbsent
                     ]} />
                     <Text style={[styles.statusSelectText, isSelected && { color: statusColor, fontWeight: '800' }]}>
                       {status}
@@ -1027,6 +1046,9 @@ const styles = StyleSheet.create({
   dotHalf: {
     backgroundColor: COLORS.orange,
   },
+  dotOvertime: {
+    backgroundColor: COLORS.blue,
+  },
   dotAbsent: {
     backgroundColor: COLORS.red,
   },
@@ -1177,6 +1199,10 @@ const styles = StyleSheet.create({
     borderColor: COLORS.orange,
     backgroundColor: '#FFFBEB',
   },
+  nodeOvertime: {
+    borderColor: COLORS.blue,
+    backgroundColor: '#EFF6FF',
+  },
   nodeAbsent: {
     borderColor: COLORS.red,
     backgroundColor: '#FEF2F2',
@@ -1212,6 +1238,9 @@ const styles = StyleSheet.create({
   },
   badgeHalf: {
     backgroundColor: '#FFFBEB',
+  },
+  badgeOvertime: {
+    backgroundColor: '#EFF6FF',
   },
   badgeAbsent: {
     backgroundColor: '#FEF2F2',

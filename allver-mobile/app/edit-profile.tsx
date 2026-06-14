@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 
 const { width, height } = Dimensions.get('window');
 
@@ -175,6 +176,91 @@ export default function EditProfileScreen() {
     }
   };
 
+  // Mobile image picker and upload
+  const pickImage = async (type: 'cover' | 'avatar') => {
+    if (Platform.OS === 'web') {
+      if (type === 'cover') coverInputRef.current?.click();
+      else avatarInputRef.current?.click();
+      return;
+    }
+
+    Alert.alert(
+      "Choose an option",
+      "Would you like to take a photo or select from your gallery?",
+      [
+        {
+          text: "Camera",
+          onPress: async () => {
+            const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+            if (permissionResult.granted === false) {
+              showAlert('Permission Required', 'Permission to access camera is required!');
+              return;
+            }
+            const result = await ImagePicker.launchCameraAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              allowsEditing: true,
+              aspect: type === 'cover' ? [16, 9] : [1, 1],
+              quality: 0.8,
+            });
+            if (!result.canceled && result.assets[0].uri) {
+              uploadMobileImage(result.assets[0].uri, type);
+            }
+          }
+        },
+        {
+          text: "Gallery",
+          onPress: async () => {
+            const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (permissionResult.granted === false) {
+              showAlert('Permission Required', 'Permission to access gallery is required!');
+              return;
+            }
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              allowsEditing: true,
+              aspect: type === 'cover' ? [16, 9] : [1, 1],
+              quality: 0.8,
+            });
+            if (!result.canceled && result.assets[0].uri) {
+              uploadMobileImage(result.assets[0].uri, type);
+            }
+          }
+        },
+        { text: "Cancel", style: "cancel" }
+      ]
+    );
+  };
+
+  const uploadMobileImage = async (uri: string, type: 'cover' | 'avatar') => {
+    setUploading(prev => ({ ...prev, [type]: true }));
+    const formData = new FormData();
+    const filename = uri.split('/').pop() || 'image.jpg';
+    const match = /\.(\w+)$/.exec(filename);
+    const fileType = match ? `image/${match[1]}` : `image`;
+
+    formData.append('image', { uri, name: filename, type: fileType } as any);
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'multipart/form-data' },
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (type === 'cover') setCoverPhoto(data.url);
+        else setProfilePhoto(data.url);
+      } else {
+        showAlert('Upload Failed', data.message || 'Image upload failed.');
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert('Upload Error', 'Could not connect to the upload server.');
+    } finally {
+      setUploading(prev => ({ ...prev, [type]: false }));
+    }
+  };
+
   // Save changes
   const handleSave = async () => {
     if (!fullName.trim()) {
@@ -287,13 +373,7 @@ export default function EditProfileScreen() {
                   
                   <TouchableOpacity 
                     style={styles.changeCoverBtn}
-                    onPress={() => {
-                      if (Platform.OS === 'web') {
-                        coverInputRef.current?.click();
-                      } else {
-                        setPhotoPickerVisible({ type: 'cover', visible: true });
-                      }
-                    }}
+                    onPress={() => pickImage('cover')}
                     disabled={uploading.cover}
                   >
                     {uploading.cover ? (
@@ -334,13 +414,7 @@ export default function EditProfileScreen() {
                     )}
                     <TouchableOpacity 
                       style={styles.avatarCamIcon}
-                      onPress={() => {
-                        if (Platform.OS === 'web') {
-                          avatarInputRef.current?.click();
-                        } else {
-                          setPhotoPickerVisible({ type: 'avatar', visible: true });
-                        }
-                      }}
+                      onPress={() => pickImage('avatar')}
                     >
                       <Feather name="camera" size={12} color={COLORS.white} />
                     </TouchableOpacity>
@@ -352,13 +426,7 @@ export default function EditProfileScreen() {
                     <View style={styles.avatarActionButtonsRow}>
                       <TouchableOpacity 
                         style={styles.avatarActionBtn}
-                        onPress={() => {
-                          if (Platform.OS === 'web') {
-                            avatarInputRef.current?.click();
-                          } else {
-                            setPhotoPickerVisible({ type: 'avatar', visible: true });
-                          }
-                        }}
+                        onPress={() => pickImage('avatar')}
                         disabled={uploading.avatar}
                       >
                         {uploading.avatar ? (
