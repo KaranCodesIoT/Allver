@@ -45,7 +45,10 @@ import {
   ShieldCheck,
   Lightbulb,
   Play,
-  ArrowLeft
+  ArrowLeft,
+  ChevronUp,
+  FileText,
+  Home as HomeIcon
 } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 
@@ -243,6 +246,8 @@ const Home = () => {
   const [designTabPrice, setDesignTabPrice] = useState('');
   const [activeDetailTab, setActiveDetailTab] = useState('photos'); // 'photos', 'videos', 'quotation'
   const [showFullOverview, setShowFullOverview] = useState(false);
+  const [followedAuthors, setFollowedAuthors] = useState({});
+  const [hiredContractors, setHiredContractors] = useState({});
   const [designsList, setDesignsList] = useState([
     {
       id: 'd1',
@@ -1574,172 +1579,227 @@ const Home = () => {
               </div>
             )}
 
-            {/* FEED TAB - Renders feed of recent projects and achievements */}
+            {/* FEED TAB - Discover page - full desktop website layout */}
             {activeTab === 'feed' && (
-              <div className="tab-pane feed-tab" style={{ maxWidth: '640px', margin: '0 auto', padding: '1rem 0 2rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-                  <h2 style={{ fontSize: '1.9rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>Discover</h2>
-                  <button className="notif-btn" style={{ position: 'relative', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                    <Bell size={20} style={{ color: '#475569' }} />
-                    <span style={{ position: 'absolute', top: '9px', right: '9px', width: '8px', height: '8px', background: '#ef4444', borderRadius: '50%', border: '2px solid white' }}></span>
-                  </button>
-                </div>
+              <div className="tab-pane feed-tab">
+                <div className="feed-grid-container">
 
-                {/* Content Type Filter Chips */}
-                <div style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-                  {['All', 'Projects', 'Designs', 'Progress', 'Teams'].map(type => (
-                    <button 
-                      key={type}
-                      onClick={() => setFeedFilter(type)}
-                      style={{
-                        padding: '0.45rem 1.25rem',
-                        borderRadius: '2rem',
-                        fontSize: '0.88rem',
-                        fontWeight: '600',
-                        cursor: 'pointer',
-                        border: feedFilter === type ? 'none' : '1px solid #cbd5e1',
-                        background: feedFilter === type ? '#0f766e' : 'white',
-                        color: feedFilter === type ? 'white' : '#475569',
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                  <button style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                    <SlidersHorizontal size={20} />
-                  </button>
-                </div>
+                  {/* ── Left Column: Feed ── */}
+                  <div className="feed-left-col">
 
-                <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '1.25rem', fontWeight: '500' }}>
-                  Showing posts from people you follow
-                </div>
+                    {/* Page title */}
+                    <div className="discover-page-header">
+                      <h2 className="discover-page-title">Discover</h2>
+                    </div>
 
-                {/* Feed Cards List */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  {filteredFeedPosts.map(post => (
-                    <div key={post.id} className="feed-card" style={{ background: 'white', borderRadius: '1rem', border: '1px solid #e2e8f0', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                      
-                      {/* Card Header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                          <img src={post.author.avatar} alt={post.author.name} style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover' }} />
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                              <strong style={{ fontSize: '0.98rem', color: '#0f172a', fontWeight: '750' }}>{post.author.name}</strong>
-                              <CheckCircle2 size={13} style={{ color: post.author.verifiedColor, fill: post.author.verifiedColor, stroke: 'white' }} />
+                    {/* Create post bar */}
+                    <div className="create-post-bar">
+                      <div className="create-post-avatar">
+                        {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                      <div className="create-post-placeholder">
+                        Share a project, progress update or insight…
+                      </div>
+                      <button style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'linear-gradient(135deg,#0f766e,#115e59)', color: 'white', border: 'none', borderRadius: '0.65rem', padding: '0.5rem 1rem', fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', flexShrink: 0 }}>
+                        <Image size={15} /> Post
+                      </button>
+                    </div>
+
+
+                    {/* Feed card list */}
+                    <div className="discover-feed-list">
+                      {feedPosts.map(post => (
+                        <div key={post.id} className="feed-card">
+
+                          {/* Card header */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                              <img
+                                src={post.author.avatar}
+                                alt={post.author.name}
+                                style={{ width: '44px', height: '44px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #f1f5f9' }}
+                              />
+                              <div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                  <strong style={{ fontSize: '0.97rem', color: '#0f172a', fontWeight: '750' }}>{post.author.name}</strong>
+                                  <CheckCircle2 size={13} style={{ color: post.author.verifiedColor, fill: post.author.verifiedColor, stroke: 'white' }} />
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '1px' }}>
+                                  {post.author.role} • {post.author.location}
+                                </div>
+                                <div style={{ fontSize: '0.74rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                                  {post.time} • <Globe size={11} />
+                                </div>
+                              </div>
                             </div>
-                            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '1px' }}>
-                              {post.author.role === 'Labour' ? 'Labour' : post.author.role} • {post.author.location}
-                            </div>
-                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                              {post.time} • <Globe size={11} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{ fontSize: '0.72rem', fontWeight: '700', background: '#f0fdf4', color: '#0f766e', padding: '0.2rem 0.6rem', borderRadius: '1rem', border: '1px solid #bbf7d0' }}>
+                                {post.contentType}
+                              </span>
+                              <button style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.1rem', cursor: 'pointer', letterSpacing: '1px', padding: '0.1rem 0.3rem' }}>•••</button>
                             </div>
                           </div>
-                        </div>
-                        <button style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '1.1rem', cursor: 'pointer', letterSpacing: '1px' }}>•••</button>
-                      </div>
 
-                      {/* Post Content */}
-                      <p style={{ fontSize: '0.95rem', color: '#1e293b', whiteSpace: 'pre-line', margin: 0, lineHeight: '1.5', fontWeight: '500' }}>
-                        {post.content}
-                      </p>
+                          {/* Post text */}
+                          <p style={{ fontSize: '0.95rem', color: '#1e293b', whiteSpace: 'pre-line', margin: 0, lineHeight: '1.6', fontWeight: '500' }}>
+                            {post.content}
+                          </p>
 
-                      {/* Post Images Grid */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', borderRadius: '0.75rem', overflow: 'hidden' }}>
-                        {post.images.map((img, idx) => (
-                          <div key={idx} style={{ aspectRatio: '4/3', overflow: 'hidden', background: '#f1f5f9' }}>
-                            <img src={img} alt={`post-img-${idx}`} style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.3s ease' }} />
+                          {/* Post images */}
+                          <div className="post-images-grid">
+                            {post.images.map((img, idx) => (
+                              <div key={idx} className="post-image-cell">
+                                <img src={img} alt={`post-img-${idx}`} />
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
 
-                      {/* Reactions Row */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.85rem', fontSize: '0.82rem', color: '#64748b' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center' }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '16px', height: '16px', background: '#ef4444', color: 'white', borderRadius: '50%', fontSize: '8px' }}>❤️</span>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '16px', height: '16px', background: '#f59e0b', color: 'white', borderRadius: '50%', fontSize: '8px', marginLeft: '-4px', border: '1px solid white' }}>🙏</span>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '16px', height: '16px', background: '#10b981', color: 'white', borderRadius: '50%', fontSize: '8px', marginLeft: '-4px', border: '1px solid white' }}>👏</span>
+                          {/* Reaction count row */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem', fontSize: '0.82rem', color: '#64748b' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', background: '#ef4444', borderRadius: '50%', fontSize: '9px' }}>❤️</span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', background: '#f59e0b', borderRadius: '50%', fontSize: '9px', marginLeft: '-5px', border: '1.5px solid white' }}>🙏</span>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '18px', height: '18px', background: '#10b981', borderRadius: '50%', fontSize: '9px', marginLeft: '-5px', border: '1.5px solid white' }}>👏</span>
+                              <span style={{ marginLeft: '6px', fontWeight: '600', color: '#475569' }}>{post.appreciates}</span>
+                            </div>
+                            <span style={{ fontWeight: '600', color: '#475569' }}>{post.comments} Comments</span>
                           </div>
-                          <span style={{ marginLeft: '4px', fontWeight: '600' }}>{post.appreciates}</span>
-                        </div>
-                        <div style={{ display: 'flex', gap: '8px', fontWeight: '600' }}>
-                          <span>{post.comments} Comments</span>
-                        </div>
-                      </div>
 
-                      {/* Actions Row */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0.5rem' }}>
-                        <button 
-                          onClick={() => handleAppreciatePost(post.id)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            color: post.hasAppreciated ? '#ef4444' : '#64748b',
-                            fontSize: '0.88rem',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
-                          }}
-                        >
-                          <Heart size={16} fill={post.hasAppreciated ? '#ef4444' : 'none'} />
-                          Appreciate
-                        </button>
-                        <button 
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            color: '#64748b',
-                            fontSize: '0.88rem',
-                            fontWeight: '600',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <MessageSquare size={16} />
-                          Comment
-                        </button>
-                        <button 
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            color: '#64748b',
-                            fontSize: '0.88rem',
-                            fontWeight: '600',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <Users size={16} />
-                          Connect
-                        </button>
-                        <button 
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            color: '#64748b',
-                            fontSize: '0.88rem',
-                            fontWeight: '600',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <Bookmark size={16} />
-                          Save
+                          {/* Action buttons */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            {[
+                              { icon: <Heart size={16} fill={post.hasAppreciated ? '#ef4444' : 'none'} />, label: 'Appreciate', active: post.hasAppreciated, action: () => handleAppreciatePost(post.id) },
+                              { icon: <MessageSquare size={16} />, label: 'Comment', active: false, action: null },
+                              { icon: <Users size={16} />, label: 'Connect', active: false, action: null },
+                              { icon: <Bookmark size={16} />, label: 'Save', active: false, action: null },
+                            ].map(({ icon, label, active, action }) => (
+                              <button
+                                key={label}
+                                onClick={action || undefined}
+                                style={{
+                                  background: 'none', border: 'none', cursor: 'pointer',
+                                  display: 'flex', alignItems: 'center', gap: '6px',
+                                  fontSize: '0.86rem', fontWeight: '600',
+                                  color: active ? '#ef4444' : '#64748b',
+                                  padding: '0.3rem 0.5rem', borderRadius: '0.4rem',
+                                  transition: 'background 0.15s, color 0.15s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                              >
+                                {icon} {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ── Right Column: Sidebar Widgets ── */}
+                  <div className="feed-right-col">
+
+                    {/* Profile summary widget */}
+                    <div className="feed-widget-card profile-summary-widget">
+                      <div className="widget-header-bg"></div>
+                      <div className="profile-summary-body">
+                        <div className="profile-summary-avatar">
+                          {currentUser.avatarUrl ? (
+                            <img src={currentUser.avatarUrl} alt={currentUser.fullName} />
+                          ) : (
+                            <div className="avatar-initials">
+                              {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'U'}
+                            </div>
+                          )}
+                        </div>
+                        <h4 className="profile-name">{currentUser.fullName}</h4>
+                        <p className="profile-role">{currentUser.role}</p>
+                        <p className="profile-location">
+                          <MapPin size={12} /> {currentUser.city || 'India'}
+                        </p>
+
+                        <div className="profile-widget-stats">
+                          <div className="stat-item">
+                            <span className="stat-num">{workspaces.length}</span>
+                            <span className="stat-label">Projects</span>
+                          </div>
+                          <div className="stat-divider"></div>
+                          <div className="stat-item">
+                            <span className="stat-num">256</span>
+                            <span className="stat-label">Followers</span>
+                          </div>
+                          <div className="stat-divider"></div>
+                          <div className="stat-item">
+                            <span className="stat-num">48</span>
+                            <span className="stat-label">Following</span>
+                          </div>
+                        </div>
+
+                        <button className="widget-action-btn" onClick={() => navigate('/profile')}>
+                          View Full Profile
                         </button>
                       </div>
                     </div>
-                  ))}
+
+                    {/* Suggested connections widget */}
+                    <div className="feed-widget-card suggestions-widget">
+                      <h3 className="widget-title">Suggested for You</h3>
+                      <div className="suggestions-list">
+                        {[
+                          { id: 's1', name: 'Ar. Neha Sharma', role: 'Architect', avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=80', rating: 4.8 },
+                          { id: 's2', name: 'Rohit Buildcon', role: 'Contractor', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=80', rating: 4.7 },
+                          { id: 's3', name: 'Amit Kumar', role: 'Labour', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=80', rating: 4.9 },
+                        ].map(pro => (
+                          <div key={pro.id} className="suggestion-item">
+                            <div className="avatar-wrapper-relative">
+                              <img src={pro.avatar} alt={pro.name} className="item-avatar" />
+                              <span className="online-indicator-dot"></span>
+                            </div>
+                            <div className="item-info">
+                              <span className="item-name">{pro.name}</span>
+                              <span className="item-role">{pro.role}</span>
+                              <div className="item-rating">
+                                <Star size={11} fill="#f59e0b" color="#f59e0b" />
+                                <span>{pro.rating}</span>
+                              </div>
+                            </div>
+                            <button className="item-connect-btn" onClick={() => {
+                              if (pro.role === 'Architect') navigate('/architects');
+                              else if (pro.role === 'Contractor') navigate('/contractors');
+                              else navigate('/labour');
+                            }}>
+                              Connect
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Allver platform metrics widget */}
+                    <div className="feed-widget-card stats-widget">
+                      <div className="stats-header">
+                        <Sparkles size={18} className="stats-icon-glowing" style={{ color: '#0ea5e9' }} />
+                        <h3>Allver Metrics</h3>
+                      </div>
+                      <div className="stats-widget-grid">
+                        {[
+                          { icon: <Users size={15} />, num: '1.2K+', lbl: 'Verified Pros' },
+                          { icon: <Building2 size={15} />, num: '450+', lbl: 'Spaces Built' },
+                          { icon: <Sparkles size={15} />, num: '98%', lbl: 'Success Rate' },
+                          { icon: <Calendar size={15} />, num: '24/7', lbl: 'Site Updates' },
+                        ].map(({ icon, num, lbl }) => (
+                          <div key={lbl} className="stat-grid-item">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '3px', color: '#0ea5e9' }}>
+                              {icon}
+                              <span className="grid-num">{num}</span>
+                            </div>
+                            <span className="grid-lbl">{lbl}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                  </div>
                 </div>
               </div>
             )}
@@ -1856,345 +1916,332 @@ const Home = () => {
 
                   </div>
                 ) : (
-                  <div className="design-detail-container">
-                    
-                    {/* Header Row */}
-                    <div className="design-detail-header">
-                      <button className="back-btn" onClick={() => setSelectedDesign(null)}>
-                        <ArrowLeft size={22} />
+                               <div className="web-detail-container">
+
+                    {/* Top bar header */}
+                    <div className="web-detail-topbar">
+                      <button className="web-topbar-btn" onClick={() => setSelectedDesign(null)}>
+                        <ArrowLeft size={16} />
+                        <span>Back to Designs</span>
                       </button>
-                      <div className="actions-right">
-                        <button className="header-action-btn">
-                          <Share2 size={20} />
+                      <div className="web-topbar-actions">
+                        <button className="web-icon-only-btn">
+                          <Share2 size={18} />
                         </button>
                         <button 
-                          className="header-action-btn"
+                          className="web-icon-only-btn"
                           onClick={(e) => handleSaveDesign(selectedDesign.id, e)}
                         >
-                          <Bookmark size={20} fill={selectedDesign.saved ? "#0f172a" : "none"} />
+                          <Bookmark size={18} fill={selectedDesign.saved ? "#1e293b" : "none"} />
                         </button>
                       </div>
                     </div>
 
-                    {/* Profile row */}
-                    <div className="design-detail-profile-row">
-                      <img src={selectedDesign.avatarUrl} alt={selectedDesign.author} className="avatar-img" />
-                      <div className="profile-info">
-                        <h3>{selectedDesign.title}</h3>
-                        <div className="location">
-                          <MapPin size={13} />
-                          <span>{selectedDesign.location}</span>
-                        </div>
-                        <span className="author">
-                          By {selectedDesign.author}
-                          <CheckCircle2 size={13} style={{ color: '#10b981', fill: '#10b981', stroke: 'white' }} />
-                        </span>
-                        <div className="rating-box">
-                          <Star size={12} fill="#f59e0b" color="#f59e0b" />
-                          <strong>{selectedDesign.rating}</strong>
-                          <span>({selectedDesign.reviewsCount} reviews)</span>
+                    {/* Widescreen profile section */}
+                    <div className="web-detail-profile-row">
+                      <div className="web-profile-info-group">
+                        <img 
+                          src={selectedDesign.avatarUrl} 
+                          alt={selectedDesign.author} 
+                          className="web-profile-avatar"
+                        />
+                        <div className="web-profile-text">
+                          <h2 className="web-design-title">{selectedDesign.title}</h2>
+                          <div className="web-design-meta-inline">
+                            <div className="web-meta-item">
+                              <MapPin size={14} />
+                              <span>{selectedDesign.location}</span>
+                            </div>
+                            <span className="sep">•</span>
+                            <div className="web-design-author">
+                              <span>By Ar. {selectedDesign.author}</span>
+                              <CheckCircle2 size={13} style={{ color: "#10b981", fill: "#10b981", stroke: "white" }} />
+                            </div>
+                            <span className="sep">•</span>
+                            <div className="web-design-rating">
+                              <Star size={14} fill="#eab308" color="#eab308" />
+                              <span>{selectedDesign.rating}</span>
+                              <span className="web-rating-reviews">({selectedDesign.reviewsCount} reviews)</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Action buttons */}
-                    <div className="design-detail-actions">
-                      <button className="design-detail-btn">Follow</button>
-                      <button 
-                        className="design-detail-btn"
-                        onClick={() => {
-                          const matched = designersList.find(dl => dl.fullName.toLowerCase().includes(selectedDesign.author.toLowerCase()));
-                          if (matched) {
-                            navigate(`/architect/${matched._id}`);
-                          } else {
-                            navigate('/architects');
-                          }
-                        }}
-                      >
-                        View Profile
-                      </button>
-                      <button 
-                        className="design-detail-btn primary"
-                        onClick={() => {
-                          const matched = designersList.find(dl => dl.fullName.toLowerCase().includes(selectedDesign.author.toLowerCase()));
-                          if (matched) {
-                            setActiveChatDesigner(matched);
-                            setActiveTab('chats');
-                          } else {
-                            setActiveTab('chats');
-                          }
-                        }}
-                      >
-                        <MessageSquare size={14} />
-                        Contact
-                      </button>
-                    </div>
-
-                    {/* Tabs */}
-                    <div className="design-detail-tabs">
-                      <button 
-                        className={`design-tab-btn ${activeDetailTab === 'photos' ? 'active' : ''}`}
-                        onClick={() => setActiveDetailTab('photos')}
-                      >
-                        <Image size={15} />
-                        Photos
-                      </button>
-                      <button 
-                        className={`design-tab-btn ${activeDetailTab === 'videos' ? 'active' : ''}`}
-                        onClick={() => setActiveDetailTab('videos')}
-                      >
-                        <Play size={15} />
-                        Videos
-                      </button>
-                      <button 
-                        className={`design-tab-btn ${activeDetailTab === 'quotation' ? 'active' : ''}`}
-                        onClick={() => setActiveDetailTab('quotation')}
-                      >
-                        <Briefcase size={15} />
-                        Quotation
-                      </button>
-                    </div>
-
-                    {/* Photos view content */}
-                    {activeDetailTab === 'photos' && (
-                      <>
-                        {/* Media Layout */}
-                        <div className="design-detail-media-layout">
-                          <div className="design-detail-main-img-box">
-                            <img src={selectedDesign.mainImage} alt={selectedDesign.title} />
-                            <span className="design-detail-indicator">1/12</span>
-                          </div>
-                          
-                          <div className="design-detail-thumbnails">
-                            <div className="design-detail-thumb-box">
-                              <img src={selectedDesign.images[1] || selectedDesign.mainImage} alt="thumb-1" />
-                            </div>
-                            <div className="design-detail-thumb-box">
-                              <img src={selectedDesign.images[2] || selectedDesign.mainImage} alt="thumb-2" />
-                            </div>
-                            <div className="design-detail-thumb-box">
-                              <img src={selectedDesign.images[3] || selectedDesign.mainImage} alt="thumb-3" />
-                              <div className="design-detail-thumb-overlay">+9 More</div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Design Overview */}
-                        <div className="design-detail-overview">
-                          <div className="overview-icon">
-                            <Layout size={22} />
-                          </div>
-                          <div className="design-detail-overview-text">
-                            <h4>Design Overview</h4>
-                            <p>
-                              {showFullOverview 
-                                ? selectedDesign.overview 
-                                : `${selectedDesign.overview.slice(0, 110)}...`}
-                            </p>
-                            <button 
-                              className="show-more"
-                              onClick={() => setShowFullOverview(!showFullOverview)}
-                            >
-                              {showFullOverview ? 'Show Less' : 'Show More'}
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Stats Row */}
-                        <div className="design-detail-stats-row">
-                          <div className="design-detail-stats">
-                            <button 
-                              className={`design-detail-stat-btn ${selectedDesign.hasLiked ? 'liked' : ''}`}
-                              onClick={() => handleLikeDesign(selectedDesign.id)}
-                            >
-                              <Heart size={16} fill={selectedDesign.hasLiked ? "#ef4444" : "none"} />
-                              <span>{selectedDesign.likes}</span>
-                            </button>
-                            <div className="design-detail-stat-btn">
-                              <MessageSquare size={16} />
-                              <span>{selectedDesign.comments}</span>
-                            </div>
-                          </div>
-
-                          <button 
-                            className="design-detail-save-btn"
-                            onClick={() => handleSaveDesign(selectedDesign.id)}
-                            style={{ color: selectedDesign.saved ? '#10b981' : '#334155' }}
-                          >
-                            <Bookmark size={16} fill={selectedDesign.saved ? "#10b981" : "none"} />
-                            <span>{selectedDesign.saved ? 'Saved' : 'Save Design'}</span>
-                          </button>
-                        </div>
-
-                        {/* Similar Designs section */}
-                        <div className="design-horizontal-section">
-                          <div className="design-section-header">
-                            <h4>Similar Designs</h4>
-                            <a href="#" className="view-all-link" onClick={e => e.preventDefault()}>View All &rarr;</a>
-                          </div>
-
-                          <div className="design-horizontal-scroll">
-                            <div className="design-similar-item-card">
-                              <img src="https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=150&q=80" alt="similar-1" />
-                              <div className="card-info">
-                                <h5>Minimal 2BHK Apartment</h5>
-                                <span className="loc">Pune, Maharashtra</span>
-                                <div className="rat">
-                                  <Star size={11} fill="#f59e0b" />
-                                  <span>4.6</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="design-similar-item-card">
-                              <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=150&q=80" alt="similar-2" />
-                              <div className="card-info">
-                                <h5>Modern Living Room</h5>
-                                <span className="loc">Mumbai, Maharashtra</span>
-                                <div className="rat">
-                                  <Star size={11} fill="#f59e0b" />
-                                  <span>4.7</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="design-similar-item-card">
-                              <img src="https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=150&q=80" alt="similar-3" />
-                              <div className="card-info">
-                                <h5>Modular Kitchen Design</h5>
-                                <span className="loc">Bengaluru, Karnataka</span>
-                                <div className="rat">
-                                  <Star size={11} fill="#f59e0b" />
-                                  <span>4.5</span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="design-similar-item-card">
-                              <img src="https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=150&q=80" alt="similar-4" />
-                              <div className="card-info">
-                                <h5>Luxury Bedroom Design</h5>
-                                <span className="loc">Pune, Maharashtra</span>
-                                <div className="rat">
-                                  <Star size={11} fill="#f59e0b" />
-                                  <span>4.6</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Contractors list */}
-                        <div className="design-horizontal-section">
-                          <div className="design-section-header">
-                            <h4>Contractors Who Can Build This Design</h4>
-                            <a href="#" className="view-all-link" onClick={e => e.preventDefault()}>View All &rarr;</a>
-                          </div>
-
-                          <div className="design-horizontal-scroll">
-                            <div className="design-contractor-item-card">
-                              <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80" alt="contractor-1" />
-                              <h5>BuildWell Construction</h5>
-                              <div className="rat">
-                                <Star size={11} fill="#f59e0b" color="#f59e0b" />
-                                <strong>4.6</strong> (98)
-                              </div>
-                              <div className="price">Starts at <strong>₹8.5 L</strong></div>
-                              <button className="design-contractor-hire-btn" onClick={() => navigate('/contractors')}>Hire Now</button>
-                            </div>
-                            <div className="design-contractor-item-card">
-                              <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80" alt="contractor-2" />
-                              <h5>HomeCraft Builders</h5>
-                              <div className="rat">
-                                <Star size={11} fill="#f59e0b" color="#f59e0b" />
-                                <strong>4.5</strong> (76)
-                              </div>
-                              <div className="price">Starts at <strong>₹8.8 L</strong></div>
-                              <button className="design-contractor-hire-btn" onClick={() => navigate('/contractors')}>Hire Now</button>
-                            </div>
-                            <div className="design-contractor-item-card">
-                              <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80" alt="contractor-3" />
-                              <h5>StructureLine</h5>
-                              <div className="rat">
-                                <Star size={11} fill="#f59e0b" color="#f59e0b" />
-                                <strong>4.7</strong> (120)
-                              </div>
-                              <div className="price">Starts at <strong>₹6.2 L</strong></div>
-                              <button className="design-contractor-hire-btn" onClick={() => navigate('/contractors')}>Hire Now</button>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    {activeDetailTab === 'videos' && (
-                      <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#64748b' }}>
-                        <Play size={48} style={{ color: '#10b981', marginBottom: '1rem' }} />
-                        <h4 style={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '0.5rem' }}>Walkthrough Video Available</h4>
-                        <p style={{ fontSize: '0.88rem' }}>A high definition 3D video tour of this Modern 2BHK Apartment is available for registered clients.</p>
+                      {/* Desktop profile CTA buttons */}
+                      <div className="web-profile-cta-group">
                         <button 
-                          className="design-detail-btn primary"
-                          style={{ margin: '1rem auto 0', padding: '0.5rem 1.5rem', width: 'auto' }}
+                          className="web-profile-btn outline"
+                          onClick={() => setFollowedAuthors(prev => ({ ...prev, [selectedDesign.author]: !prev[selectedDesign.author] }))}
+                        >
+                          {followedAuthors[selectedDesign.author] ? 'Following' : 'Follow'}
+                        </button>
+                        <button 
+                          className="web-profile-btn outline"
                           onClick={() => {
                             const matched = designersList.find(dl => dl.fullName.toLowerCase().includes(selectedDesign.author.toLowerCase()));
-                            if (matched) {
-                              setActiveChatDesigner(matched);
-                              setActiveTab('chats');
-                            }
+                            if (matched) navigate(`/architect/${matched._id}`); else navigate("/architects");
                           }}
                         >
-                          Request Video Tour
+                          View Profile
+                        </button>
+                        <button 
+                          className="web-profile-btn solid"
+                          onClick={() => {
+                            const matched = designersList.find(dl => dl.fullName.toLowerCase().includes(selectedDesign.author.toLowerCase()));
+                            if (matched) { setActiveChatDesigner(matched); setActiveTab("chats"); } else setActiveTab("chats");
+                          }}
+                        >
+                          <MessageSquare size={14} /> Contact
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Tab Navigation */}
+                    <div className="web-detail-tabs-bar">
+                      {[["photos", "Photos"], ["videos", "Videos"], ["quotation", "Quotation"]].map(([val, label]) => (
+                        <button 
+                          key={val}
+                          className={`web-detail-tab-btn${activeDetailTab === val ? " active" : ""}`}
+                          onClick={() => setActiveDetailTab(val)}
+                        >
+                          {val === "photos" && <Image size={15} />}
+                          {val === "videos" && <Play size={15} />}
+                          {val === "quotation" && <FileText size={15} />}
+                          <span>{label}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Photo/Video/Quotation views */}
+                    {activeDetailTab === "photos" && (
+                      <div className="web-detail-gallery">
+                        <div className="web-gallery-main">
+                          <img src={selectedDesign.mainImage} alt={selectedDesign.title} />
+                          <span className="web-gallery-counter">1/12 Photos</span>
+                        </div>
+                        <div className="web-gallery-side">
+                          <div className="web-gallery-thumb">
+                            <img src={selectedDesign.images?.[1] || selectedDesign.mainImage} alt="kitchen" />
+                          </div>
+                          <div className="web-gallery-thumb">
+                            <img src={selectedDesign.images?.[2] || selectedDesign.mainImage} alt="bedroom" />
+                          </div>
+                          <div className="web-gallery-thumb">
+                            <img src={selectedDesign.images?.[3] || selectedDesign.mainImage} alt="bathroom" />
+                            <div className="web-gallery-overlay">+9 More</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {activeDetailTab === "videos" && (
+                      <div className="web-empty-tab">
+                        <Play size={52} color="#016a3e" />
+                        <h3>Widescreen Walkthrough Video</h3>
+                        <p>Watch a full-screen, high-definition 3D video walkthrough tour of this architectural concept.</p>
+                        <button 
+                          className="web-profile-btn solid" 
+                          style={{ marginTop: '12px' }}
+                          onClick={() => {
+                            const matched = designersList.find(dl => dl.fullName.toLowerCase().includes(selectedDesign.author.toLowerCase()));
+                            if (matched) { setActiveChatDesigner(matched); setActiveTab("chats"); } else setActiveTab("chats");
+                          }}
+                        >
+                          Request Video Access
                         </button>
                       </div>
                     )}
 
-                    {activeDetailTab === 'quotation' && (
-                      <div style={{ padding: '1.25rem', background: '#f8fafc', borderRadius: '1rem', border: '1px solid #e2e8f0' }}>
-                        <h4 style={{ fontWeight: 'bold', color: '#1e293b', marginBottom: '1rem', fontSize: '0.95rem' }}>Estimated Cost Breakup</h4>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.85rem' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem' }}>
-                            <span style={{ color: '#475569' }}>Civil & Masonry Work</span>
-                            <strong style={{ color: '#0f172a' }}>₹ 1,85,000</strong>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem' }}>
-                            <span style={{ color: '#475569' }}>Woodwork & Modular Kitchen</span>
-                            <strong style={{ color: '#0f172a' }}>₹ 4,20,000</strong>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem' }}>
-                            <span style={{ color: '#475569' }}>Electrical & Lighting Layout</span>
-                            <strong style={{ color: '#0f172a' }}>₹ 95,000</strong>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem' }}>
-                            <span style={{ color: '#475569' }}>Painting & Wall Finishes</span>
-                            <strong style={{ color: '#0f172a' }}>₹ 1,10,000</strong>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: '0.5rem' }}>
-                            <strong style={{ color: '#0f172a' }}>Total Estimated Cost</strong>
-                            <strong style={{ color: '#0f766e', fontSize: '1rem' }}>₹ 8,10,000 *</strong>
-                          </div>
-                        </div>
-                        <p style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '1rem', lineHeight: '1.4' }}>
-                          * Excludes customized loose furniture, white goods, and decorative items. Costs may vary based on exact material selections and location.
-                        </p>
+                    {activeDetailTab === "quotation" && (
+                      <div className="web-empty-tab">
+                        <FileText size={52} color="#016a3e" />
+                        <h3>Get Custom Quotation</h3>
+                        <p>Request a detailed PDF quotation breakdown covering layout plans, furniture options, and material specifications.</p>
+                        <button 
+                          className="web-profile-btn solid" 
+                          style={{ marginTop: '12px' }}
+                          onClick={() => {
+                            const matched = designersList.find(dl => dl.fullName.toLowerCase().includes(selectedDesign.author.toLowerCase()));
+                            if (matched) { setActiveChatDesigner(matched); setActiveTab("chats"); } else setActiveTab("chats");
+                          }}
+                        >
+                          Request PDF Quote
+                        </button>
                       </div>
                     )}
 
-                    {/* Bottom Sticky Footer */}
-                    <div className="design-detail-sticky-footer">
-                      <button className="design-sticky-btn secondary" onClick={() => setSelectedDesign(null)}>
-                        Get Similar Design
+                    {/* Design Overview Card */}
+                    <div className="web-overview-section">
+                      <div className="web-overview-icon-box">
+                        <HomeIcon size={24} />
+                      </div>
+                      <div className="web-overview-content">
+                        <h3 className="web-overview-title">Design Overview</h3>
+                        <p className="web-overview-text">
+                          {showFullOverview 
+                            ? (selectedDesign.overview || "This beautifully crafted design combines modern aesthetics with functional living spaces. Every corner is thoughtfully designed to maximise natural light, airflow, and comfort — creating a home that truly reflects the owner's lifestyle and aspirations.")
+                            : (selectedDesign.overview 
+                              ? (selectedDesign.overview.slice(0, 220) + "...") 
+                              : "A modern and minimal 2BHK apartment design with a perfect blend of comfort, functionality and aesthetics. Warm tones, natural light and smart space planning make this home truly beautiful. Warm oak wood textures contrast with clean neutral backdrops to maximize contemporary visuals…")
+                          }
+                        </p>
+                        <button 
+                          className="web-show-more-btn"
+                          onClick={() => setShowFullOverview(!showFullOverview)}
+                        >
+                          <span>{showFullOverview ? 'Show Less' : 'Show More'}</span>
+                          {showFullOverview ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Engagement statistics section */}
+                    <div className="web-stats-row">
+                      <button 
+                        className={`web-stat-item${selectedDesign.hasLiked ? " liked" : ""}`}
+                        onClick={(e) => handleLikeDesign(selectedDesign.id, e)}
+                      >
+                        <Heart size={18} fill={selectedDesign.hasLiked ? "#ef4444" : "none"} />
+                        <span>{selectedDesign.likes} Appreciations</span>
+                      </button>
+                      <button className="web-stat-item">
+                        <MessageSquare size={18} />
+                        <span>{selectedDesign.comments} Comments</span>
                       </button>
                       <button 
-                        className="design-sticky-btn primary"
+                        className={`web-stat-item${selectedDesign.saved ? " saved" : ""}`}
+                        onClick={(e) => handleSaveDesign(selectedDesign.id, e)}
+                      >
+                        <Bookmark size={18} fill={selectedDesign.saved ? "#016a3e" : "none"} />
+                        <span>{selectedDesign.saved ? "Saved to Design Collection" : "Save Design"}</span>
+                      </button>
+                    </div>
+
+                    {/* Similar Designs grid */}
+                    <div className="web-slider-section">
+                      <div className="web-slider-header">
+                        <h3 className="web-slider-title">Similar Designs</h3>
+                        <a 
+                          href="#" 
+                          className="web-slider-view-all"
+                          onClick={(e) => { e.preventDefault(); setSelectedDesign(null); }}
+                        >
+                          <span>View All</span>
+                          <ArrowRight size={15} />
+                        </a>
+                      </div>
+                      <div className="web-grid-4">
+                        {[
+                          { id: 'd1', title: 'Minimal 2BHK Apartment', location: 'Pune, Maharashtra', rating: 4.6, reviewsCount: 124, author: 'Neha Sharma', mainImage: 'https://images.unsplash.com/photo-1567538096630-e0c55bd6374c?auto=format&fit=crop&w=400&q=80', overview: 'A modern and minimal 2BHK apartment design with a perfect blend of comfort, functionality and aesthetics. Warm tones, natural light and smart space planning make this home truly beautiful.' },
+                          { id: 'd1_2', title: 'Modern Living Room', location: 'Mumbai, Maharashtra', rating: 4.7, reviewsCount: 98, author: 'Neha Sharma', mainImage: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80', overview: 'A stunning modern living room with warm light, customized TV console unit, and premium wooden acoustic wall panelings.' },
+                          { id: 'd3', title: 'Modular Kitchen Design', location: 'Bengaluru, Karnataka', rating: 4.5, reviewsCount: 156, author: 'Priya Nair', mainImage: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=400&q=80', overview: 'Sleek handle-less drawers, built-in kitchen appliances, and elegant marble countertops combine to create a clutter-free, premium cooking experience.' },
+                          { id: 'd2', title: 'Luxury Bedroom Design', location: 'Pune, Maharashtra', rating: 4.6, reviewsCount: 74, author: 'Rohit Mehta', mainImage: 'https://images.unsplash.com/photo-1618219908412-a29a1bb7b86e?auto=format&fit=crop&w=400&q=80', overview: 'This beautifully crafted bedroom design combines modern aesthetics with functional wardrobe fittings, elegant wall panel design, and ambient cove lighting.' }
+                        ].map((item, idx) => (
+                          <div 
+                            key={idx} 
+                            className="web-similar-card"
+                            onClick={() => {
+                              const matched = designsList.find(d => d.id === item.id);
+                              if (matched) {
+                                setSelectedDesign(matched);
+                              } else {
+                                setSelectedDesign({
+                                  id: item.id,
+                                  title: item.title,
+                                  location: item.location,
+                                  rating: item.rating,
+                                  reviewsCount: item.reviewsCount,
+                                  author: item.author,
+                                  avatarUrl: item.id === 'd3' 
+                                    ? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'
+                                    : 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
+                                  mainImage: item.mainImage,
+                                  images: [
+                                    item.mainImage,
+                                    'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=400&q=80',
+                                    'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=400&q=80',
+                                    'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=400&q=80'
+                                  ],
+                                  imgCount: '1/3',
+                                  likes: 128,
+                                  comments: 24,
+                                  saved: false,
+                                  hasLiked: false,
+                                  overview: item.overview
+                                });
+                              }
+                              setActiveDetailTab('photos');
+                              setShowFullOverview(false);
+                            }}
+                          >
+                            <img src={item.mainImage} alt={item.title} className="web-similar-img" />
+                            <div className="web-similar-body">
+                              <h4 className="web-similar-title">{item.title}</h4>
+                              <div className="web-similar-loc">{item.location}</div>
+                              <div className="web-similar-rating">
+                                <Star size={12} fill="#eab308" color="#eab308" />
+                                <span>{item.rating}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Contractors Who Can Build This Design section */}
+                    <div className="web-slider-section">
+                      <div className="web-slider-header">
+                        <h3 className="web-slider-title">Contractors Who Can Build This Design</h3>
+                        <a href="#" className="web-slider-view-all" onClick={(e) => { e.preventDefault(); navigate('/contractors'); }}>
+                          <span>View All</span>
+                          <ArrowRight size={15} />
+                        </a>
+                      </div>
+                      <div className="web-grid-3">
+                        {[
+                          { id: 'c1', name: 'BuildWell Construction', rating: 4.6, reviews: 98, budget: '₹8.5 L', avatar: 'https://images.unsplash.com/photo-1566492031773-4f4e44671857?auto=format&fit=crop&w=150&q=80' },
+                          { id: 'c2', name: 'HomeCraft Builders', rating: 4.5, reviews: 76, budget: '₹8.8 L', avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80' },
+                          { id: 'c3', name: 'StructureLine Constructions', rating: 4.7, reviews: 120, budget: '₹8.2 L', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80' }
+                        ].map((con) => (
+                          <div key={con.id} className="web-contractor-card">
+                            <img src={con.avatar} alt={con.name} className="web-contractor-avatar" />
+                            <h4 className="web-contractor-name">{con.name}</h4>
+                            <div className="web-contractor-rating">
+                              <Star size={13} fill="#eab308" color="#eab308" />
+                              <span>{con.rating} ({con.reviews} Reviews)</span>
+                            </div>
+                            <div className="web-contractor-price">Starts at {con.budget}</div>
+                            <button 
+                              className={`web-contractor-hire-btn${hiredContractors[con.id] ? " hired" : ""}`}
+                              onClick={() => setHiredContractors(prev => ({ ...prev, [con.id]: !prev[con.id] }))}
+                            >
+                              {hiredContractors[con.id] ? 'Hiring Request Sent' : 'Hire Now'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Floating sticky bar for action shortcuts */}
+                    <div className="web-detail-sticky-bar">
+                      <button 
+                        className="web-sticky-btn outline"
                         onClick={() => {
-                          const matched = designersList.find(dl => dl.fullName.toLowerCase().includes(selectedDesign.author.toLowerCase()));
-                          if (matched) {
-                            setActiveChatDesigner(matched);
-                            setActiveTab('chats');
-                          } else {
-                            setActiveTab('chats');
-                          }
+                          alert("Creating customized design similar to this. A draft will be prepared shortly.");
                         }}
                       >
-                        <MessageSquare size={16} />
-                        Contact Designer
+                        <HomeIcon size={18} />
+                        <span>Get Similar Design</span>
+                      </button>
+                      <button 
+                        className="web-sticky-btn solid"
+                        onClick={() => {
+                          const matched = designersList.find(dl => dl.fullName.toLowerCase().includes(selectedDesign.author.toLowerCase()));
+                          if (matched) { setActiveChatDesigner(matched); setActiveTab("chats"); } else setActiveTab("chats");
+                        }}
+                      >
+                        <MessageSquare size={18} />
+                        <span>Contact Designer</span>
                       </button>
                     </div>
 

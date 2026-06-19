@@ -8,13 +8,6 @@ import {
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
 
-const UNSPLASH_PRESETS = [
-  'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80',
-  'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=600&q=80',
-  'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=600&q=80',
-  'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=600&q=80',
-  'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=600&q=80'
-];
 
 const ProjectDetailsPage = () => {
   const { id } = useParams();
@@ -312,7 +305,10 @@ const ProjectDetailsPage = () => {
   const [showAddUpdateForm, setShowAddUpdateForm] = useState(false);
   const [newUpdateTitle, setNewUpdateTitle] = useState('');
   const [newUpdateCategory, setNewUpdateCategory] = useState('Finishing');
-  const [newUpdateImg, setNewUpdateImg] = useState(UNSPLASH_PRESETS[0]);
+  const [newUpdateImg, setNewUpdateImg] = useState('');
+  const [newUpdateImgFile, setNewUpdateImgFile] = useState(null);
+  const [newUpdateImgPreview, setNewUpdateImgPreview] = useState('');
+  const [uploadingCoverPhoto, setUploadingCoverPhoto] = useState(false);
   const [newUpdateDesc, setNewUpdateDesc] = useState('');
   const [updateSearch, setUpdateSearch] = useState('');
   const [updateCategoryFilter, setUpdateCategoryFilter] = useState('All');
@@ -343,7 +339,39 @@ const ProjectDetailsPage = () => {
   const [chatInput, setChatInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
 
-  // --- ACTIONS ---
+  // Handle cover photo upload from gallery
+  const handleCoverPhotoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setNewUpdateImgFile(file);
+    // Create local preview immediately
+    const reader = new FileReader();
+    reader.onloadend = () => setNewUpdateImgPreview(reader.result);
+    reader.readAsDataURL(file);
+    // Upload to Cloudinary
+    setUploadingCoverPhoto(true);
+    const formData = new FormData();
+    formData.append('image', file);
+    try {
+      const res = await fetch('http://localhost:5000/api/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (res.ok) {
+        setNewUpdateImg(data.url);
+      } else {
+        alert('Image upload failed: ' + (data.message || 'Unknown error'));
+        setNewUpdateImgPreview('');
+        setNewUpdateImgFile(null);
+      }
+    } catch (err) {
+      console.error('Upload error:', err);
+      alert('Network error uploading image.');
+      setNewUpdateImgPreview('');
+      setNewUpdateImgFile(null);
+    } finally {
+      setUploadingCoverPhoto(false);
+    }
+  };
+
   // Add progress update
   const handleCreateUpdate = (e) => {
     e.preventDefault();
@@ -376,6 +404,9 @@ const ProjectDetailsPage = () => {
     setUpdates([newUpd, ...updates]);
     setNewUpdateTitle('');
     setNewUpdateDesc('');
+    setNewUpdateImg('');
+    setNewUpdateImgPreview('');
+    setNewUpdateImgFile(null);
     setShowAddUpdateForm(false);
   };
 
@@ -881,51 +912,64 @@ const ProjectDetailsPage = () => {
                   {canPostUpdates && showAddUpdateForm && (
                     <form className="add-update-form-card" onSubmit={handleCreateUpdate}>
                       <h3>Post Site Progress Update</h3>
-                      
-                      <div className="form-grid">
-                        <div className="form-item">
-                          <label>Update Title</label>
-                          <input 
-                            type="text" 
-                            required
-                            placeholder="e.g. Concrete slab finished"
-                            value={newUpdateTitle}
-                            onChange={(e) => setNewUpdateTitle(e.target.value)}
-                          />
-                        </div>
-                        
-                        <div className="form-item">
-                          <label>Work Category</label>
-                          <select 
-                            value={newUpdateCategory} 
-                            onChange={(e) => setNewUpdateCategory(e.target.value)}
-                          >
-                            <option value="Structure">Structure</option>
-                            <option value="MEP">MEP</option>
-                            <option value="Finishing">Finishing</option>
-                          </select>
-                        </div>
-                      </div>
 
                       <div className="form-item">
-                        <label>Select Cover Photo Preset</label>
-                        <div className="preset-images-picker">
-                          {UNSPLASH_PRESETS.map((preset, idx) => (
-                            <div 
-                              key={idx}
-                              className={`preset-thumb-wrapper ${newUpdateImg === preset ? 'selected' : ''}`}
-                              onClick={() => setNewUpdateImg(preset)}
+                        <label>Update Title</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Concrete slab finished"
+                          value={newUpdateTitle}
+                          onChange={(e) => setNewUpdateTitle(e.target.value)}
+                        />
+                      </div>
+
+                      {/* Cover Photo Upload */}
+                      <div className="form-item">
+                        <label>Cover Photo</label>
+                        {newUpdateImgPreview ? (
+                          <div className="cover-upload-preview-wrap">
+                            <img src={newUpdateImgPreview} alt="Cover preview" className="cover-upload-preview-img" />
+                            {uploadingCoverPhoto && (
+                              <div className="cover-upload-uploading-overlay">
+                                <div className="cover-upload-spinner" />
+                                <span>Uploading...</span>
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              className="cover-upload-remove-btn"
+                              onClick={() => { setNewUpdateImgPreview(''); setNewUpdateImgFile(null); setNewUpdateImg(''); }}
+                              title="Remove photo"
                             >
-                              <img src={preset} alt={`preset-${idx}`} />
-                              {newUpdateImg === preset && <div className="selected-check"><Check size={12} /></div>}
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="cover-upload-drop-zone" htmlFor="cover-photo-input">
+                            <div className="cover-upload-icon">
+                              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                <circle cx="8.5" cy="8.5" r="1.5"/>
+                                <polyline points="21 15 16 10 5 21"/>
+                              </svg>
                             </div>
-                          ))}
-                        </div>
+                            <span className="cover-upload-label">Click to upload from gallery</span>
+                            <span className="cover-upload-hint">JPG, PNG, WEBP · Max 5MB</span>
+                            <input
+                              id="cover-photo-input"
+                              type="file"
+                              accept="image/*"
+                              style={{ display: 'none' }}
+                              onChange={handleCoverPhotoUpload}
+                            />
+                          </label>
+                        )}
                       </div>
 
                       <div className="form-item">
                         <label>Description Details</label>
-                        <textarea 
+                        <textarea
                           rows={3}
                           required
                           placeholder="Provide description log..."
@@ -938,8 +982,8 @@ const ProjectDetailsPage = () => {
                         <button type="button" className="btn-cancel" onClick={() => setShowAddUpdateForm(false)}>
                           Cancel
                         </button>
-                        <button type="submit" className="btn-submit">
-                          Publish
+                        <button type="submit" className="btn-submit" disabled={uploadingCoverPhoto}>
+                          {uploadingCoverPhoto ? 'Uploading...' : 'Publish'}
                         </button>
                       </div>
                     </form>

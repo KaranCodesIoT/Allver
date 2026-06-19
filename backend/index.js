@@ -36,6 +36,7 @@ app.use(express.json());
 app.use('/uploads', express.static(uploadsDir));
 
 const User = require('./models/User');
+const Review = require('./models/Review');
 
 // Sample Data
 const platformStats = {
@@ -209,7 +210,7 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
   if (isCloudinaryConfigured) {
     // Upload image buffer directly to Cloudinary
     const uploadStream = cloudinary.uploader.upload_stream(
-      { folder: 'allverhq' },
+      { folder: 'allverhq', resource_type: 'auto' },
       (error, result) => {
         if (error) {
           console.error('Cloudinary upload error:', error);
@@ -230,32 +231,133 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 
 const ContractRequest = require('./models/ContractRequest');
 const ProjectWorkspace = require('./models/ProjectWorkspace');
+const Notification = require('./models/Notification');
+
+// Active Server-Sent Events client streams
+let sseClients = [];
+
+// SSE endpoint for notifications
+app.get('/api/notifications/stream/:userId', (req, res) => {
+  const { userId } = req.params;
+  
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
+  
+  // Heartbeat comment to keep connection alive
+  const keepAlive = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 20000);
+  
+  const newClient = {
+    userId,
+    res
+  };
+  
+  sseClients.push(newClient);
+  
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    sseClients = sseClients.filter(client => client.res !== res);
+  });
+});
+
+// Helper to broadcast notification to a specific user
+const sendRealTimeNotification = (userId, data) => {
+  const targetIdStr = userId.toString();
+  const clients = sseClients.filter(c => c.userId === targetIdStr);
+  clients.forEach(client => {
+    try {
+      client.res.write(`data: ${JSON.stringify(data)}\n\n`);
+    } catch (err) {
+      console.error('Error sending message over SSE:', err);
+    }
+  });
+};
 
 // 1. Submit a Contract Request
 app.post('/api/contract-requests', async (req, res) => {
   try {
-    const { client, professional, title, projectType, location, budget, startDate, description } = req.body;
-    
+    const {
+      client, professional, professionalRole,
+      clientName, companyName, mobileNumber, email,
+      title, projectType, location, budget, startDate, expectedCompletionDate, description,
+      attachmentUrl, attachmentName, priority,
+      // Architect-specific
+      plotArea, builtUpArea, designRequirements, needSiteVisits,
+      // Contractor-specific
+      constructionType, totalArea, materialResponsibility, labourIncluded, estimatedProjectDuration,
+      // Labour-specific
+      labourCategory, workingDuration, dailyMonthlyContract, accommodationProvided
+    } = req.body;
+
     if (!client || !professional || !title || !projectType || !location || !budget || !startDate) {
       return res.status(400).json({ message: 'Missing required project details' });
     }
 
     const newRequest = new ContractRequest({
-      client,
-      professional,
-      title,
-      projectType,
-      location,
-      budget,
+      client, professional, professionalRole: professionalRole || 'Architect',
+      clientName: clientName || '', companyName: companyName || '',
+      mobileNumber: mobileNumber || '', email: email || '',
+      title, projectType, location, budget,
       startDate: new Date(startDate),
-      description
+      expectedCompletionDate: expectedCompletionDate ? new Date(expectedCompletionDate) : undefined,
+      description: description || '',
+      attachmentUrl: attachmentUrl || '', attachmentName: attachmentName || '',
+      priority: priority || 'Normal',
+      // Architect
+      plotArea: plotArea || '', builtUpArea: builtUpArea || '',
+      designRequirements: designRequirements || '', needSiteVisits: !!needSiteVisits,
+      // Contractor
+      constructionType: constructionType || '', totalArea: totalArea || '',
+      materialResponsibility: materialResponsibility || '', labourIncluded: !!labourIncluded,
+      estimatedProjectDuration: estimatedProjectDuration || '',
+      // Labour
+      labourCategory: labourCategory || '', workingDuration: workingDuration || '',
+      dailyMonthlyContract: dailyMonthlyContract || '', accommodationProvided: !!accommodationProvided
     });
 
     await newRequest.save();
-    
-    res.status(201).json({ 
-      message: 'Contract request sent successfully', 
-      contractRequest: newRequest 
+
+    // 1. Fetch Client Profile details to construct a beautiful notification message
+    let clientNameVal = clientName || '';
+    if (!clientNameVal) {
+      const clientUser = await User.findById(client);
+      if (clientUser) clientNameVal = clientUser.fullName;
+    }
+
+    const messageText = `New Project Request Received from ${clientNameVal || 'Client'} for ${title}.`;
+
+    // 2. Create In-App Notification in the database
+    const notification = new Notification({
+      recipient: professional,
+      sender: client,
+      message: messageText,
+      type: 'HiringRequest',
+      relatedId: newRequest._id,
+      read: false
+    });
+    await notification.save();
+
+    // 3. Populate and send real-time notification
+    const populatedNotif = await Notification.findById(notification._id)
+      .populate('sender', 'fullName avatarUrl role')
+      .populate('recipient', 'fullName avatarUrl role')
+      .populate('relatedId');
+
+    sendRealTimeNotification(professional, {
+      type: 'NEW_NOTIFICATION',
+      notification: populatedNotif,
+      contractRequest: newRequest
+    });
+
+    res.status(201).json({
+      message: 'Contract request sent successfully',
+      contractRequest: newRequest,
+      notification: populatedNotif
     });
   } catch (error) {
     console.error('Error creating contract request:', error);
@@ -270,8 +372,8 @@ app.get('/api/contract-requests/user/:userId', async (req, res) => {
     const requests = await ContractRequest.find({
       $or: [{ client: userId }, { professional: userId }]
     })
-    .populate('client', 'fullName email phoneNumber role city')
-    .populate('professional', 'fullName email phoneNumber role city')
+    .populate('client', 'fullName email phoneNumber role city avatarUrl')
+    .populate('professional', 'fullName email phoneNumber role city avatarUrl')
     .sort({ createdAt: -1 });
 
     res.status(200).json({ requests });
@@ -297,6 +399,13 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
     }
 
     request.status = status;
+    if (status === 'Accepted') {
+      request.acceptedAt = new Date();
+      request.statusHistory.push({ status: 'Accepted', date: new Date() });
+    } else if (status === 'Rejected') {
+      request.rejectedAt = new Date();
+      request.statusHistory.push({ status: 'Rejected', date: new Date() });
+    }
     await request.save();
 
     let workspace = null;
@@ -318,10 +427,66 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
       }
     }
 
+    // 1. Fetch info and send notification to Client
+    const professionalUser = await User.findById(request.professional);
+    const profNameVal = professionalUser ? professionalUser.fullName : 'Professional';
+    const profRole = request.professionalRole || (professionalUser ? professionalUser.role : 'Professional');
+    const rolePrefix = profRole === 'Architect' ? 'Ar. ' : '';
+    
+    const clientMessageText = `Your project request has been ${status.toLowerCase()} by ${rolePrefix}${profNameVal}.`;
+
+    const clientNotification = new Notification({
+      recipient: request.client,
+      sender: request.professional,
+      message: clientMessageText,
+      type: 'HiringRequest',
+      relatedId: request._id,
+      read: false
+    });
+    await clientNotification.save();
+
+    const populatedClientNotif = await Notification.findById(clientNotification._id)
+      .populate('sender', 'fullName avatarUrl role')
+      .populate('recipient', 'fullName avatarUrl role')
+      .populate('relatedId');
+
+    // Emit real-time notification to the client
+    sendRealTimeNotification(request.client, {
+      type: 'NEW_NOTIFICATION',
+      notification: populatedClientNotif,
+      contractRequest: request
+    });
+
+    // 2. Send notification to Professional
+    const profMessageText = `You successfully ${status.toLowerCase()} the project request.`;
+    
+    const profNotification = new Notification({
+      recipient: request.professional,
+      sender: request.client,
+      message: profMessageText,
+      type: 'HiringRequest',
+      relatedId: request._id,
+      read: false
+    });
+    await profNotification.save();
+
+    const populatedProfNotif = await Notification.findById(profNotification._id)
+      .populate('sender', 'fullName avatarUrl role')
+      .populate('recipient', 'fullName avatarUrl role')
+      .populate('relatedId');
+
+    // Emit real-time notification to the professional
+    sendRealTimeNotification(request.professional, {
+      type: 'NEW_NOTIFICATION',
+      notification: populatedProfNotif,
+      contractRequest: request
+    });
+
     res.status(200).json({ 
       message: `Contract request ${status.toLowerCase()} successfully`, 
       contractRequest: request,
-      workspace
+      workspace,
+      notification: populatedProfNotif
     });
   } catch (error) {
     console.error('Error updating contract request:', error);
@@ -336,8 +501,8 @@ app.get('/api/project-workspaces/user/:userId', async (req, res) => {
     const workspaces = await ProjectWorkspace.find({
       $or: [{ client: userId }, { professional: userId }]
     })
-    .populate('client', 'fullName email phoneNumber role city')
-    .populate('professional', 'fullName email phoneNumber role city')
+    .populate('client', 'fullName email phoneNumber role city avatarUrl')
+    .populate('professional', 'fullName email phoneNumber role city avatarUrl')
     .sort({ createdAt: -1 });
 
     res.status(200).json({ workspaces });
@@ -515,6 +680,263 @@ app.post('/api/project-workspaces/:id/files', async (req, res) => {
   } catch (error) {
     console.error('Error uploading file:', error);
     res.status(500).json({ message: 'Error uploading file: ' + error.message });
+  }
+});
+
+// GET all notifications for a user
+app.get('/api/notifications/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const notifications = await Notification.find({ recipient: userId })
+      .populate('sender', 'fullName avatarUrl role')
+      .populate('recipient', 'fullName avatarUrl role')
+      .populate('relatedId')
+      .sort({ createdAt: -1 });
+    res.status(200).json({ notifications });
+  } catch (err) {
+    console.error('Error fetching notifications:', err);
+    res.status(500).json({ message: 'Error fetching notifications: ' + err.message });
+  }
+});
+
+// Mark single notification as read
+app.put('/api/notifications/:id/read', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const notification = await Notification.findByIdAndUpdate(
+      id,
+      { $set: { read: true } },
+      { new: true }
+    ).populate('sender', 'fullName avatarUrl role');
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
+    res.status(200).json({ notification });
+  } catch (err) {
+    console.error('Error marking notification as read:', err);
+    res.status(500).json({ message: 'Error updating notification: ' + err.message });
+  }
+});
+
+// Mark all notifications for a user as read
+app.put('/api/notifications/user/:userId/read-all', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    await Notification.updateMany(
+      { recipient: userId, read: false },
+      { $set: { read: true } }
+    );
+    res.status(200).json({ message: 'All notifications marked as read' });
+  } catch (err) {
+    console.error('Error marking all notifications as read:', err);
+    res.status(500).json({ message: 'Error marking all notifications as read: ' + err.message });
+  }
+});
+
+// GET unread notifications count for a user
+app.get('/api/notifications/user/:userId/unread-count', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const count = await Notification.countDocuments({ recipient: userId, read: false });
+    res.status(200).json({ count });
+  } catch (err) {
+    console.error('Error counting unread notifications:', err);
+    res.status(500).json({ message: 'Error counting unread notifications: ' + err.message });
+  }
+});
+
+// --- Review & Rating Endpoints ---
+
+// Get reviews and statistics for a professional
+app.get('/api/professional/:id/reviews', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const reviewsList = await Review.find({ professional: id })
+      .populate('reviewer', 'fullName avatarUrl role')
+      .sort({ createdAt: -1 });
+
+    const totalReviews = reviewsList.length;
+    let averageRating = 0;
+    const breakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+
+    if (totalReviews > 0) {
+      const sum = reviewsList.reduce((acc, r) => {
+        const ratingVal = Math.round(r.rating);
+        if (breakdown[ratingVal] !== undefined) {
+          breakdown[ratingVal] += 1;
+        }
+        return acc + r.rating;
+      }, 0);
+      averageRating = parseFloat((sum / totalReviews).toFixed(1));
+    }
+
+    res.status(200).json({
+      reviews: reviewsList,
+      stats: {
+        totalReviews,
+        averageRating,
+        breakdown
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching reviews:', error);
+    res.status(500).json({ message: 'Error fetching reviews: ' + error.message });
+  }
+});
+
+// Submit a review for a professional
+app.post('/api/professional/:id/reviews', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reviewer, rating, reviewText, projectImages } = req.body;
+
+    if (!reviewer || !rating || !reviewText) {
+      return res.status(400).json({ message: 'Missing required review fields: reviewer, rating, reviewText' });
+    }
+
+    // Save the new review
+    const newReview = new Review({
+      professional: id,
+      reviewer,
+      rating: Number(rating),
+      reviewText,
+      projectImages: projectImages || []
+    });
+    await newReview.save();
+
+    // Calculate updated ratings and review count
+    const reviewsList = await Review.find({ professional: id });
+    const totalReviews = reviewsList.length;
+    let averageRating = 0;
+    const breakdown = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+
+    if (totalReviews > 0) {
+      const sum = reviewsList.reduce((acc, r) => {
+        const ratingVal = Math.round(r.rating);
+        if (breakdown[ratingVal] !== undefined) {
+          breakdown[ratingVal] += 1;
+        }
+        return acc + r.rating;
+      }, 0);
+      averageRating = parseFloat((sum / totalReviews).toFixed(1));
+    }
+
+    // Update the professional's User document
+    await User.findByIdAndUpdate(id, {
+      $set: {
+        rating: averageRating,
+        reviews: totalReviews
+      }
+    });
+
+    // Populate and return new review
+    const populatedReview = await Review.findById(newReview._id)
+      .populate('reviewer', 'fullName avatarUrl role');
+
+    res.status(201).json({
+      message: 'Review submitted successfully',
+      review: populatedReview,
+      stats: {
+        totalReviews,
+        averageRating,
+        breakdown
+      }
+    });
+  } catch (error) {
+    console.error('Error submitting review:', error);
+    res.status(500).json({ message: 'Error submitting review: ' + error.message });
+  }
+});
+
+// ─── TEAM MANAGEMENT ROUTES ────────────────────────────────────────────────
+
+// GET all professionals (for Add Team Member modal)
+app.get('/api/professionals', async (req, res) => {
+  try {
+    const { role, search } = req.query;
+    const filter = { role: { $in: ['Architect', 'Contractor', 'Labour'] } };
+    if (role && ['Architect', 'Contractor', 'Labour'].includes(role)) {
+      filter.role = role;
+    }
+    if (search && search.trim()) {
+      filter.$or = [
+        { fullName: { $regex: search.trim(), $options: 'i' } },
+        { city: { $regex: search.trim(), $options: 'i' } },
+        { specialization: { $regex: search.trim(), $options: 'i' } },
+        { skillType: { $regex: search.trim(), $options: 'i' } },
+        { contractorType: { $regex: search.trim(), $options: 'i' } }
+      ];
+    }
+    const professionals = await User.find(filter)
+      .select('fullName avatarUrl role city experience specialization skillType contractorType firmName rating reviews')
+      .sort({ rating: -1 })
+      .limit(100);
+    res.json({ professionals });
+  } catch (error) {
+    console.error('Error fetching professionals:', error);
+    res.status(500).json({ message: 'Error fetching professionals' });
+  }
+});
+
+// GET team members for a professional
+app.get('/api/professional/:id/team', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id)
+      .populate('teamMembers', 'fullName avatarUrl role city experience specialization skillType contractorType firmName rating reviews');
+    if (!user) return res.status(404).json({ message: 'Professional not found' });
+    res.json({ teamMembers: user.teamMembers || [] });
+  } catch (error) {
+    console.error('Error fetching team members:', error);
+    res.status(500).json({ message: 'Error fetching team members' });
+  }
+});
+
+// POST add a team member
+app.post('/api/professional/:id/team', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { memberId } = req.body;
+    if (!memberId) return res.status(400).json({ message: 'memberId is required' });
+    if (id === memberId) return res.status(400).json({ message: 'Cannot add yourself to your team' });
+
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: 'Professional not found' });
+
+    const member = await User.findById(memberId);
+    if (!member) return res.status(404).json({ message: 'Member not found' });
+
+    // Prevent duplicates
+    const alreadyAdded = (user.teamMembers || []).some(m => m.toString() === memberId);
+    if (alreadyAdded) return res.status(409).json({ message: 'Member already in team' });
+
+    user.teamMembers = [...(user.teamMembers || []), memberId];
+    await user.save();
+
+    // Return populated member info
+    const populatedUser = await User.findById(id)
+      .populate('teamMembers', 'fullName avatarUrl role city experience specialization skillType contractorType firmName rating reviews');
+    res.status(201).json({ message: 'Team member added', teamMembers: populatedUser.teamMembers });
+  } catch (error) {
+    console.error('Error adding team member:', error);
+    res.status(500).json({ message: 'Error adding team member' });
+  }
+});
+
+// DELETE remove a team member
+app.delete('/api/professional/:id/team/:memberId', async (req, res) => {
+  try {
+    const { id, memberId } = req.params;
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: 'Professional not found' });
+
+    user.teamMembers = (user.teamMembers || []).filter(m => m.toString() !== memberId);
+    await user.save();
+
+    res.json({ message: 'Team member removed', teamMembers: user.teamMembers });
+  } catch (error) {
+    console.error('Error removing team member:', error);
+    res.status(500).json({ message: 'Error removing team member' });
   }
 });
 

@@ -45,6 +45,24 @@ const userSchema = new mongoose.Schema({
   reviews: { type: Number },
   projects: { type: Number },
   
+  // Team members (array of User references)
+  teamMembers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+
+  media: [
+    {
+      url: { type: String, required: true },
+      title: { type: String, default: '' },
+      type: { type: String, enum: ['photo', 'video'], required: true },
+      category: { type: String, enum: ['Photos', 'Videos', 'Reels'], required: true },
+      projectName: { type: String, default: '' },
+      projectType: { type: String, default: '' },
+      location: { type: String, default: '' },
+      description: { type: String, default: '' },
+      duration: { type: String, default: '' },
+      tags: { type: [String], default: [] },
+      createdAt: { type: Date, default: Date.now }
+    }
+  ],
   createdAt: { type: Date, default: Date.now }
 });
 
