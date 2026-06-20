@@ -4,7 +4,7 @@
     "slug": "allver-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/app-icon.png",
     "scheme": "allvermobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -13,14 +13,22 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundColor": "#0F172A",
+        "foregroundImage": "./assets/images/app-icon.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.allver.app"
+      "package": "com.allver.app",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "notification": {
+      "icon": "./assets/images/notification-icon.png",
+      "color": "#0F172A"
     },
     "web": {
       "output": "static",
@@ -31,12 +39,12 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/splash-logo.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#0F172A",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#0F172A"
           }
         }
       ],
@@ -57,6 +65,12 @@
       "eas": {
         "projectId": "8dce7f82-0f1b-456c-8ad3-3a1c4cbeca1a"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/8dce7f82-0f1b-456c-8ad3-3a1c4cbeca1a"
     }
   }
 }

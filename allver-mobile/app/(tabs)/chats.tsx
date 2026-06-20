@@ -5,6 +5,7 @@ import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icon
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { BACKEND_URL } from '../../constants/Config';
+import NotificationBell from '../../components/NotificationBell';
 
 const getParticipantDetails = (workspace: any, currentUserId: string) => {
   const isClient = workspace.client?._id === currentUserId || workspace.client === currentUserId;
@@ -149,6 +150,7 @@ export default function ChatsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'All' | 'Projects' | 'Professionals' | 'System' | 'Unread'>('All');
   const [conversations, setConversations] = useState<any[]>(CONVERSATIONS_DATA);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
     let user = (global as any).currentUser;
@@ -160,41 +162,90 @@ export default function ChatsScreen() {
     }
     
     if (user) {
+      setCurrentUser(user);
       const userId = user._id;
+
+      // Fetch real DM conversations
+      const fetchDMConversations = async () => {
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/conversations/user/${userId}`);
+          if (res.ok) {
+            const data = await res.json();
+            const dmChats = data.conversations.map((convo: any) => ({
+              id: convo._id,
+              name: convo.otherUser?.fullName || 'User',
+              role: convo.otherUser?.role || 'Professional',
+              project: 'Direct Message',
+              message: convo.lastMessage?.text || 'No messages yet',
+              time: convo.lastMessage?.createdAt
+                ? new Date(convo.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : '',
+              unreadCount: convo.unreadCount || 0,
+              online: false,
+              avatar: convo.otherUser?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
+              type: 'Professionals',
+              isDM: true,
+              receiverId: convo.otherUser?._id,
+              conversationId: convo._id,
+            }));
+            return dmChats;
+          }
+        } catch (err) {
+          console.log('Error fetching DM conversations:', err);
+        }
+        return [];
+      };
+
+      // Fetch project workspace chats
       const fetchWorkspaces = async () => {
         try {
           const res = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${userId}`);
           if (res.ok) {
             const data = await res.json();
-            const realChats = data.workspaces.map((w: any) => getParticipantDetails(w, userId));
-            
-            // Merge real workspaces and mock conversations
-            const filteredMock = CONVERSATIONS_DATA.filter(mock => 
-              !realChats.some((real: any) => real.name === mock.name && real.project === mock.project)
-            );
-            setConversations([...realChats, ...filteredMock]);
+            return data.workspaces.map((w: any) => getParticipantDetails(w, userId));
           }
         } catch (err) {
           console.log('Error fetching workspaces:', err);
         }
+        return [];
       };
-      fetchWorkspaces();
+
+      Promise.all([fetchDMConversations(), fetchWorkspaces()]).then(([dmChats, workspaceChats]) => {
+        // Merge real chats first, then mock data
+        const allReal = [...dmChats, ...workspaceChats];
+        const filteredMock = CONVERSATIONS_DATA.filter(mock =>
+          !allReal.some((real: any) => real.name === mock.name)
+        );
+        setConversations([...allReal, ...filteredMock]);
+      });
     }
   }, []);
 
   const handleChatPress = (chat: any) => {
-    router.push({
-      pathname: '/chat-room',
-      params: {
-        id: chat.id,
-        name: chat.name,
-        role: chat.role,
-        project: chat.project,
-        avatar: chat.avatar,
-        online: chat.online ? 'true' : 'false',
-        isReal: chat.isReal ? 'true' : 'false'
-      }
-    });
+    if (chat.isDM) {
+      // Navigate to DM chat with receiverId
+      router.push({
+        pathname: '/chat-room',
+        params: {
+          receiverId: chat.receiverId,
+          conversationId: chat.conversationId,
+          name: chat.name,
+          role: chat.role,
+          avatar: chat.avatar,
+        }
+      });
+    } else {
+      // Navigate to project workspace chat (legacy)
+      router.push({
+        pathname: '/chat-room',
+        params: {
+          receiverId: chat.id,
+          name: chat.name,
+          role: chat.role,
+          avatar: chat.avatar,
+        }
+      });
+    }
   };
 
   const filteredConversations = conversations.filter((chat) => {
@@ -259,10 +310,7 @@ export default function ChatsScreen() {
             contentFit="contain"
           />
           <View style={styles.headerIconsRow}>
-            <TouchableOpacity style={styles.iconBadgeBtn}>
-              <Feather name="bell" size={20} color={COLORS.textDark} />
-              <View style={styles.badgeCircle}><Text style={styles.badgeText}>3</Text></View>
-            </TouchableOpacity>
+            <NotificationBell size={20} color={COLORS.textDark} />
 
             <TouchableOpacity style={[styles.iconBadgeBtn, styles.activeHeaderBtn]}>
               <Feather name="message-square" size={20} color={COLORS.textDark} />
@@ -275,8 +323,9 @@ export default function ChatsScreen() {
               onPress={() => router.push('/profile')}
             >
               <Image 
-                source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop' }} 
+                source={currentUser?.avatarUrl ? { uri: currentUser.avatarUrl } : require('@/assets/images/app-icon.png')} 
                 style={styles.avatarImage}
+                contentFit={currentUser?.avatarUrl ? "cover" : "contain"}
               />
             </TouchableOpacity>
           </View>
@@ -402,7 +451,7 @@ const styles = StyleSheet.create({
   },
   logoImage: {
     width: 125,
-    height: 30,
+    height: 34,
   },
   headerIconsRow: {
     flexDirection: 'row',

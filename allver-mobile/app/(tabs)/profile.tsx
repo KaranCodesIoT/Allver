@@ -1,30 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, FontAwesome5 } from '@expo/vector-icons';
+import { Feather, FontAwesome5, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useNavigation } from 'expo-router';
+import { BACKEND_URL } from '../../constants/Config';
 
 const { width } = Dimensions.get('window');
 
 const COLORS = {
+  primary: '#F59E0B',
+  primaryDark: '#D97706',
+  navy: '#0F172A',
+  white: '#FFFFFF',
+  textDark: '#1E293B',
+  textMuted: '#64748B',
+  textLight: '#94A3B8',
+  bgLight: '#F8FAFC',
+  bgCard: '#F1F5F9',
+  border: '#E2E8F0',
+  green: '#22C55E',
+  greenDark: '#16A34A',
+  greenLight: '#F0FDF4',
   blue: '#3B82F6',
   blueLight: '#EFF6FF',
-  green: '#16A34A',
-  greenLight: '#F0FDF4',
+  red: '#EF4444',
   purple: '#6366F1',
   purpleLight: '#EEF2FF',
-  textDark: '#111827',
-  textMuted: '#6B7280',
-  border: '#E5E7EB',
-  white: '#FFFFFF',
-  bgLight: '#F3F4F6',
   gold: '#F59E0B',
-  red: '#EF4444',
-  redLight: '#FEE2E2',
 };
 
-// Default Architect Profile Data (Rohit Mehta)
+// Default Profile Data
 const DEFAULT_USER_DATA = {
   id: '2',
   name: 'Ar. Rohit Mehta',
@@ -33,12 +39,16 @@ const DEFAULT_USER_DATA = {
   rating: '4.7',
   reviews: '98',
   location: 'Pune, Maharashtra',
+  area: '',
+  state: 'Maharashtra',
   experience: '10+ Years',
   specialization: 'Expert in residential and commercial architecture.',
-  projects: '96',
+  specializations: ['Residential Design', 'Commercial Design', 'Interior Design', 'Landscape Design'],
+  projects: '0',
   followers: '189',
   firmName: 'RM Design Studios',
-  phone: '+91 98765 43211'
+  phone: '+91 98765 43211',
+  teamSize: '1',
 };
 
 export default function ProfileScreen() {
@@ -47,6 +57,8 @@ export default function ProfileScreen() {
   const [user, setUser] = useState(DEFAULT_USER_DATA);
   const [activeTab, setActiveTab] = useState<'projects' | 'videos' | 'team' | 'reviews'>('projects');
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [liveFollowersCount, setLiveFollowersCount] = useState(0);
+  const [liveFollowingCount, setLiveFollowingCount] = useState(0);
 
   const loadUserData = () => {
     let storedUser = null;
@@ -61,22 +73,38 @@ export default function ProfileScreen() {
         const parsed = JSON.parse(storedUser);
         if (parsed) {
           setCurrentUser(parsed);
+          
+          // Fetch live user info (followers count)
+          fetch(`${BACKEND_URL}/api/professional/${parsed._id}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data.professional) {
+                setLiveFollowersCount(data.professional.followersCount || 0);
+                setLiveFollowingCount(data.professional.followingCount || 0);
+              }
+            })
+            .catch(err => console.error("Error fetching my profile live counts:", err));
+
           const roleLabel = parsed.role || 'Architect';
           const prefix = parsed.role === 'Architect' ? 'Ar. ' : '';
           setUser({
             id: parsed._id || '2',
             name: `${prefix}${parsed.fullName}`,
-            avatar: parsed.avatarUrl || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-            coverImage: parsed.cover || 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
-            rating: parsed.rating?.toString() || '4.7',
-            reviews: parsed.reviews?.toString() || '98',
-            location: parsed.city || 'Pune, Maharashtra',
-            experience: parsed.experience || '10+ Years',
+            avatar: parsed.avatarUrl || '',
+            coverImage: parsed.cover || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=800&q=80',
+            rating: parsed.rating?.toString() || '4.8',
+            reviews: parsed.reviews?.toString() || '32',
+            location: [parsed.city, parsed.state].filter(Boolean).join(', ') || 'Pune, Maharashtra',
+            area: parsed.area || '',
+            state: parsed.state || 'Maharashtra',
+            experience: parsed.experience || '3-5 years',
             specialization: parsed.shortDesc || parsed.about || `Expert ${roleLabel.toLowerCase()} services.`,
-            projects: parsed.projects?.toString() || '96',
+            specializations: parsed.specialization || ['Residential Design', 'Commercial Design', 'Interior Design', 'Landscape Design'],
+            projects: (parsed.projects ?? 0).toString(),
             followers: '189',
             firmName: parsed.firmName || parsed.fullName || 'RM Design Studios',
-            phone: parsed.phoneNumber || parsed.phone || '+91 98765 43211'
+            phone: parsed.phoneNumber || parsed.phone || '+91 98765 43211',
+            teamSize: parsed.teamSize?.toString() || '1',
           });
         }
       } catch (e) {
@@ -118,95 +146,136 @@ export default function ProfileScreen() {
     router.push('/edit-profile');
   };
 
+  const cityOnly = user.location.split(',')[0]?.trim() || 'Location';
+
+  // Experience display: ensure it has "Exp" suffix style
+  const expDisplay = user.experience.toLowerCase().includes('year') 
+    ? user.experience 
+    : `${user.experience} Exp`;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Top Header Buttons */}
+      {/* ===== HEADER ===== */}
       <View style={styles.navHeader}>
         <Text style={styles.headerTitle}>My Profile</Text>
         <View style={styles.headerRightActions}>
-          <TouchableOpacity onPress={handleShare} style={styles.circleHeaderBtn}>
+          <TouchableOpacity onPress={handleShare} style={styles.headerIconBtn}>
             <Feather name="share-2" size={18} color={COLORS.textDark} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.circleHeaderBtn} onPress={handleLogout}>
-            <Feather name="log-out" size={18} color={COLORS.red} />
+          <TouchableOpacity onPress={handleLogout} style={styles.headerIconBtn}>
+            <Feather name="log-out" size={18} color={COLORS.textDark} />
           </TouchableOpacity>
         </View>
       </View>
 
       <ScrollView bounces={true} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Cover & Profile Avatar Container */}
+        {/* ===== COVER IMAGE + AVATAR ===== */}
         <View style={styles.coverContainer}>
           <Image source={{ uri: user.coverImage }} style={styles.coverImage} contentFit="cover" />
           <View style={styles.avatarWrapper}>
-            <Image source={{ uri: user.avatar }} style={styles.avatarImage} contentFit="cover" />
+            <Image source={user.avatar ? { uri: user.avatar } : require('@/assets/images/app-icon.png')} style={styles.avatarImage} contentFit={user.avatar ? "cover" : "contain"} />
             <View style={styles.verifiedBadge}>
-              <Feather name="check" size={12} color={COLORS.white} />
+              <Feather name="check" size={11} color={COLORS.white} />
             </View>
           </View>
         </View>
 
-        {/* Profile Info Details Block */}
-        <View style={styles.profileDetailsBlock}>
-          <View style={styles.nameSection}>
-            <Text style={styles.profileName}>{user.firmName}</Text>
-            <View style={styles.followersContainer}>
-              <Feather name="users" size={14} color={COLORS.textMuted} />
-              <Text style={styles.followersText}>{user.followers} Followers</Text>
-            </View>
-          </View>
-          
-          <Text style={styles.subtitleText}>{user.name} • {currentUser?.role || 'Architect'}</Text>
-          <Text style={styles.phoneText}>
-            <Feather name="phone" size={13} color={COLORS.textMuted} /> {user.phone}
+        {/* ===== PROFILE INFO ===== */}
+        <View style={styles.profileSection}>
+          {/* Firm Name */}
+          <Text style={styles.profileName}>{user.firmName}</Text>
+
+          {/* Name + Role subtitle */}
+          <Text style={styles.subtitleText}>
+            {user.name}  •  {currentUser?.role || 'Architect'}
           </Text>
 
-          {/* Quick Info Tags Row */}
-          <View style={styles.quickInfoRow}>
-            <View style={styles.infoTag}>
-              <Feather name="award" size={14} color={COLORS.gold} />
-              <Text style={styles.infoTagText}>{user.experience} Exp</Text>
+          {/* ===== FOLLOWERS / FOLLOWING ROW ===== */}
+          {currentUser?._id && (
+            <View style={styles.followStatsRow}>
+              <TouchableOpacity
+                style={styles.followStatCol}
+                onPress={() => {
+                  router.push({
+                    pathname: '/followers-list',
+                    params: { userId: currentUser._id, type: 'followers', userName: 'My' }
+                  });
+                }}
+              >
+                <Text style={styles.followStatNumber}>{liveFollowersCount}</Text>
+                <Text style={styles.followStatLabel}> Followers</Text>
+              </TouchableOpacity>
+
+              <View style={styles.followStatDivider} />
+
+              <TouchableOpacity
+                style={styles.followStatCol}
+                onPress={() => {
+                  router.push({
+                    pathname: '/followers-list',
+                    params: { userId: currentUser._id, type: 'following', userName: 'My' }
+                  });
+                }}
+              >
+                <Text style={styles.followStatNumber}>{liveFollowingCount}</Text>
+                <Text style={styles.followStatLabel}> Following</Text>
+              </TouchableOpacity>
             </View>
-            <View style={styles.infoTag}>
-              <Feather name="grid" size={14} color={COLORS.blue} />
-              <Text style={styles.infoTagText}>{user.projects} Projects</Text>
+          )}
+
+          {/* ===== PHONE NUMBER ===== */}
+          <View style={styles.phoneRow}>
+            <Feather name="phone" size={15} color={COLORS.textMuted} />
+            <Text style={styles.phoneText}>{user.phone}</Text>
+          </View>
+
+          {/* ===== STAT PILLS ROW ===== */}
+          <View style={styles.pillsRow}>
+            <View style={styles.pill}>
+              <FontAwesome5 name="trophy" size={12} color={COLORS.primary} />
+              <Text style={styles.pillText}>{expDisplay}</Text>
             </View>
-            <View style={styles.infoTag}>
-              <Feather name="map-pin" size={14} color={COLORS.green} />
-              <Text style={styles.infoTagText}>{user.location.split(',')[0]}</Text>
+            <View style={styles.pill}>
+              <FontAwesome5 name="th-large" size={12} color={COLORS.primary} />
+              <Text style={styles.pillText}>{user.projects} Projects</Text>
+            </View>
+            <View style={styles.pill}>
+              <Ionicons name="location-outline" size={14} color={COLORS.primary} />
+              <Text style={styles.pillText}>{cityOnly}</Text>
             </View>
           </View>
 
-          {/* Edit Profile & Logout Action Buttons */}
+          {/* ===== EDIT PROFILE + LOG OUT BUTTONS ===== */}
           <View style={styles.actionButtonsRow}>
-            <TouchableOpacity style={styles.editProfileBtn} onPress={handleEditProfile}>
-              <Feather name="edit" size={15} color={COLORS.white} style={{ marginRight: 6 }} />
+            <TouchableOpacity style={styles.editProfileBtn} onPress={handleEditProfile} activeOpacity={0.85}>
+              <Feather name="edit-2" size={15} color={COLORS.white} style={{ marginRight: 6 }} />
               <Text style={styles.editProfileBtnText}>Edit Profile Info</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-              <Feather name="log-out" size={15} color={COLORS.red} style={{ marginRight: 5 }} />
+            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
+              <Feather name="log-out" size={15} color={COLORS.red} style={{ marginRight: 6 }} />
               <Text style={styles.logoutBtnText}>Log Out</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Specializations Wrap */}
+          {/* ===== SPECIALIZATION ===== */}
           <View style={styles.specializationSection}>
             <Text style={styles.sectionHeaderTitle}>Specialization</Text>
-            <View style={styles.specializationsWrap}>
-              {['Residential Design', 'Commercial Design', 'Interior Design', 'Vastu Planning', 'Smart Homes', 'Renovation'].map((spec, index) => (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.specScrollRow}>
+              {(Array.isArray(user.specializations) ? user.specializations : ['Residential Design', 'Commercial Design', 'Interior Design', 'Landscape Design']).map((spec, index) => (
                 <View key={index} style={styles.specTag}>
+                  <View style={styles.specDot} />
                   <Text style={styles.specTagText}>{spec}</Text>
                 </View>
               ))}
-            </View>
+            </ScrollView>
           </View>
 
-          {/* Portfolio Highlights */}
-          <View style={styles.portfolioHighlightSection}>
+          {/* ===== PORTFOLIO HIGHLIGHTS ===== */}
+          <View style={styles.portfolioSection}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionHeaderTitle}>Portfolio Highlights</Text>
               <TouchableOpacity>
-                <Text style={styles.viewAllText}>View All</Text>
+                <Text style={styles.viewAllText}>View All ›</Text>
               </TouchableOpacity>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScrollWrapper}>
@@ -215,18 +284,18 @@ export default function ProfileScreen() {
                 { title: '40+ Residential Projects', image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=300&q=80' },
                 { title: '12+ Ongoing Projects', image: 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=300&q=80' }
               ].map((item, index) => (
-                <View key={index} style={styles.portfolioCardHighlight}>
-                  <Image source={{ uri: item.image }} style={styles.highlightImage} contentFit="cover" />
-                  <View style={styles.highlightOverlay}>
+                <View key={index} style={styles.portfolioCard}>
+                  <Image source={{ uri: item.image }} style={styles.portfolioCardImage} contentFit="cover" />
+                  <View style={styles.portfolioCardOverlay}>
                     <Feather name="play-circle" size={22} color={COLORS.white} style={styles.playIcon} />
-                    <Text style={styles.highlightCardTitle}>{item.title}</Text>
+                    <Text style={styles.portfolioCardTitle}>{item.title}</Text>
                   </View>
                 </View>
               ))}
             </ScrollView>
           </View>
 
-          {/* Sub-Tabs Navigation */}
+          {/* ===== TABS ===== */}
           <View style={styles.tabSegmentContainer}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScrollRow}>
               {(['projects', 'videos', 'team', 'reviews'] as const).map((tab) => (
@@ -243,30 +312,51 @@ export default function ProfileScreen() {
             </ScrollView>
           </View>
 
-          {/* Dynamic Tab Content Area */}
+          {/* ===== TAB CONTENT ===== */}
           <View style={styles.tabContentArea}>
             {activeTab === 'projects' && (
               <View style={styles.projectsListCol}>
                 {[
-                  { name: 'Pune Commercial Tower', location: 'Pune', status: 'Completed', year: '2024', image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=200&q=80' },
-                  { name: 'Luxury Penthouse Suite', location: 'Pune', status: 'Completed', year: '2023', image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=200&q=80' },
-                  { name: 'Smart Tech Villa', location: 'Mumbai', status: 'In Progress', year: '2024', image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=200&q=80' }
+                  { name: '2BHK Residential Construction', location: 'Navi Mumbai', status: 'Ongoing', progress: 60, image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=200&q=80' },
+                  { name: '3BHK Villa Project', location: 'Panvel, Navi Mumbai', status: 'Completed', progress: 100, image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=200&q=80' },
+                  { name: 'Interior Work', location: 'Kharghar, Navi Mumbai', status: 'Ongoing', progress: 40, image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=200&q=80' },
+                  { name: 'Renovation Project', location: 'Belapur, Navi Mumbai', status: 'Ongoing', progress: 30, image: 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=200&q=80' },
                 ].map((item, idx) => (
-                  <View key={idx} style={styles.projectListItem}>
-                    <Image source={{ uri: item.image }} style={styles.projectListImg} contentFit="cover" />
-                    <View style={styles.projectListDetails}>
-                      <Text style={styles.projectListName}>{item.name}</Text>
-                      <Text style={styles.projectListLoc}>{item.location} • {item.year}</Text>
-                      <View style={[styles.statusBadge, item.status === 'Completed' ? styles.statusCompleted : styles.statusProgress]}>
-                        <Text style={[styles.statusBadgeText, item.status === 'Completed' ? { color: COLORS.green } : { color: COLORS.blue }]}>
-                          {item.status}
-                        </Text>
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.projectCard}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      router.push({
+                        pathname: '/project-progress',
+                        params: {
+                          name: item.name,
+                          location: item.location,
+                          status: item.status,
+                          progress: item.progress.toString(),
+                        }
+                      });
+                    }}
+                  >
+                    <Image source={{ uri: item.image }} style={styles.projectCardImg} contentFit="cover" />
+                    <View style={styles.projectCardInfo}>
+                      <Text style={styles.projectCardName}>{item.name}</Text>
+                      <Text style={styles.projectCardLoc}>{item.location}</Text>
+                      <View style={styles.projectProgressRow}>
+                        <View style={styles.projectProgressBarBg}>
+                          <View style={[
+                            styles.projectProgressBarFill,
+                            { width: `${item.progress}%`, backgroundColor: item.status === 'Completed' ? COLORS.green : COLORS.green }
+                          ]} />
+                        </View>
+                        <Text style={styles.projectProgressText}>{item.progress}%</Text>
+                      </View>
+                      <View style={styles.projectStatusRow}>
+                        <View style={[styles.projectStatusDot, { backgroundColor: item.status === 'Completed' ? COLORS.green : '#F59E0B' }]} />
+                        <Text style={[styles.projectStatusText, { color: item.status === 'Completed' ? COLORS.green : '#F59E0B' }]}>{item.status}</Text>
                       </View>
                     </View>
-                    <TouchableOpacity style={styles.bookmarkBtn}>
-                      <Feather name="bookmark" size={16} color={COLORS.textMuted} />
-                    </TouchableOpacity>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </View>
             )}
@@ -340,7 +430,7 @@ export default function ProfileScreen() {
                     <Text style={styles.overallRatingValue}>{user.rating}</Text>
                     <View style={styles.overallStarsRow}>
                       {[1, 2, 3, 4, 5].map((s) => (
-                        <Feather key={s} name="star" size={14} color={s <= Math.floor(parseFloat(user.rating)) ? COLORS.gold : COLORS.border} style={{ marginRight: 2 }} />
+                        <FontAwesome5 key={s} name="star" solid={s <= Math.floor(parseFloat(user.rating))} size={13} color={s <= Math.floor(parseFloat(user.rating)) ? COLORS.gold : COLORS.border} style={{ marginRight: 2 }} />
                       ))}
                     </View>
                     <Text style={styles.overallRatingReviews}>{user.reviews} Reviews</Text>
@@ -381,7 +471,7 @@ export default function ProfileScreen() {
                       </View>
                       <View style={styles.reviewStarsRow}>
                         {[1, 2, 3, 4, 5].map((s) => (
-                          <Feather key={s} name="star" size={11} color={s <= item.rating ? COLORS.gold : COLORS.border} />
+                          <FontAwesome5 key={s} name="star" solid={s <= item.rating} size={11} color={s <= item.rating ? COLORS.gold : COLORS.border} />
                         ))}
                       </View>
                     </View>
@@ -399,161 +489,216 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
-  scrollContent: { paddingBottom: 50 },
+  scrollContent: { paddingBottom: 80 },
 
-  /* NAVIGATION HEADER */
+  /* HEADER */
   navHeader: {
-    height: 56,
+    height: 52,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
+    backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
-    backgroundColor: COLORS.white,
   },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textDark },
-  headerRightActions: { flexDirection: 'row', gap: 10 },
-  circleHeaderBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  headerTitle: { fontSize: 18, fontWeight: '800', color: COLORS.textDark },
+  headerRightActions: { flexDirection: 'row', gap: 8 },
+  headerIconBtn: {
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: COLORS.bgLight,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: 'center', alignItems: 'center',
   },
 
-  /* COVER & PROFILE */
+  /* COVER & AVATAR */
   coverContainer: { height: 180, position: 'relative' },
   coverImage: { width: '100%', height: '100%' },
   avatarWrapper: {
     position: 'absolute',
     bottom: -35,
     left: 20,
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+    width: 78,
+    height: 78,
+    borderRadius: 39,
     borderWidth: 3,
     borderColor: COLORS.white,
     backgroundColor: COLORS.white,
+    overflow: 'visible',
   },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 35 },
+  avatarImage: { width: '100%', height: '100%', borderRadius: 36 },
   verifiedBadge: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: COLORS.green,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: COLORS.white,
     justifyContent: 'center',
     alignItems: 'center',
   },
 
-  /* PROFILE INFO DETAILS */
-  profileDetailsBlock: { marginTop: 45, paddingHorizontal: 20 },
-  nameSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
-  profileName: { fontSize: 18, fontWeight: '800', color: COLORS.textDark },
-  followersContainer: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  followersText: { fontSize: 12, color: COLORS.textMuted, fontWeight: '500' },
-  
-  subtitleText: { fontSize: 13, color: COLORS.textMuted, marginBottom: 5 },
-  phoneText: { fontSize: 13, color: COLORS.textMuted, marginBottom: 15 },
+  /* PROFILE SECTION */
+  profileSection: { marginTop: 45, paddingHorizontal: 20 },
 
-  /* QUICK INFO TAGS */
-  quickInfoRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
-  infoTag: {
+  /* NAME */
+  profileName: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 2 },
+
+  /* SUBTITLE */
+  subtitleText: { fontSize: 13, color: COLORS.textMuted, marginBottom: 10 },
+
+  /* FOLLOWERS / FOLLOWING */
+  followStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 16,
+  },
+  followStatCol: { flexDirection: 'row', alignItems: 'baseline' },
+  followStatNumber: { fontSize: 16, fontWeight: '800', color: COLORS.textDark },
+  followStatLabel: { fontSize: 13, color: COLORS.textMuted, fontWeight: '500' },
+  followStatDivider: { width: 1, height: 16, backgroundColor: COLORS.border },
+
+  /* PHONE */
+  phoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  phoneText: { fontSize: 14, color: COLORS.textDark, fontWeight: '500' },
+
+  /* STAT PILLS */
+  pillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 18,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.white,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  pillText: { fontSize: 12, color: COLORS.textDark, fontWeight: '600' },
+
+  /* ACTION BUTTONS ROW */
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 24,
+  },
+  editProfileBtn: {
+    flex: 1,
+    height: 44,
+    backgroundColor: COLORS.greenDark,
+    borderRadius: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editProfileBtnText: { color: COLORS.white, fontSize: 14, fontWeight: '700' },
+  logoutBtn: {
+    flex: 1,
+    height: 44,
+    backgroundColor: COLORS.white,
+    borderRadius: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+  },
+  logoutBtnText: { color: COLORS.red, fontSize: 14, fontWeight: '700' },
+
+  /* SPECIALIZATION */
+  specializationSection: { marginBottom: 24 },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionHeaderTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 },
+  viewAllText: { fontSize: 13, color: COLORS.primary, fontWeight: '700' },
+  specScrollRow: { gap: 8 },
+  specTag: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.bgLight,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    gap: 5,
-  },
-  infoTagText: { fontSize: 11, fontWeight: '600', color: COLORS.textDark },
-
-  /* ACTION BUTTONS */
-  actionButtonsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  editProfileBtn: {
-    flex: 1,
-    height: 38,
-    backgroundColor: COLORS.green,
-    borderRadius: 8,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  editProfileBtnText: { color: COLORS.white, fontSize: 13, fontWeight: '700' },
-  logoutBtn: {
-    flex: 1,
-    height: 38,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderWidth: 1,
-    borderColor: COLORS.red,
-    borderRadius: 8,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.white,
+    borderColor: COLORS.border,
+    gap: 6,
   },
-  logoutBtnText: { color: COLORS.red, fontSize: 13, fontWeight: '700' },
+  specDot: {
+    width: 7, height: 7, borderRadius: 3.5,
+    backgroundColor: COLORS.primary,
+  },
+  specTagText: { fontSize: 12, color: COLORS.textDark, fontWeight: '500' },
 
-  /* ABOUT / SECTION TITLE */
-  sectionHeaderTitle: { fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 },
-  aboutSection: { marginBottom: 20 },
-  aboutParagraphText: { fontSize: 13, color: COLORS.textMuted, lineHeight: 20 },
-
-  /* SPECIALIZATION */
-  specializationSection: { marginBottom: 20 },
-  specializationsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  specTag: { backgroundColor: COLORS.bgLight, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.border },
-  specTagText: { fontSize: 12, color: COLORS.textDark },
-
-  /* PORTFOLIO HIGHLIGHTS */
-  portfolioHighlightSection: { marginBottom: 25 },
-  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  viewAllText: { fontSize: 13, color: COLORS.blue, fontWeight: '700' },
+  /* PORTFOLIO */
+  portfolioSection: { marginBottom: 24 },
   horizontalScrollWrapper: { gap: 12 },
-  portfolioCardHighlight: { width: 140, height: 100, borderRadius: 10, overflow: 'hidden', position: 'relative' },
-  highlightImage: { width: '100%', height: '100%' },
-  highlightOverlay: {
+  portfolioCard: { width: 150, height: 110, borderRadius: 12, overflow: 'hidden', position: 'relative' },
+  portfolioCardImage: { width: '100%', height: '100%' },
+  portfolioCardOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'space-between',
     padding: 10,
   },
   playIcon: { alignSelf: 'flex-start' },
-  highlightCardTitle: { color: COLORS.white, fontSize: 11, fontWeight: '700' },
+  portfolioCardTitle: { color: COLORS.white, fontSize: 11, fontWeight: '700' },
 
-  /* TABS SEGMENT */
-  tabSegmentContainer: { borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 15 },
-  tabScrollRow: { gap: 20, paddingBottom: 5 },
-  tabButton: { paddingVertical: 10, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  activeTabButton: { borderBottomColor: COLORS.purple },
+  /* TABS */
+  tabSegmentContainer: { borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 16 },
+  tabScrollRow: { gap: 24, paddingBottom: 0 },
+  tabButton: { paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  activeTabButton: { borderBottomColor: COLORS.primary },
   tabButtonText: { fontSize: 14, fontWeight: '600', color: COLORS.textMuted },
-  activeTabButtonText: { color: COLORS.purple },
+  activeTabButtonText: { color: COLORS.primary },
 
-  /* TAB CONTENT AREA */
+  /* TAB CONTENT */
   tabContentArea: { minHeight: 180 },
 
-  /* PROJECTS LIST */
-  projectsListCol: { gap: 12 },
-  projectListItem: { flexDirection: 'row', borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 10, alignItems: 'center' },
-  projectListImg: { width: 60, height: 60, borderRadius: 6 },
-  projectListDetails: { flex: 1, marginLeft: 12 },
-  projectListName: { fontSize: 14, fontWeight: '700', color: COLORS.textDark },
-  projectListLoc: { fontSize: 12, color: COLORS.textMuted, marginVertical: 3 },
-  statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12 },
-  statusCompleted: { backgroundColor: COLORS.greenLight },
-  statusProgress: { backgroundColor: COLORS.blueLight },
-  statusBadgeText: { fontSize: 10, fontWeight: '700' },
-  bookmarkBtn: { padding: 8 },
+  /* PROJECTS */
+  projectsListCol: { gap: 14 },
+  projectCard: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  projectCardImg: { width: 80, height: 80, borderRadius: 10 },
+  projectCardInfo: { flex: 1, marginLeft: 14, justifyContent: 'center' },
+  projectCardName: { fontSize: 15, fontWeight: '700', color: COLORS.textDark, marginBottom: 2 },
+  projectCardLoc: { fontSize: 12, color: COLORS.textMuted, marginBottom: 8 },
+  projectProgressRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  projectProgressBarBg: {
+    flex: 1, height: 7, backgroundColor: '#E2E8F0', borderRadius: 4, overflow: 'hidden',
+  },
+  projectProgressBarFill: { height: '100%', borderRadius: 4 },
+  projectProgressText: { fontSize: 12, fontWeight: '700', color: COLORS.textDark, width: 32, textAlign: 'right' },
+  projectStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  projectStatusDot: { width: 7, height: 7, borderRadius: 3.5 },
+  projectStatusText: { fontSize: 12, fontWeight: '700' },
 
-  /* VIDEOS TAB */
+  /* VIDEOS */
   videosGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  videoCard: { width: (width - 50) / 2, height: 130, borderRadius: 8, overflow: 'hidden', backgroundColor: COLORS.bgLight, position: 'relative' },
+  videoCard: { width: (width - 50) / 2, height: 130, borderRadius: 10, overflow: 'hidden', backgroundColor: COLORS.bgLight, position: 'relative' },
   videoThumbnail: { width: '100%', height: '100%' },
   videoPlayOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -562,47 +707,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   videoInfoBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
     backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingVertical: 5,
-    paddingHorizontal: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingVertical: 5, paddingHorizontal: 8,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   videoTitleText: { flex: 1, color: COLORS.white, fontSize: 11, fontWeight: '600', marginRight: 5 },
   videoDurationText: { color: COLORS.white, fontSize: 9 },
 
-  /* TEAM TAB */
+  /* TEAM */
   teamListCol: { gap: 12 },
-  teamListItem: { flexDirection: 'row', borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 10, alignItems: 'center' },
+  teamListItem: { flexDirection: 'row', borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 12, alignItems: 'center' },
   teamMemberAvatar: { width: 44, height: 44, borderRadius: 22 },
   teamMemberDetails: { flex: 1, marginLeft: 12 },
   teamNameRow: { flexDirection: 'row', alignItems: 'center' },
   teamMemberName: { fontSize: 13, fontWeight: '700', color: COLORS.textDark },
   teamMemberType: { fontSize: 11, color: COLORS.textMuted, marginTop: 2 },
-  teamViewProfileBtn: { paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.border, borderRadius: 6 },
+  teamViewProfileBtn: { paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.border, borderRadius: 8 },
   teamViewProfileBtnText: { fontSize: 11, color: COLORS.textDark, fontWeight: '600' },
 
-  /* REVIEWS TAB */
+  /* REVIEWS */
   reviewsListCol: { gap: 15 },
-  ratingBreakdownBox: { flexDirection: 'row', padding: 15, backgroundColor: COLORS.bgLight, borderRadius: 10, alignItems: 'center' },
+  ratingBreakdownBox: { flexDirection: 'row', padding: 15, backgroundColor: COLORS.bgLight, borderRadius: 12, alignItems: 'center' },
   ratingOverallCol: { width: 100, alignItems: 'center', borderRightWidth: 1, borderRightColor: COLORS.border, paddingRight: 10 },
   overallRatingValue: { fontSize: 32, fontWeight: '800', color: COLORS.textDark },
   overallStarsRow: { flexDirection: 'row', marginVertical: 4 },
   overallRatingReviews: { fontSize: 11, color: COLORS.textMuted },
-  
   ratingProgressCol: { flex: 1, paddingLeft: 15 },
   ratingProgressRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   rowStarText: { fontSize: 11, color: COLORS.textDark, width: 18, fontWeight: '600' },
   rowProgressBarBg: { flex: 1, height: 6, backgroundColor: COLORS.border, borderRadius: 3, marginHorizontal: 8, overflow: 'hidden' },
   rowProgressBarFill: { height: '100%', backgroundColor: COLORS.gold, borderRadius: 3 },
   rowStarCount: { fontSize: 11, color: COLORS.textMuted, width: 18, textAlign: 'right' },
-
-  reviewItemCard: { padding: 15, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10 },
+  reviewItemCard: { padding: 15, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12 },
   reviewHeaderRow: { flexDirection: 'row', alignItems: 'center' },
   reviewerAvatar: { width: 36, height: 36, borderRadius: 18 },
   reviewerMeta: { flex: 1, marginLeft: 10 },

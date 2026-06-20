@@ -1,0 +1,542 @@
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, ScrollView, TextInput, TouchableOpacity, Dimensions, Platform, Alert, ActivityIndicator, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Feather, FontAwesome, FontAwesome5 } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { BACKEND_URL } from '../constants/Config';
+
+const { width } = Dimensions.get('window');
+
+const COLORS = {
+  white: '#FFFFFF',
+  textDark: '#111827',
+  textMuted: '#6B7280',
+  bgLight: '#F9FAFB',
+  green: '#10B981',
+  greenLight: '#D1FAE5',
+  blue: '#2563EB',
+  blueLight: '#DBEAFE',
+  border: '#E5E7EB',
+  starGold: '#FBBF24',
+  purple: '#7C3AED',
+  purpleLight: '#F3E8FF',
+  bgPage: '#F3F4F6',
+};
+
+export default function ProjectDetailScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams();
+
+  const clientId = params.clientId as string;
+  const titleHint = params.titleHint as string;
+
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [project, setProject] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Application Modal state
+  const [applyModalVisible, setApplyModalVisible] = useState(false);
+  const [bidCost, setBidCost] = useState('');
+  const [bidDuration, setBidDuration] = useState('');
+  const [bidProposal, setBidProposal] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    let user = (global as any).currentUser;
+    if (!user && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('currentUser');
+      if (stored) {
+        user = JSON.parse(stored);
+      }
+    }
+    setCurrentUser(user);
+  }, []);
+
+  useEffect(() => {
+    if (!clientId) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchProjectDetails = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`${BACKEND_URL}/api/contract-requests/user/${clientId}`);
+        const data = await res.json();
+        
+        if (data.requests && data.requests.length > 0) {
+          // Find matching request or use the latest pending one
+          let match = data.requests.find((r: any) => r.status === 'Pending' && (titleHint ? r.title.toLowerCase().includes(titleHint.toLowerCase()) : true));
+          if (!match) {
+            match = data.requests[0];
+          }
+          setProject(match);
+        }
+      } catch (err) {
+        console.error('Error fetching project details:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProjectDetails();
+  }, [clientId, titleHint]);
+
+  const [hasApplied, setHasApplied] = useState(false);
+
+  // Check if current user already applied
+  useEffect(() => {
+    if (!project?._id || !currentUser?._id) return;
+    const checkExisting = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/project-bids/request/${project._id}`);
+        const data = await res.json();
+        if (data.bids) {
+          const alreadyBid = data.bids.some((b: any) => 
+            (b.professional?._id || b.professional) === currentUser._id
+          );
+          setHasApplied(alreadyBid);
+        }
+      } catch (e) {}
+    };
+    checkExisting();
+  }, [project, currentUser]);
+
+  const handleApplySubmit = async () => {
+    if (!bidCost.trim() || !bidDuration.trim() || !bidProposal.trim()) {
+      Alert.alert('Required Fields', 'Please fill out all bid details.');
+      return;
+    }
+
+    // Parse cost value to numeric
+    const costStr = bidCost.trim().replace(/[^0-9.]/g, '');
+    let costValue = parseFloat(costStr) || 0;
+    // If user entered in lakhs like "11.8" treat as lakhs
+    if (costValue < 1000) costValue = costValue * 100000;
+
+    const durationDays = parseInt(bidDuration.trim()) || 0;
+
+    setIsSubmitting(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/project-bids`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contractRequest: project._id,
+          professional: currentUser?._id,
+          cost: `₹${bidCost.trim()}`,
+          costValue,
+          duration: `${bidDuration.trim()} Days`,
+          durationDays,
+          proposal: bidProposal.trim(),
+        }),
+      });
+
+      if (response.ok) {
+        setSuccess(true);
+        setHasApplied(true);
+        setTimeout(() => {
+          setSuccess(false);
+          setApplyModalVisible(false);
+          setBidCost('');
+          setBidDuration('');
+          setBidProposal('');
+          router.push('/');
+        }, 2500);
+      } else {
+        const errorData = await response.json();
+        Alert.alert('Application Failed', errorData.message || 'Something went wrong.');
+      }
+    } catch (err) {
+      console.error('Submit application error:', err);
+      Alert.alert('Network Error', 'Could not connect to server. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.purple} />
+        <Text style={styles.loadingText}>Loading project details...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!project) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <Feather name="frown" size={40} color={COLORS.textMuted} />
+        <Text style={styles.loadingText}>Project not found or already completed.</Text>
+        <TouchableOpacity style={styles.backBtnAction} onPress={() => router.back()}>
+          <Text style={styles.backBtnActionText}>Go Back</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  const isProfessional = currentUser && ['Architect', 'Contractor', 'Labour'].includes(currentUser.role);
+  const clientName = project.client?.fullName || 'Client';
+  const clientAvatar = project.client?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(clientName)}&background=7C3AED&color=fff`;
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Feather name="arrow-left" size={22} color={COLORS.textDark} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>Project Details</Text>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* Project Meta Card */}
+        <View style={styles.card}>
+          <View style={styles.projectHeader}>
+            <View style={styles.iconBox}>
+              <Feather name="briefcase" size={20} color={COLORS.purple} />
+            </View>
+            <View style={styles.titleCol}>
+              <Text style={styles.projectTitle}>{project.title}</Text>
+              <Text style={styles.projectLocation}>
+                <Feather name="map-pin" size={12} color={COLORS.textMuted} /> {project.location}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Details */}
+          <View style={styles.detailsGrid}>
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Client Budget Range</Text>
+              <Text style={styles.detailValue}>{project.budget}</Text>
+            </View>
+            <View style={styles.detailItem}>
+              <Text style={styles.detailLabel}>Expected Timeline</Text>
+              <Text style={styles.detailValue}>{project.timeline || '90 Days'}</Text>
+            </View>
+          </View>
+
+          {/* Requirements list */}
+          {project.requirements && project.requirements.length > 0 && (
+            <View style={styles.sectionBlock}>
+              <Text style={styles.sectionTitle}>Key Requirements</Text>
+              <View style={styles.badgeContainer}>
+                {project.requirements.map((req: string, idx: number) => (
+                  <View key={idx} style={styles.badge}>
+                    <Text style={styles.badgeText}>{req}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Description */}
+          <View style={styles.sectionBlock}>
+            <Text style={styles.sectionTitle}>Project Scope & Description</Text>
+            <Text style={styles.descriptionText}>
+              {project.description || 'No project description provided by the client.'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Client Info Block */}
+        <View style={styles.clientCard}>
+          <Text style={styles.clientHeader}>Posted By</Text>
+          <View style={styles.clientProfileRow}>
+            <Image source={{ uri: clientAvatar }} style={styles.clientAvatar} />
+            <View style={styles.clientMeta}>
+              <Text style={styles.clientName}>{clientName}</Text>
+              <View style={styles.ratingRow}>
+                <FontAwesome name="star" size={12} color={COLORS.starGold} />
+                <Text style={styles.ratingText}>5.0 (Client Rating)</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Apply Button */}
+        {isProfessional && (
+          hasApplied ? (
+            <View style={[styles.applyBtn, { backgroundColor: '#9CA3AF' }]}>
+              <Feather name="check-circle" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
+              <Text style={styles.applyBtnText}>Already Applied</Text>
+            </View>
+          ) : (
+            <TouchableOpacity 
+              style={styles.applyBtn} 
+              activeOpacity={0.9}
+              onPress={() => setApplyModalVisible(true)}
+            >
+              <Feather name="send" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
+              <Text style={styles.applyBtnText}>Apply to this Project</Text>
+            </TouchableOpacity>
+          )
+        )}
+      </ScrollView>
+
+      {/* Application Form Modal */}
+      <Modal
+        visible={applyModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setApplyModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          {success ? (
+            <View style={styles.successCard}>
+              <View style={styles.successIconBox}>
+                <Feather name="check" size={40} color={COLORS.white} />
+              </View>
+              <Text style={styles.successTitle}>Application Submitted!</Text>
+              <Text style={styles.successSubtitle}>
+                {clientName} has been notified. You will receive updates once they review your bid.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Submit Proposal</Text>
+                <TouchableOpacity onPress={() => setApplyModalVisible(false)} style={styles.closeBtn}>
+                  <Feather name="x" size={20} color={COLORS.textDark} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+                <Text style={styles.modalProjectTitle}>{project.title}</Text>
+                
+                {/* Cost Bid */}
+                <Text style={styles.label}>Your Estimated Cost (INR)</Text>
+                <View style={styles.inputWrapper}>
+                  <Text style={styles.currencySymbol}>₹</Text>
+                  <TextInput
+                    style={styles.inputWithIcon}
+                    placeholder="e.g. 11.8L"
+                    placeholderTextColor={COLORS.textMuted}
+                    value={bidCost}
+                    onChangeText={setBidCost}
+                  />
+                </View>
+
+                {/* Duration proposed */}
+                <Text style={styles.label}>Proposed Duration (Days)</Text>
+                <View style={styles.inputWrapper}>
+                  <Feather name="clock" size={16} color={COLORS.textMuted} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.inputWithIcon}
+                    placeholder="e.g. 75"
+                    placeholderTextColor={COLORS.textMuted}
+                    keyboardType="numeric"
+                    value={bidDuration}
+                    onChangeText={setBidDuration}
+                  />
+                </View>
+
+                {/* Cover letter / proposal */}
+                <Text style={styles.label}>Proposal Message & Experience</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder="Outline your past project experience, availability, and specific solutions for this job..."
+                  placeholderTextColor={COLORS.textMuted}
+                  multiline={true}
+                  numberOfLines={4}
+                  value={bidProposal}
+                  onChangeText={setBidProposal}
+                />
+
+                {/* Submit button */}
+                <TouchableOpacity 
+                  style={[styles.submitBtn, isSubmitting && { opacity: 0.8 }]} 
+                  onPress={handleApplySubmit}
+                  disabled={isSubmitting}
+                  activeOpacity={0.9}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator size="small" color={COLORS.white} />
+                  ) : (
+                    <>
+                      <Text style={styles.submitBtnText}>Submit Bid Application</Text>
+                      <Feather name="arrow-right" size={16} color={COLORS.white} style={{ marginLeft: 6 }} />
+                    </>
+                  )}
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          )}
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: COLORS.bgPage },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.white },
+  loadingText: { fontSize: 14, color: COLORS.textMuted, marginTop: 12, fontWeight: '600' },
+  backBtnAction: { marginTop: 16, backgroundColor: COLORS.purple, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
+  backBtnActionText: { color: COLORS.white, fontWeight: '700', fontSize: 13 },
+  header: {
+    height: 60,
+    backgroundColor: COLORS.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  backBtn: { padding: 6, marginRight: 12 },
+  headerTitle: { fontSize: 18, fontWeight: '800', color: COLORS.textDark, flex: 1 },
+  scrollContent: { padding: 16, paddingBottom: 40 },
+  
+  /* PROJECT CARD */
+  card: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 16,
+  },
+  projectHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  iconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: COLORS.purpleLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  titleCol: { flex: 1 },
+  projectTitle: { fontSize: 16, fontWeight: '800', color: COLORS.textDark, marginBottom: 2 },
+  projectLocation: { fontSize: 12, color: COLORS.textMuted },
+  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: 14 },
+  detailsGrid: { flexDirection: 'row', gap: 16, marginBottom: 14 },
+  detailItem: {
+    flex: 1,
+    backgroundColor: COLORS.bgLight,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    padding: 10,
+  },
+  detailLabel: { fontSize: 11, color: COLORS.textMuted, fontWeight: '600', marginBottom: 4 },
+  detailValue: { fontSize: 14, fontWeight: '800', color: COLORS.textDark },
+  sectionBlock: { marginTop: 12 },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 6 },
+  badgeContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  badge: { backgroundColor: COLORS.purpleLight, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  badgeText: { fontSize: 11, color: COLORS.purple, fontWeight: '700' },
+  descriptionText: { fontSize: 13, color: COLORS.textMuted, lineHeight: 18 },
+
+  /* CLIENT INFO */
+  clientCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 20,
+  },
+  clientHeader: { fontSize: 12, color: COLORS.textMuted, fontWeight: '700', marginBottom: 10, textTransform: 'uppercase' },
+  clientProfileRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  clientAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.bgLight },
+  clientMeta: { flex: 1 },
+  clientName: { fontSize: 14, fontWeight: '800', color: COLORS.textDark, marginBottom: 2 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  ratingText: { fontSize: 11, color: COLORS.textMuted, fontWeight: '600' },
+
+  /* APPLY BUTTON */
+  applyBtn: {
+    height: 48,
+    backgroundColor: COLORS.purple,
+    borderRadius: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  applyBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
+
+  /* MODAL */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    height: 60,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: COLORS.textDark, flex: 1 },
+  closeBtn: { padding: 6 },
+  modalContent: { padding: 16, paddingBottom: 30 },
+  modalProjectTitle: { fontSize: 14, fontWeight: '700', color: COLORS.purple, marginBottom: 16 },
+  label: { fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 8, marginTop: 12 },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    backgroundColor: COLORS.bgLight,
+    height: 48,
+    paddingHorizontal: 12,
+  },
+  currencySymbol: { fontSize: 16, fontWeight: '700', color: COLORS.textMuted, marginRight: 8 },
+  inputIcon: { marginRight: 8 },
+  inputWithIcon: { flex: 1, height: '100%', fontSize: 14, color: COLORS.textDark },
+  input: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    color: COLORS.textDark,
+    backgroundColor: COLORS.bgLight,
+  },
+  textArea: { height: 100, textAlignVertical: 'top', paddingTop: 12 },
+  submitBtn: {
+    height: 48,
+    backgroundColor: COLORS.purple,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    marginTop: 24,
+  },
+  submitBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
+
+  /* SUCCESS CARD */
+  successCard: {
+    backgroundColor: COLORS.white,
+    padding: 30,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    alignItems: 'center',
+  },
+  successIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: COLORS.green,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  successTitle: { fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 10 },
+  successSubtitle: { fontSize: 13, color: COLORS.textMuted, textAlign: 'center', lineHeight: 18 },
+});

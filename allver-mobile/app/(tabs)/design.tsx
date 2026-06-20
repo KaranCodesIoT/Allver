@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TextInput, TouchableOpacity, Dimensions, FlatList, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { BACKEND_URL } from '../../constants/Config';
+import NotificationBell from '../../components/NotificationBell';
 
 const { width } = Dimensions.get('window');
 
@@ -37,6 +39,8 @@ interface DesignItem {
   authorPhone: string;
   authorReviews: string;
   imagesList: string[];
+  description?: string;
+  quotation?: any;
 }
 
 const DESIGN_DATA: DesignItem[] = [
@@ -50,7 +54,7 @@ const DESIGN_DATA: DesignItem[] = [
     rating: 4.8,
     authorName: 'Ar. Neha Sharma',
     authorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
-    authorId: '1',
+    authorId: '60c72b2f9b1d8a2a4c8b0001',
     authorCover: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
     authorFirm: 'Design Space Architects',
     authorExperience: '8+ Years',
@@ -75,7 +79,7 @@ const DESIGN_DATA: DesignItem[] = [
     rating: 4.7,
     authorName: 'Ar. Rohit Mehta',
     authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-    authorId: '2',
+    authorId: '60c72b2f9b1d8a2a4c8b0002',
     authorCover: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
     authorFirm: 'RM Design Studios',
     authorExperience: '10+ Years',
@@ -99,7 +103,7 @@ const DESIGN_DATA: DesignItem[] = [
     rating: 4.9,
     authorName: 'Ar. Priya Nair',
     authorAvatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
-    authorId: '3',
+    authorId: '60c72b2f9b1d8a2a4c8b0003',
     authorCover: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&q=80',
     authorFirm: 'Priya Nair & Associates',
     authorExperience: '6+ Years',
@@ -115,17 +119,103 @@ const DESIGN_DATA: DesignItem[] = [
   }
 ];
 
+const mapBackendPostToDesign = (bp: any): DesignItem => {
+  return {
+    id: bp._id,
+    title: bp.title || 'Modern Design Concept',
+    location: bp.creator?.city || 'Mumbai, Maharashtra',
+    image: bp.mediaUrls && bp.mediaUrls.length > 0 ? bp.mediaUrls[0] : 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
+    likes: bp.likes || 0,
+    comments: bp.comments || 0,
+    rating: bp.creator?.rating || 4.8,
+    authorName: bp.creator?.fullName || 'Ar. Neha Sharma',
+    authorAvatar: bp.creator?.avatarUrl || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
+    authorId: bp.creator?._id || '1',
+    authorCover: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
+    authorFirm: bp.creator?.firmName || 'Design Space Architects',
+    authorExperience: bp.creator?.experience || '8+ Years',
+    authorProjects: bp.creator?.projects || '120',
+    authorFollowers: '256',
+    authorPhone: bp.creator?.phoneNumber || '+91 98765 43210',
+    authorReviews: '124',
+    imagesList: bp.mediaUrls && bp.mediaUrls.length > 0 ? bp.mediaUrls : ['https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80'],
+    description: bp.description || '',
+    quotation: bp.quotation || null,
+  };
+};
+
 export default function DesignScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [designs, setDesigns] = useState<DesignItem[]>(DESIGN_DATA);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [savedDesignIds, setSavedDesignIds] = useState<string[]>([]);
+  const [showSavedOnly, setShowSavedOnly] = useState(false);
 
-  const filteredDesigns = searchQuery.trim() === ''
-    ? designs
-    : designs.filter(item => 
-        item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        item.location.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+  useEffect(() => {
+    let user = (global as any).currentUser;
+    if (!user && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('currentUser');
+      if (stored) {
+        user = JSON.parse(stored);
+      }
+    }
+    setCurrentUser(user);
+  }, []);
+
+  const fetchSavedDesigns = async (userId: string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/user/saved-designs/${userId}`);
+      if (res.ok) {
+        const data = await res.json();
+        const list = data.savedDesigns || [];
+        const ids = list.map((d: any) => d._id || d);
+        setSavedDesignIds(ids);
+      }
+    } catch (err) {
+      console.error('Error fetching saved designs list:', err);
+    }
+  };
+
+  useEffect(() => {
+    const fetchLiveDesigns = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/posts/design`);
+        if (response.ok) {
+          const data = await response.json();
+          const mapped = data.designs.map(mapBackendPostToDesign);
+          setDesigns([...mapped, ...DESIGN_DATA]);
+        }
+      } catch (err) {
+        console.error('Error fetching live designs:', err);
+      }
+    };
+    fetchLiveDesigns();
+    if (currentUser) {
+      fetchSavedDesigns(currentUser._id);
+    }
+  }, [currentUser]);
+
+  const handleToggleSaved = () => {
+    if (!currentUser) {
+      alert('Please log in to view saved designs.');
+      return;
+    }
+    const nextVal = !showSavedOnly;
+    setShowSavedOnly(nextVal);
+    if (nextVal) {
+      fetchSavedDesigns(currentUser._id);
+    }
+  };
+
+  const filteredDesigns = designs.filter(item => {
+    const matchesSearch = searchQuery.trim() === '' || 
+      item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      item.location.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesSaved = !showSavedOnly || savedDesignIds.includes(item.id);
+    return matchesSearch && matchesSaved;
+  });
 
   const handleCardPress = (item: DesignItem) => {
     // Navigate to design-detail screen with design parameters
@@ -154,6 +244,8 @@ export default function DesignScreen() {
         
         // Images array as comma-separated string
         imagesList: item.imagesList.join(','),
+        description: item.description || '',
+        quotation: item.quotation ? JSON.stringify(item.quotation) : '',
       }
     });
   };
@@ -235,15 +327,12 @@ export default function DesignScreen() {
       {/* Header Bar */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Design</Text>
-        <TouchableOpacity style={styles.notificationBtn}>
-          <Feather name="bell" size={18} color={COLORS.textDark} />
-          <View style={styles.notificationBadge} />
-        </TouchableOpacity>
+        <NotificationBell size={18} color={COLORS.textDark} style={styles.notificationBtn} />
       </View>
 
       <FlatList
         data={filteredDesigns}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => (item.id || `design_${index}`) + `_${index}`}
         renderItem={renderDesignCard}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -278,6 +367,23 @@ export default function DesignScreen() {
                 <Text style={styles.filterPlaceholderText}>Search price range</Text>
                 <Feather name="chevron-down" size={16} color={COLORS.textMuted} />
               </View>
+
+              {/* Saved Designs Toggle Button */}
+              <TouchableOpacity 
+                style={[
+                  styles.savedFilterBtn, 
+                  showSavedOnly && { backgroundColor: COLORS.greenLight, borderColor: COLORS.green }
+                ]}
+                onPress={handleToggleSaved}
+                activeOpacity={0.7}
+              >
+                <Feather 
+                  name="bookmark" 
+                  size={16} 
+                  color={showSavedOnly ? COLORS.green : COLORS.textDark} 
+                  style={showSavedOnly && { fill: COLORS.green }} 
+                />
+              </TouchableOpacity>
             </View>
           </>
         }
@@ -359,6 +465,17 @@ const styles = StyleSheet.create({
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 13, color: COLORS.textDark, padding: 0 },
   filterPlaceholderText: { flex: 1, fontSize: 13, color: COLORS.textMuted },
+  savedFilterBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+  },
 
   /* DESIGN CARD */
   designCard: {

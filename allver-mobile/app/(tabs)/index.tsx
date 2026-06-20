@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, useWindowDimensions, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, useWindowDimensions, TextInput, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
+import NotificationBell from '../../components/NotificationBell';
+import { BACKEND_URL } from '../../constants/Config';
 
 const { width } = Dimensions.get('window');
 
@@ -54,58 +56,6 @@ const PROJECTS_DATA = [
   }
 ];
 
-const PROFESSIONALS_DATA = [
-  {
-    id: '2',
-    name: 'Rahul Contractor',
-    role: 'Civil Contractor',
-    experience: '4-6 years Experience',
-    projects: '15 Projects Completed',
-    skills: ['Residential Construction', 'Commercial Construction', 'Renovation', 'Civil Work'],
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=120&auto=format&fit=crop',
-    color: '#2563EB',
-    rating: 4.8,
-    reviews: 126,
-    location: 'Pune, Maharashtra',
-    firmName: 'Rahul Construction Services',
-    phone: '+91 98765 43211',
-    specialization: 'Expertise in building construction, renovation work, and concrete foundations.',
-    workerCount: '15 Workers Available',
-    serviceAreas: 'Pune, Pimpri Chinchwad',
-    skillsList: ['RCC Work', 'Brickwork', 'Plumbing', 'Electrical', 'Painting', 'Tile Work']
-  },
-  {
-    id: '1',
-    name: 'Ar. Rohit Sharma',
-    role: 'Architect',
-    experience: '3-5 years Experience',
-    projects: '18 Projects Completed',
-    skills: ['Architecture & Design', 'Interior Design'],
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=120&auto=format&fit=crop',
-    color: '#10B981',
-    rating: 4.9,
-    reviews: 98,
-    location: 'Mumbai, Maharashtra',
-    firmName: 'Sharma & Associates',
-    phone: '+91 98765 43210',
-    specialization: 'Specialized in modern architecture, residential planning, and premium interior design.'
-  },
-  {
-    id: '3',
-    name: 'Amit Labour Supplier',
-    role: 'Labour Supplier',
-    experience: '3-5 years Experience',
-    projects: '30 Projects Completed',
-    skills: ['Renovation', 'Electrical Work', 'Plumbing', 'Painting', 'Civil Work'],
-    avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=120&auto=format&fit=crop',
-    color: '#F97316',
-    rating: 4.7,
-    reviews: 86,
-    location: 'Mumbai, Maharashtra',
-    contractorName: 'BuildWell Constructions'
-  }
-];
-
 const SERVICES_DATA = [
   { id: '1', title: 'Residential\nConstruction', icon: 'home', color: '#EA580C', bgColor: '#FFEDD5', library: 'Feather' },
   { id: '2', title: 'Commercial\nConstruction', icon: 'office-building', color: '#F59E0B', bgColor: '#FEF3C7', library: 'MaterialCommunityIcons' },
@@ -118,6 +68,50 @@ const SERVICES_DATA = [
   { id: '9', title: 'Civil\nWork', icon: 'hard-hat', color: '#10B981', bgColor: '#D1FAE5', library: 'FontAwesome5' },
   { id: '10', title: 'More\nServices', icon: 'grid', color: '#6B7280', bgColor: '#F3F4F6', library: 'Feather' },
 ];
+
+// Service sub-menus for categories that need drill-down
+const SERVICE_SUBMENUS: Record<string, { title: string; items: { name: string; icon: string; library: string; route: string }[] }> = {
+  'Interior Design': {
+    title: 'Interior Design Services',
+    items: [
+      { name: 'Interior Designers', icon: 'sofa', library: 'MaterialCommunityIcons', route: '/contractors' },
+      { name: 'False Ceiling Experts', icon: 'layers', library: 'Feather', route: '/contractors' },
+      { name: 'Furniture Experts', icon: 'table-furniture', library: 'MaterialCommunityIcons', route: '/contractors' },
+      { name: 'Lighting Designers', icon: 'lightbulb-outline', library: 'MaterialCommunityIcons', route: '/contractors' },
+    ]
+  },
+  'Electrical Work': {
+    title: 'Electrical Services',
+    items: [
+      { name: 'Electricians', icon: 'zap', library: 'Feather', route: '/labours' },
+      { name: 'Electrical Contractors', icon: 'flash', library: 'MaterialCommunityIcons', route: '/contractors' },
+      { name: 'Industrial Wiring Experts', icon: 'cable-data', library: 'MaterialCommunityIcons', route: '/contractors' },
+    ]
+  },
+  'Plumbing': {
+    title: 'Plumbing Services',
+    items: [
+      { name: 'Plumbers', icon: 'faucet', library: 'FontAwesome5', route: '/labours' },
+      { name: 'Plumbing Contractors', icon: 'pipe', library: 'MaterialCommunityIcons', route: '/contractors' },
+    ]
+  },
+  'Painting': {
+    title: 'Painting Services',
+    items: [
+      { name: 'Painters', icon: 'paint-roller', library: 'MaterialCommunityIcons', route: '/labours' },
+      { name: 'Painting Contractors', icon: 'format-paint', library: 'MaterialCommunityIcons', route: '/contractors' },
+    ]
+  },
+};
+
+// Direct navigation map for services without sub-menus
+const SERVICE_DIRECT_NAV: Record<string, string> = {
+  'Residential Construction': '/contractors',
+  'Commercial Construction': '/contractors',
+  'Architecture & Design': '/architects',
+  'Renovation': '/contractors',
+  'Civil Work': '/contractors',
+};
 
 const ACTIVITIES_DATA = [
   {
@@ -165,10 +159,34 @@ export default function DashboardScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [clientRequests, setClientRequests] = useState<any[]>([]);
+  const [serviceMenuVisible, setServiceMenuVisible] = useState(false);
+  const [activeServiceMenu, setActiveServiceMenu] = useState<string | null>(null);
+  const [featuredProfessionals, setFeaturedProfessionals] = useState<any[]>([]);
+  const [featuredLoading, setFeaturedLoading] = useState(true);
 
-  React.useEffect(() => {
+
+  // Fetch client requests
+  useEffect(() => {
+    if (!currentUser?._id || currentUser?.role !== 'Client') return;
+    const fetchRequests = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/contract-requests/user/${currentUser._id}`);
+        const data = await res.json();
+        if (data.requests) {
+          setClientRequests(data.requests);
+        }
+      } catch (err) {
+        console.error('Error fetching client requests:', err);
+      }
+    };
+    fetchRequests();
+  }, [currentUser?._id, currentUser?.role]);
+
+  // Load current user from global/localStorage
+  useEffect(() => {
     let user = (global as any).currentUser;
-    if (!user && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+    if (!user && (Platform.OS === 'web') && typeof localStorage !== 'undefined') {
       const stored = localStorage.getItem('currentUser');
       if (stored) {
         try {
@@ -183,6 +201,30 @@ export default function DashboardScreen() {
     }
   }, []);
 
+  // Fetch featured professionals from API when user is loaded
+  useEffect(() => {
+    if (!currentUser?._id) {
+      setFeaturedLoading(false);
+      return;
+    }
+    const fetchFeatured = async () => {
+      try {
+        setFeaturedLoading(true);
+        const res = await fetch(`${BACKEND_URL}/api/featured-professionals/${currentUser._id}`);
+        const data = await res.json();
+        if (data.featured) {
+          setFeaturedProfessionals(data.featured);
+        }
+
+      } catch (err) {
+        console.error('Error fetching featured professionals:', err);
+      } finally {
+        setFeaturedLoading(false);
+      }
+    };
+    fetchFeatured();
+  }, [currentUser?._id]);
+
   const userName = currentUser?.fullName || 'Rohit';
 
   // Set exactly 4 columns per row for Browse by Service grid
@@ -194,8 +236,22 @@ export default function DashboardScreen() {
   const srvCardWidth = Math.floor(availableGridWidth / numCols);
 
   const handleToggleService = (serviceName: string) => {
-    // Standardize title for matching (remove newlines)
     const cleanedTitle = serviceName.replace('\n', ' ');
+
+    // Check if this service has a sub-menu
+    if (SERVICE_SUBMENUS[cleanedTitle]) {
+      setActiveServiceMenu(cleanedTitle);
+      setServiceMenuVisible(true);
+      return;
+    }
+
+    // Check if this service navigates directly
+    if (SERVICE_DIRECT_NAV[cleanedTitle]) {
+      router.push(SERVICE_DIRECT_NAV[cleanedTitle] as any);
+      return;
+    }
+
+    // "More Services" or unknown — toggle selection
     if (selectedService === cleanedTitle) {
       setSelectedService(null);
     } else {
@@ -203,69 +259,111 @@ export default function DashboardScreen() {
     }
   };
 
-  const handleViewProfile = (prof: typeof PROFESSIONALS_DATA[0]) => {
+  const renderSubMenuIcon = (iconName: string, library: string) => {
+    if (library === 'MaterialCommunityIcons') {
+      return <MaterialCommunityIcons name={iconName as any} size={20} color="#374151" />;
+    } else if (library === 'FontAwesome5') {
+      return <FontAwesome5 name={iconName as any} size={16} color="#374151" />;
+    } else {
+      return <Feather name={iconName as any} size={20} color="#374151" />;
+    }
+  };
+
+  const handleViewProfile = (prof: any) => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       (document.activeElement as HTMLElement)?.blur();
     }
+
+    const profId = prof._id || prof.id;
+    const profName = prof.fullName || prof.name;
+    const profAvatar = prof.avatarUrl || prof.avatar || '';
+    const profLocation = prof.location || (prof.city ? `${prof.city}${prof.state ? ', ' + prof.state : ''}` : '');
+    const profRating = (prof.rating || 0).toString();
+    const profReviews = (prof.reviews || 0).toString();
+    const profExperience = (prof.experience || '').split(' ')[0];
+    const profProjects = (prof.projects || 0).toString();
 
     if (prof.role === 'Architect') {
       router.push({
         pathname: '/architect-detail',
         params: {
-          id: prof.id,
-          name: prof.name,
-          avatar: prof.avatar,
+          id: profId,
+          name: profName,
+          avatar: profAvatar,
           coverImage: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?q=80&w=800&auto=format&fit=crop',
-          firmName: prof.firmName,
-          experience: prof.experience.split(' ')[0],
-          projects: prof.projects.split(' ')[0],
-          followers: '192',
-          phone: prof.phone,
-          reviews: prof.reviews.toString(),
-          rating: prof.rating.toString(),
+          firmName: prof.firmName || '',
+          experience: profExperience,
+          projects: profProjects,
+          followers: (prof.followersCount || 0).toString(),
+          phone: prof.phone || prof.phoneNumber || '',
+          reviews: profReviews,
+          rating: profRating,
           role: prof.role,
-          location: prof.location,
-          specialization: prof.specialization
+          location: profLocation,
+          specialization: Array.isArray(prof.specialization) ? prof.specialization.join(', ') : (prof.specialization || '')
         }
       });
-    } else if (prof.role.includes('Contractor')) {
+    } else if (prof.role === 'Contractor') {
       router.push({
         pathname: '/contractor-detail',
         params: {
-          id: prof.id,
-          name: prof.name,
-          avatar: prof.avatar,
+          id: profId,
+          name: profName,
+          avatar: profAvatar,
           coverImage: 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop',
-          rating: prof.rating.toString(),
-          reviews: prof.reviews.toString(),
-          location: prof.location,
-          experience: prof.experience.split(' ')[0],
-          specialization: prof.specialization,
-          projects: prof.projects.split(' ')[0],
-          followers: '256',
+          rating: profRating,
+          reviews: profReviews,
+          location: profLocation,
+          experience: profExperience,
+          specialization: prof.contractorType || prof.shortDesc || '',
+          projects: profProjects,
+          followers: (prof.followersCount || 0).toString(),
           firmName: prof.firmName || 'Contracting Services',
-          phone: prof.phone || '+91 98765 43210',
-          workerCount: prof.workerCount || '18 Workers Available',
-          serviceAreas: prof.serviceAreas || 'Mumbai, Pune',
-          skills: prof.skillsList ? prof.skillsList.join(',') : 'Civil Work,RCC Work,Renovation'
+          phone: prof.phone || prof.phoneNumber || '',
+          workerCount: prof.teamSize ? `${prof.teamSize} Workers Available` : '18 Workers Available',
+          serviceAreas: Array.isArray(prof.serviceLocation) ? prof.serviceLocation.join(', ') : (prof.city || ''),
+          skills: Array.isArray(prof.workCategory) ? prof.workCategory.join(',') : 'Civil Work,RCC Work,Renovation'
         }
       });
-    } else {
+    } else if (prof.role === 'Labour') {
       router.push({
         pathname: '/labour-detail',
         params: {
-          name: prof.name,
-          role: prof.role,
-          avatar: prof.avatar,
-          experience: prof.experience.split(' ')[0] + ' Years Experience',
-          location: prof.location,
-          rating: prof.rating.toString(),
-          reviews: prof.reviews.toString(),
-          contractorName: prof.contractorName || 'BuildWell Constructions'
+          name: profName,
+          role: prof.skillType || prof.role,
+          avatar: profAvatar,
+          experience: profExperience + ' Years Experience',
+          location: profLocation,
+          rating: profRating,
+          reviews: profReviews,
+          contractorName: 'BuildWell Constructions'
+        }
+      });
+    } else if (prof.role === 'Client') {
+      router.push({
+        pathname: '/project-detail',
+        params: {
+          clientId: profId,
+          title: prof.activeProject?.title || '',
+          projectType: prof.activeProject?.projectType || '',
+          budget: prof.activeProject?.budget || '',
+          location: prof.activeProject?.location || profLocation,
         }
       });
     }
   };
+
+  // Filter featured professionals based on search/service selection
+  const filteredProfessionals = featuredProfessionals.filter((p) => {
+    const name = (p.fullName || p.name || '').toLowerCase();
+    const role = (p.role || '').toLowerCase();
+    const contractorType = (p.contractorType || '').toLowerCase();
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return name.includes(q) || role.includes(q) || contractorType.includes(q);
+    }
+    return true;
+  });
 
   const renderServiceIcon = (item: typeof SERVICES_DATA[0]) => {
     if (item.library === 'MaterialCommunityIcons') {
@@ -284,18 +382,6 @@ export default function DashboardScreen() {
     return <Feather name="file-text" size={14} color={color} />;
   };
 
-  // Filter logic
-  const filteredProfessionals = PROFESSIONALS_DATA.filter((p) => {
-    if (selectedService) {
-      return p.skills.some(s => s.toLowerCase().includes(selectedService.toLowerCase()));
-    }
-    if (searchQuery) {
-      return p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-             p.role.toLowerCase().includes(searchQuery.toLowerCase());
-    }
-    return true;
-  });
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       
@@ -309,10 +395,7 @@ export default function DashboardScreen() {
           />
           <View style={styles.headerIconsRow}>
             
-            <TouchableOpacity style={styles.iconBadgeBtn}>
-              <Feather name="bell" size={20} color={COLORS.textDark} />
-              <View style={styles.badgeCircle}><Text style={styles.badgeText}>3</Text></View>
-            </TouchableOpacity>
+            <NotificationBell size={20} color={COLORS.textDark} />
 
             <TouchableOpacity 
               style={styles.iconBadgeBtn}
@@ -327,8 +410,9 @@ export default function DashboardScreen() {
               onPress={() => router.push('/profile')}
             >
               <Image 
-                source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop' }} 
+                source={currentUser?.avatarUrl ? { uri: currentUser.avatarUrl } : require('@/assets/images/app-icon.png')} 
                 style={styles.avatarImage}
+                contentFit={currentUser?.avatarUrl ? "cover" : "contain"}
               />
             </TouchableOpacity>
           </View>
@@ -364,47 +448,94 @@ export default function DashboardScreen() {
         {/* ================= QUICK ACTIONS ================= */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickActionsScroll}>
-            
-            <TouchableOpacity style={[styles.actionCard, { backgroundColor: COLORS.yellowLight }]}>
-              <View style={[styles.actionIconCircle, { backgroundColor: '#FDE68A' }]}>
-                <Feather name="plus" size={18} color="#D97706" />
-              </View>
-              <Text style={styles.actionCardTitle}>Post Project</Text>
-              <Text style={styles.actionCardDesc}>Get started</Text>
-            </TouchableOpacity>
-
+          
+          {/* All 3 cards in a flex-wrap grid */}
+          <View style={styles.qaTopRow}>
+            {/* Find Contractor */}
             <TouchableOpacity 
-              style={[styles.actionCard, { backgroundColor: COLORS.blueLight }]}
+              style={[styles.qaCard, { borderColor: '#D1FAE5' }]}
               onPress={() => router.push('/contractors')}
+              activeOpacity={0.85}
             >
-              <View style={[styles.actionIconCircle, { backgroundColor: '#BFDBFE' }]}>
-                <FontAwesome5 name="users" size={14} color="#2563EB" />
+              <View style={styles.qaCardHeader}>
+                <View style={[styles.qaIconWrap, { backgroundColor: '#ECFDF5' }]}>
+                  <FontAwesome5 name="hard-hat" size={18} color="#10B981" />
+                </View>
+                <View style={styles.qaCardTextCol}>
+                  <Text style={styles.qaCardTitle}>Find Contractor</Text>
+                  <Text style={styles.qaCardDesc}>Vetted & experienced builders.</Text>
+                </View>
               </View>
-              <Text style={styles.actionCardTitle}>Find Contractor</Text>
-              <Text style={styles.actionCardDesc}>Hire experts</Text>
+              <View style={styles.qaCardFooter}>
+                <View style={[styles.qaPill, { backgroundColor: '#10B981' }]}>
+                  <Text style={styles.qaPillText}>Select</Text>
+                  <Feather name="arrow-up-right" size={11} color="#FFF" />
+                </View>
+              </View>
             </TouchableOpacity>
 
+            {/* Find Architect */}
             <TouchableOpacity 
-              style={[styles.actionCard, { backgroundColor: COLORS.greenLight }]}
+              style={[styles.qaCard, { borderColor: '#DBEAFE' }]}
               onPress={() => router.push('/architects')}
+              activeOpacity={0.85}
             >
-              <View style={[styles.actionIconCircle, { backgroundColor: '#A7F3D0' }]}>
-                <FontAwesome5 name="user-tie" size={14} color="#059669" />
+              <View style={styles.qaCardHeader}>
+                <View style={[styles.qaIconWrap, { backgroundColor: '#EFF6FF' }]}>
+                  <FontAwesome5 name="drafting-compass" size={16} color="#2563EB" />
+                </View>
+                <View style={styles.qaCardTextCol}>
+                  <Text style={styles.qaCardTitle}>Find Architect</Text>
+                  <Text style={styles.qaCardDesc}>Design & planning visionaries.</Text>
+                </View>
               </View>
-              <Text style={styles.actionCardTitle}>Find Architect</Text>
-              <Text style={styles.actionCardDesc}>Design your dream</Text>
+              <View style={styles.qaCardFooter}>
+                <View style={[styles.qaPill, { backgroundColor: '#2563EB' }]}>
+                  <Text style={styles.qaPillText}>Design</Text>
+                  <Feather name="arrow-up-right" size={11} color="#FFF" />
+                </View>
+              </View>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.actionCard, { backgroundColor: COLORS.purpleLight }]}>
-              <View style={[styles.actionIconCircle, { backgroundColor: '#E9D5FF' }]}>
-                <Feather name="clipboard" size={16} color="#7C3AED" />
+            {/* Skilled Labour */}
+            <TouchableOpacity 
+              style={[styles.qaCard, { borderColor: '#FFEDD5' }]}
+              onPress={() => router.push('/labours')}
+              activeOpacity={0.85}
+            >
+              <View style={styles.qaCardHeader}>
+                <View style={[styles.qaIconWrap, { backgroundColor: '#FFF7ED' }]}>
+                  <FontAwesome5 name="users" size={18} color="#F97316" />
+                </View>
+                <View style={styles.qaCardTextCol}>
+                  <Text style={styles.qaCardTitle}>Skilled Labour</Text>
+                  <Text style={styles.qaCardDesc}>Skilled & reliable crews.</Text>
+                </View>
               </View>
-              <Text style={styles.actionCardTitle}>Track Project</Text>
-              <Text style={styles.actionCardDesc}>Stay updated</Text>
+              <View style={styles.qaCardFooter}>
+                <View style={[styles.qaPill, { backgroundColor: '#F97316' }]}>
+                  <Text style={styles.qaPillText}>Request</Text>
+                  <Feather name="arrow-up-right" size={11} color="#FFF" />
+                </View>
+              </View>
             </TouchableOpacity>
+          </View>
 
-          </ScrollView>
+          {/* Secondary Actions Row */}
+          <View style={styles.qaSecondaryRow}>
+            <TouchableOpacity style={[styles.qaSecondaryCard, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+              <View style={[styles.qaSecondaryIcon, { backgroundColor: '#FDE68A' }]}>
+                <Feather name="plus" size={14} color="#D97706" />
+              </View>
+              <Text style={styles.qaSecondaryText}>Post Project</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.qaSecondaryCard, { backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' }]}>
+              <View style={[styles.qaSecondaryIcon, { backgroundColor: '#E9D5FF' }]}>
+                <Feather name="clipboard" size={13} color="#7C3AED" />
+              </View>
+              <Text style={styles.qaSecondaryText}>Track Project</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* ================= MY PROJECTS ================= */}
@@ -415,48 +546,117 @@ export default function DashboardScreen() {
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalCardsScroll}>
-            {PROJECTS_DATA.map((proj) => (
-              <View key={proj.id} style={styles.projectCard}>
-                
-                {/* Cover Image Area */}
-                <View style={styles.projectImageWrapper}>
-                  <Image source={{ uri: proj.image }} style={styles.projectImage} />
-                  
-                  {/* Status Overlay */}
-                  <View style={[styles.projectStatusBadge, { backgroundColor: proj.statusBg }]}>
-                    <Text style={[styles.projectStatusText, { color: proj.statusColor }]}>{proj.status}</Text>
-                  </View>
-
-
-                </View>
-
-                {/* Body Content */}
-                <View style={styles.projectCardBody}>
-                  <Text style={styles.projectTitleText}>{proj.title}</Text>
-                  <View style={styles.iconLabelRow}>
-                    <Feather name="map-pin" size={12} color={COLORS.textMuted} style={styles.cardInfoIcon} />
-                    <Text style={styles.projectDetailText}>{proj.location}</Text>
-                  </View>
-                  
-                  <View style={styles.projectDivider} />
-
-                  {/* Statistics metrics */}
-                  <View style={styles.projectMetricsRow}>
-                    <View style={styles.metricItem}>
-                      <FontAwesome5 name="users" size={10} color={COLORS.textMuted} style={styles.metricIcon} />
-                      <Text style={styles.metricText}>{proj.workers} Workers</Text>
+            {currentUser?.role === 'Client' ? (
+              clientRequests.length > 0 ? (
+                clientRequests.map((proj) => (
+                  <TouchableOpacity 
+                    key={proj._id} 
+                    style={styles.projectCard}
+                    activeOpacity={0.9}
+                    onPress={() => router.push({
+                      pathname: '/project-applications',
+                      params: {
+                        requestId: proj._id,
+                        title: proj.title,
+                        location: proj.location,
+                        budget: proj.budget,
+                        timeline: proj.timeline,
+                        requirements: (proj.requirements || []).join(','),
+                        description: proj.description
+                      }
+                    })}
+                  >
+                    {/* Cover Image Area */}
+                    <View style={styles.projectImageWrapper}>
+                      <Image 
+                        source={{ uri: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=600&auto=format&fit=crop' }} 
+                        style={styles.projectImage} 
+                      />
+                      {/* Status Overlay */}
+                      <View style={[styles.projectStatusBadge, { backgroundColor: '#FEF3C7' }]}>
+                        <Text style={[styles.projectStatusText, { color: '#D97706' }]}>{proj.status}</Text>
+                      </View>
                     </View>
-                    <View style={styles.metricItem}>
-                      <Feather name="calendar" size={11} color={COLORS.textMuted} style={styles.metricIcon} />
-                      <Text style={styles.metricText}>{proj.dueDate} Due</Text>
+
+                    {/* Body Content */}
+                    <View style={styles.projectCardBody}>
+                      <Text style={styles.projectTitleText}>{proj.title}</Text>
+                      <View style={styles.iconLabelRow}>
+                        <Feather name="map-pin" size={12} color={COLORS.textMuted} style={styles.cardInfoIcon} />
+                        <Text style={styles.projectDetailText}>{proj.location}</Text>
+                      </View>
+                      
+                      <View style={styles.projectDivider} />
+
+                      {/* Statistics metrics */}
+                      <View style={styles.projectMetricsRow}>
+                        <View style={styles.metricItem}>
+                          <FontAwesome5 name="users" size={10} color={COLORS.blue} style={styles.metricIcon} />
+                          <Text style={[styles.metricText, { color: COLORS.blue, fontWeight: '700' }]}>12 Applications</Text>
+                        </View>
+                        <View style={styles.metricItem}>
+                          <Feather name="clock" size={11} color={COLORS.textMuted} style={styles.metricIcon} />
+                          <Text style={styles.metricText}>{proj.timeline || '90 Days'}</Text>
+                        </View>
+                      </View>
                     </View>
+                  </TouchableOpacity>
+                ))
+              ) : (
+                <TouchableOpacity 
+                  style={[styles.projectCard, { justifyContent: 'center', alignItems: 'center', padding: 16 }]}
+                  activeOpacity={0.8}
+                  onPress={() => router.push('/(tabs)/post-project')}
+                >
+                  <Feather name="plus-circle" size={32} color={COLORS.green} style={{ marginBottom: 8 }} />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>Post New Project</Text>
+                  <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>Get competitive contractor bids</Text>
+                </TouchableOpacity>
+              )
+            ) : (
+              PROJECTS_DATA.map((proj) => (
+                <View key={proj.id} style={styles.projectCard}>
+                  
+                  {/* Cover Image Area */}
+                  <View style={styles.projectImageWrapper}>
+                    <Image source={{ uri: proj.image }} style={styles.projectImage} />
+                    
+                    {/* Status Overlay */}
+                    <View style={[styles.projectStatusBadge, { backgroundColor: proj.statusBg }]}>
+                      <Text style={[styles.projectStatusText, { color: proj.statusColor }]}>{proj.status}</Text>
+                    </View>
+
+
                   </View>
 
+                  {/* Body Content */}
+                  <View style={styles.projectCardBody}>
+                    <Text style={styles.projectTitleText}>{proj.title}</Text>
+                    <View style={styles.iconLabelRow}>
+                      <Feather name="map-pin" size={12} color={COLORS.textMuted} style={styles.cardInfoIcon} />
+                      <Text style={styles.projectDetailText}>{proj.location}</Text>
+                    </View>
+                    
+                    <View style={styles.projectDivider} />
+
+                    {/* Statistics metrics */}
+                    <View style={styles.projectMetricsRow}>
+                      <View style={styles.metricItem}>
+                        <FontAwesome5 name="users" size={10} color={COLORS.textMuted} style={styles.metricIcon} />
+                        <Text style={styles.metricText}>{proj.workers} Workers</Text>
+                      </View>
+                      <View style={styles.metricItem}>
+                        <Feather name="calendar" size={11} color={COLORS.textMuted} style={styles.metricIcon} />
+                        <Text style={styles.metricText}>{proj.dueDate} Due</Text>
+                      </View>
+                    </View>
 
 
+
+                  </View>
                 </View>
-              </View>
-            ))}
+              ))
+            )}
           </ScrollView>
         </View>
 
@@ -467,55 +667,139 @@ export default function DashboardScreen() {
             <TouchableOpacity><Text style={styles.viewAllText}>View All</Text></TouchableOpacity>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalCardsScroll}>
-            {filteredProfessionals.map((prof) => (
-              <View key={prof.id} style={styles.professionalCard}>
-                
-                {/* Header Info */}
-                <View style={styles.profCardHeader}>
-                  <Image source={{ uri: prof.avatar }} style={styles.profAvatar} />
-                  <View style={styles.profTitleCol}>
-                    <View style={styles.nameVerifiedRow}>
-                      <Text style={styles.profName} numberOfLines={1}>{prof.name}</Text>
-                      <MaterialCommunityIcons name="decagram-check" size={14} color="#10B981" style={styles.verifiedIcon} />
+          {featuredLoading ? (
+            <View style={{ paddingHorizontal: 16, paddingVertical: 30, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color={COLORS.blue} />
+              <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Finding the best matches...</Text>
+            </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalCardsScroll}>
+              {filteredProfessionals.map((prof, idx) => {
+                const profName = prof.fullName || prof.name || 'Unknown';
+                const profAvatar = prof.avatarUrl || prof.avatar || '';
+                const profCity = prof.city || '';
+                const profRating = prof.rating || 0;
+                const profReviews = prof.reviews || 0;
+                const isVerified = prof.isVerified;
+
+                // Determine color by role
+                const roleColorMap: Record<string, string> = {
+                  'Contractor': '#2563EB',
+                  'Architect': '#10B981',
+                  'Labour': '#F97316',
+                  'Client': '#7C3AED',
+                };
+                const cardColor = roleColorMap[prof.role] || '#6B7280';
+
+                if (prof.type === 'client' && prof.activeProject) {
+                  // ============ CLIENT CARD ============
+                  return (
+                    <View key={`client-${prof._id || idx}-${idx}`} style={[styles.professionalCard, { borderColor: '#E9D5FF' }]}>
+                      {/* Project Type Badge */}
+                      <View style={[styles.clientTypeBadge, { backgroundColor: '#F3E8FF' }]}>
+                        <Text style={[styles.clientTypeBadgeText, { color: '#7C3AED' }]}>
+                          {prof.activeProject.projectType || 'Project'}
+                        </Text>
+                      </View>
+
+                      {/* Project Title */}
+                      <Text style={styles.clientProjectTitle} numberOfLines={2}>
+                        {prof.activeProject.title}
+                      </Text>
+
+                      {/* Client Name */}
+                      <View style={styles.iconLabelRow}>
+                        <Feather name="user" size={11} color={COLORS.textMuted} style={styles.cardInfoIcon} />
+                        <Text style={styles.projectDetailText} numberOfLines={1}>{profName}</Text>
+                      </View>
+
+                      {/* Location */}
+                      <View style={styles.iconLabelRow}>
+                        <Feather name="map-pin" size={11} color={COLORS.textMuted} style={styles.cardInfoIcon} />
+                        <Text style={styles.projectDetailText}>{prof.activeProject.location || profCity}</Text>
+                      </View>
+
+                      {/* Budget */}
+                      {prof.activeProject.budget && (
+                        <View style={styles.iconLabelRow}>
+                          <FontAwesome name="rupee" size={10} color={COLORS.textMuted} style={styles.cardInfoIcon} />
+                          <Text style={[styles.projectDetailText, { fontWeight: '700', color: COLORS.textDark }]}>
+                            {prof.activeProject.budget}
+                          </Text>
+                        </View>
+                      )}
+
+                      <View style={{ flex: 1 }} />
+
+                      {/* View Project Button */}
+                      <TouchableOpacity 
+                        style={[styles.profBtn, { borderColor: '#7C3AED' }]}
+                        onPress={() => handleViewProfile(prof)}
+                      >
+                        <Text style={[styles.profBtnText, { color: '#7C3AED' }]}>View Project</Text>
+                      </TouchableOpacity>
                     </View>
-                    <Text style={styles.profSubText}>{prof.role}</Text>
-                    
-                    {/* Rating */}
-                    <View style={styles.ratingRow}>
-                      <FontAwesome name="star" size={12} color={COLORS.starGold} />
-                      <Text style={styles.ratingValueText}>{prof.rating}</Text>
-                      <Text style={styles.reviewsCountText}>({prof.reviews})</Text>
+                  );
+                }
+
+                // ============ PROFESSIONAL CARD (Contractor / Architect / Labour) ============
+                return (
+                  <View key={`prof-${prof._id || idx}-${idx}`} style={styles.professionalCard}>
+                    {/* Header Info */}
+                    <View style={styles.profCardHeader}>
+                      <Image source={{ uri: profAvatar }} style={styles.profAvatar} />
+                      <View style={styles.profTitleCol}>
+                        <View style={styles.nameVerifiedRow}>
+                          <Text style={styles.profName} numberOfLines={1}>{profName}</Text>
+                          {isVerified && (
+                            <MaterialCommunityIcons name="decagram-check" size={14} color="#10B981" style={styles.verifiedIcon} />
+                          )}
+                        </View>
+                        <Text style={styles.profSubText}>{prof.contractorType || prof.skillType || prof.role}</Text>
+                        
+                        {/* Rating */}
+                        <View style={styles.ratingRow}>
+                          <FontAwesome name="star" size={12} color={COLORS.starGold} />
+                          <Text style={styles.ratingValueText}>{profRating}</Text>
+                          <Text style={styles.reviewsCountText}>({profReviews})</Text>
+                        </View>
+                      </View>
                     </View>
+
+                    <View style={styles.projectDivider} />
+
+                    {/* Stats Row */}
+                    <View style={styles.profStatsRow}>
+                      <Feather name="file-text" size={13} color={COLORS.textMuted} style={styles.profStatIcon} />
+                      <Text style={styles.profStatText}>{prof.projects || 0} Projects</Text>
+                    </View>
+
+                    {profCity ? (
+                      <View style={[styles.profStatsRow, { marginBottom: 10 }]}>
+                        <Feather name="map-pin" size={13} color={COLORS.textMuted} style={styles.profStatIcon} />
+                        <Text style={styles.profStatText}>{profCity}</Text>
+                      </View>
+                    ) : null}
+
+                    {/* View Profile Button */}
+                    <TouchableOpacity 
+                      style={[styles.profBtn, { borderColor: cardColor }]} 
+                      onPress={() => handleViewProfile(prof)}
+                    >
+                      <Text style={[styles.profBtnText, { color: cardColor }]}>View Profile</Text>
+                    </TouchableOpacity>
                   </View>
+                );
+              })}
+
+              {filteredProfessionals.length === 0 && !featuredLoading && (
+                <View style={styles.emptyCard}>
+                  <Feather name="globe" size={24} color={COLORS.textMuted} />
+                  <Text style={styles.emptyText}>Explore professionals across India to expand your network.</Text>
                 </View>
-
-                <View style={styles.projectDivider} />
-
-                {/* Stat Row */}
-                <View style={styles.profStatsRow}>
-                  <Feather name="file-text" size={13} color={COLORS.textMuted} style={styles.profStatIcon} />
-                  <Text style={styles.profStatText}>{prof.projects}</Text>
-                </View>
-
-                {/* View Profile Outline Button */}
-                <TouchableOpacity 
-                  style={[styles.profBtn, { borderColor: prof.color }]} 
-                  onPress={() => handleViewProfile(prof)}
-                >
-                  <Text style={[styles.profBtnText, { color: prof.color }]}>View Profile</Text>
-                </TouchableOpacity>
-
-              </View>
-            ))}
-
-            {filteredProfessionals.length === 0 && (
-              <View style={styles.emptyCard}>
-                <Feather name="info" size={24} color={COLORS.textMuted} />
-                <Text style={styles.emptyText}>No professionals found</Text>
-              </View>
-            )}
-          </ScrollView>
+              )}
+            </ScrollView>
+          )}
         </View>
 
         {/* ================= BROWSE BY SERVICE ================= */}
@@ -584,6 +868,53 @@ export default function DashboardScreen() {
         </View>
 
       </ScrollView>
+
+      {/* ================= SERVICE SUB-MENU MODAL ================= */}
+      <Modal
+        visible={serviceMenuVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setServiceMenuVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setServiceMenuVisible(false)}
+        >
+          <View style={styles.modalSheet}>
+            {/* Handle bar */}
+            <View style={styles.modalHandle} />
+            
+            {activeServiceMenu && SERVICE_SUBMENUS[activeServiceMenu] && (
+              <>
+                <Text style={styles.modalTitle}>
+                  {SERVICE_SUBMENUS[activeServiceMenu].title}
+                </Text>
+                <View style={styles.modalDivider} />
+                
+                {SERVICE_SUBMENUS[activeServiceMenu].items.map((item, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={styles.modalItem}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      setServiceMenuVisible(false);
+                      router.push(item.route as any);
+                    }}
+                  >
+                    <View style={styles.modalItemIcon}>
+                      {renderSubMenuIcon(item.icon, item.library)}
+                    </View>
+                    <Text style={styles.modalItemText}>{item.name}</Text>
+                    <Feather name="chevron-right" size={18} color={COLORS.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -607,7 +938,7 @@ const styles = StyleSheet.create({
   },
   logoImage: {
     width: 125,
-    height: 30,
+    height: 34,
   },
   headerIconsRow: {
     flexDirection: 'row',
@@ -722,38 +1053,127 @@ const styles = StyleSheet.create({
   },
 
   /* QUICK ACTIONS */
-  quickActionsScroll: {
+  qaTopRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     paddingHorizontal: 16,
-    gap: 12,
-    paddingBottom: 4,
-  },
-  actionCard: {
-    width: 105,
-    height: 105,
-    borderRadius: 16,
-    padding: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  actionIconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: 'center',
-    alignItems: 'center',
+    gap: 10,
     marginBottom: 10,
   },
-  actionCardTitle: {
+  qaBottomRow: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  qaCard: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1.5,
+    justifyContent: 'space-between',
+    height: 140,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  qaCardWide: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  qaCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  qaIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  qaCardTextCol: {
+    flex: 1,
+  },
+  qaCardTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 3,
+  },
+  qaCardDesc: {
+    fontSize: 10,
+    color: '#6B7280',
+    lineHeight: 14,
+  },
+  qaCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+  },
+  qaCount: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  qaCountLabel: {
+    fontSize: 9,
+    color: '#9CA3AF',
+    fontWeight: '600',
+  },
+  qaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    gap: 3,
+  },
+  qaPillText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  qaSecondaryRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 10,
+    marginBottom: 6,
+  },
+  qaSecondaryCard: {
+    flex: 1,
+    flexDirection: 'row',
+    height: 40,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  qaSecondaryIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  qaSecondaryText: {
     fontSize: 11,
     fontWeight: '800',
-    color: COLORS.textDark,
-    textAlign: 'center',
-    marginBottom: 2,
-  },
-  actionCardDesc: {
-    fontSize: 9,
-    color: COLORS.textMuted,
-    textAlign: 'center',
+    color: '#111827',
   },
 
   /* HORIZONTAL CARDS SCROLL */
@@ -956,7 +1376,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   emptyCard: {
-    width: 150,
+    width: 220,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -965,6 +1385,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.textMuted,
     marginTop: 8,
+    textAlign: 'center',
+  },
+
+  /* CLIENT CARD (Featured) */
+  clientTypeBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  clientTypeBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  clientProjectTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    marginBottom: 8,
+    lineHeight: 18,
   },
 
   /* BROWSE BY SERVICE */
@@ -1044,5 +1485,61 @@ const styles = StyleSheet.create({
   activityTimeText: {
     fontSize: 10,
     color: COLORS.textMuted,
+  },
+
+  /* SERVICE SUB-MENU MODAL */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 30,
+    paddingTop: 12,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#D1D5DB',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 8,
+  },
+  modalDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginBottom: 8,
+  },
+  modalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#F3F4F6',
+  },
+  modalItemIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  modalItemText: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+    color: COLORS.textDark,
   },
 });

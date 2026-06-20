@@ -1,421 +1,404 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { BACKEND_URL } from '../../constants/Config';
+import NotificationBell from '../../components/NotificationBell';
 
 const { width } = Dimensions.get('window');
 
 const COLORS = {
-  green: '#10B981', // Accent green for appreciations
-  teal: '#0F766E', // Green/Teal from categories
-  textDark: '#1E293B',
-  textMuted: '#64748B',
-  border: '#E2E8F0',
+  green: '#10B981', // Selected filter / active state
+  teal: '#0F766E', // Green/Teal accent
+  textDark: '#111827',
+  textMuted: '#6B7280',
+  border: '#E5E7EB',
   white: '#FFFFFF',
-  bgLight: '#F8FAFC',
-  blue: '#3B82F6',
-  badgeGold: '#F59E0B',
+  bgLight: '#F9FAFB',
+  blue: '#3B82F6', // Blue like badge
 };
 
 const CATEGORIES = [
-  { name: 'All', icon: 'border-all', iconType: 'Feather' },
-  { name: 'Architecture', icon: 'building', iconType: 'FA5' },
-  { name: 'Interior', icon: 'couch', iconType: 'FA5' },
-  { name: 'Construction', icon: 'tools', iconType: 'FA5' },
-  { name: 'Renovation', icon: 'paint-roller', iconType: 'FA5' },
+  { name: 'All' },
+  { name: 'Architecture' },
+  { name: 'Contractor' },
 ];
 
-interface ProjectCardData {
+interface PostData {
   id: string;
-  title: string;
-  location: string;
-  size: string;
-  cost?: string;
-  type: string;
-  duration?: string;
-  imageCount?: number;
-  image: string;
   creator: {
     name: string;
     role: string;
     avatar: string;
+    location: string;
+    isVerified?: boolean;
   };
-  appreciations: number;
+  timeAgo: string;
+  bodyText: string;
+  images: string[];
+  likes: number;
   comments: number;
-  hasAppreciated?: boolean;
-  hasBookmarked?: boolean;
+  hasLiked?: boolean;
+  hasSaved?: boolean;
+  hasConnected?: boolean;
 }
 
-const FEATURED_PROJECTS_DATA: ProjectCardData[] = [
+const INITIAL_POSTS: PostData[] = [
   {
-    id: 'f1',
-    title: 'Modern Minimal Villa',
-    location: 'Mumbai',
-    size: '2,500 sq.ft',
-    cost: '₹45 - 50 L',
-    type: 'Residential',
-    duration: '0:45',
-    image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80',
+    id: 'p1',
     creator: {
-      name: 'Neha Sharma',
+      name: 'Ar. Neha Sharma',
       role: 'Architect',
-      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80'
+      avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
+      location: 'Mumbai',
+      isVerified: true,
     },
-    appreciations: 128,
-    comments: 12
+    timeAgo: '2h ago',
+    bodyText: 'A modern minimal home design with natural light 🌿\nThoughts on this facade?',
+    images: [
+      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1600573472591-ee6b68d14c68?auto=format&fit=crop&w=600&q=80',
+    ],
+    likes: 128,
+    comments: 12,
+    hasLiked: true,
   },
   {
-    id: 'f2',
-    title: 'Commercial Office Building',
-    location: 'Bengaluru',
-    size: '12,000 sq.ft',
-    cost: '₹2.2 - 2.8 Cr',
-    type: 'Commercial',
-    duration: '1:10',
-    image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=600&q=80',
+    id: 'p2',
     creator: {
-      name: 'Ar. Rohit Patel',
-      role: 'Architect',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'
+      name: 'Rahul Verma',
+      role: 'Contractor',
+      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
+      location: 'Pune',
+      isVerified: true,
     },
-    appreciations: 96,
-    comments: 8
-  }
+    timeAgo: '5h ago',
+    bodyText: 'Casting in progress for the new commercial villa project. Making sure every mix is perfect! 🏗️🔩',
+    images: [
+      'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=600&q=80',
+    ],
+    likes: 45,
+    comments: 3,
+  },
+  {
+    id: 'p3',
+    creator: {
+      name: 'Priya Mishra',
+      role: 'Architect',
+      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+      location: 'Bengaluru',
+      isVerified: true,
+    },
+    timeAgo: '1d ago',
+    bodyText: 'Just finalized the master bedroom layout for our duplex client in Indiranagar. Loving the warm tones! ✨🛏️',
+    images: [
+      'https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1505691938895-1758d7feb511?auto=format&fit=crop&w=600&q=80',
+    ],
+    likes: 82,
+    comments: 7,
+  },
 ];
 
-const RECENT_PROJECTS_DATA: ProjectCardData[] = [
-  {
-    id: 'r1',
-    title: 'Scandinavian Interior',
-    location: 'Pune',
-    size: '1,800 sq.ft',
-    cost: '₹18 - 22 L',
-    type: 'Interior',
-    imageCount: 8,
-    image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=600&q=80',
+const mapBackendPostToFeed = (bp: any): PostData => {
+  return {
+    id: bp._id,
     creator: {
-      name: 'DesignEdge',
-      role: 'Interior Studio',
-      avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'
+      name: bp.creator?.fullName || 'Ar. Neha Sharma',
+      role: bp.creator?.role || 'Architect',
+      avatar: bp.creator?.avatarUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
+      location: bp.creator?.city || 'Mumbai',
+      isVerified: true,
     },
-    appreciations: 73,
-    comments: 6
-  },
-  {
-    id: 'r2',
-    title: 'Luxury Kitchen Design',
-    location: 'Delhi',
-    size: '350 sq.ft',
-    cost: '₹8 - 12 L',
-    type: 'Interior',
-    imageCount: 6,
-    image: 'https://images.unsplash.com/photo-1600585154526-990dced4db0d?auto=format&fit=crop&w=600&q=80',
-    creator: {
-      name: 'Studio Fort',
-      role: 'Interior Designer',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'
-    },
-    appreciations: 54,
-    comments: 3
-  },
-  {
-    id: 'r3',
-    title: 'On-Going Site Progress',
-    location: 'Hyderabad',
-    size: '3,200 sq.ft',
-    type: 'Residential',
-    duration: '0:30',
-    image: 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=600&q=80',
-    creator: {
-      name: 'BuildRight Projects',
-      role: 'Contractor',
-      avatar: 'https://images.unsplash.com/photo-1500048993953-d23a436266cf?auto=format&fit=crop&w=150&q=80'
-    },
-    appreciations: 61,
-    comments: 4
-  }
-];
+    timeAgo: 'Just now',
+    bodyText: bp.description,
+    images: bp.mediaUrls && bp.mediaUrls.length > 0 ? bp.mediaUrls : ['https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80'],
+    likes: bp.likes || 0,
+    comments: bp.comments || 0,
+  };
+};
 
 export default function DiscoverScreen() {
-  const router = useRouter();
   const [activeCategory, setActiveCategory] = useState('All');
-  const [featuredProjects, setFeaturedProjects] = useState<ProjectCardData[]>(FEATURED_PROJECTS_DATA);
-  const [recentProjects, setRecentProjects] = useState<ProjectCardData[]>(RECENT_PROJECTS_DATA);
+  const [posts, setPosts] = useState<PostData[]>(INITIAL_POSTS);
+  const [expandedPostIds, setExpandedPostIds] = useState<string[]>([]);
 
-  const toggleAppreciation = (id: string, isFeatured: boolean) => {
-    const updater = (list: ProjectCardData[]) => 
-      list.map(proj => {
-        if (proj.id === id) {
-          const state = !proj.hasAppreciated;
+  useEffect(() => {
+    const fetchLivePosts = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/posts/feed`);
+        if (response.ok) {
+          const data = await response.json();
+          const mapped = data.posts.map(mapBackendPostToFeed);
+          setPosts([...mapped, ...INITIAL_POSTS]);
+        }
+      } catch (err) {
+        console.error('Error fetching live posts:', err);
+      }
+    };
+    fetchLivePosts();
+  }, []);
+
+  const handleExpandPost = (postId: string) => {
+    setExpandedPostIds(prev => [...prev, postId]);
+  };
+
+  const handleAppreciate = (id: string) => {
+    setPosts(prev =>
+      prev.map(post => {
+        if (post.id === id) {
+          const newState = !post.hasLiked;
           return {
-            ...proj,
-            hasAppreciated: state,
-            appreciations: state ? proj.appreciations + 1 : proj.appreciations - 1
+            ...post,
+            hasLiked: newState,
+            likes: newState ? post.likes + 1 : post.likes - 1,
           };
         }
-        return proj;
-      });
-
-    if (isFeatured) {
-      setFeaturedProjects(updater);
-    } else {
-      setRecentProjects(updater);
-    }
+        return post;
+      })
+    );
   };
 
-  const toggleBookmark = (id: string, isFeatured: boolean) => {
-    const updater = (list: ProjectCardData[]) => 
-      list.map(proj => {
-        if (proj.id === id) {
-          return { ...proj, hasBookmarked: !proj.hasBookmarked };
+  const handleConnect = (id: string) => {
+    setPosts(prev =>
+      prev.map(post => {
+        if (post.id === id) {
+          return {
+            ...post,
+            hasConnected: !post.hasConnected,
+          };
         }
-        return proj;
-      });
-
-    if (isFeatured) {
-      setFeaturedProjects(updater);
-    } else {
-      setRecentProjects(updater);
-    }
+        return post;
+      })
+    );
   };
 
-  const renderProjectCard = (item: ProjectCardData, isFeatured: boolean) => {
-    const cardWidth = isFeatured ? width * 0.84 : width * 0.76;
-    
+  const handleSave = (id: string) => {
+    setPosts(prev =>
+      prev.map(post => {
+        if (post.id === id) {
+          return {
+            ...post,
+            hasSaved: !post.hasSaved,
+          };
+        }
+        return post;
+      })
+    );
+  };
+
+  // Filter posts by role
+  const filteredPosts = posts.filter(post => {
+    if (activeCategory === 'All') return true;
+    if (activeCategory === 'Architecture') {
+      return post.creator.role === 'Architect';
+    }
+    if (activeCategory === 'Contractor') {
+      return post.creator.role === 'Contractor';
+    }
+    return post.creator.role === activeCategory;
+  });
+
+  const renderImageGrid = (images: string[], postId: string) => {
+    if (images.length === 0) return null;
+
+    const isExpanded = expandedPostIds.includes(postId);
+
+    if (isExpanded) {
+      return (
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false} 
+          style={styles.scrollableContainer}
+          contentContainerStyle={styles.scrollableContent}
+        >
+          {images.map((img, index) => (
+            <Image key={index} source={{ uri: img }} style={styles.scrollImageItem} contentFit="cover" />
+          ))}
+        </ScrollView>
+      );
+    }
+
+    if (images.length === 1) {
+      return (
+        <View style={styles.imageGrid}>
+          <Image source={{ uri: images[0] }} style={styles.singleImage} contentFit="cover" />
+        </View>
+      );
+    }
+
+    if (images.length === 2) {
+      return (
+        <View style={styles.imageGrid}>
+          <Image source={{ uri: images[0] }} style={styles.doubleImage} contentFit="cover" />
+          <Image source={{ uri: images[1] }} style={styles.doubleImage} contentFit="cover" />
+        </View>
+      );
+    }
+
+    // Horizontal layout for 3 or more images, with a +more overlay on the second image
     return (
-      <View key={item.id} style={[styles.projectCard, { width: cardWidth }]}>
-        
-        {/* Image Section */}
-        <View style={styles.cardImageContainer}>
-          <Image source={{ uri: item.image }} style={styles.cardImage} contentFit="cover" />
-          
-          {/* Top-Right Tag: Video or Image Count */}
-          {item.duration && (
-            <View style={styles.topRightOverlay}>
-              <Feather name="play" size={10} color={COLORS.white} style={{ marginRight: 3 }} />
-              <Text style={styles.overlayText}>{item.duration}</Text>
-            </View>
-          )}
-
-          {item.imageCount && (
-            <View style={styles.topRightOverlay}>
-              <Feather name="image" size={10} color={COLORS.white} style={{ marginRight: 3 }} />
-              <Text style={styles.overlayText}>{item.imageCount}</Text>
-            </View>
-          )}
-
-          {/* Bottom-Left Tag: Location */}
-          <View style={styles.locationOverlay}>
-            <Feather name="map-pin" size={10} color={COLORS.textDark} style={{ marginRight: 3 }} />
-            <Text style={styles.locationText}>{item.location}</Text>
+      <View style={styles.imageGrid}>
+        <Image source={{ uri: images[0] }} style={styles.doubleImage} contentFit="cover" />
+        <TouchableOpacity 
+          style={styles.moreImageContainer}
+          activeOpacity={0.8}
+          onPress={() => handleExpandPost(postId)}
+        >
+          <Image source={{ uri: images[1] }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
+          <View style={styles.moreOverlay}>
+            <Text style={styles.moreText}>+{images.length - 2} more</Text>
           </View>
-        </View>
-
-        {/* Content Section */}
-        <View style={styles.cardContent}>
-          {/* Title */}
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
-          
-          {/* Specs / Metadata */}
-          <View style={styles.specsRow}>
-            <View style={styles.specItem}>
-              <Feather name="maximize-2" size={11} color={COLORS.textMuted} style={{ marginRight: 4 }} />
-              <Text style={styles.specText}>{item.size}</Text>
-            </View>
-
-            {item.cost && (
-              <View style={styles.specItem}>
-                <MaterialCommunityIcons name="currency-inr" size={12} color={COLORS.textMuted} style={{ marginRight: 2 }} />
-                <Text style={styles.specText}>{item.cost}</Text>
-              </View>
-            )}
-
-            <View style={styles.specItem}>
-              <Feather name="home" size={11} color={COLORS.textMuted} style={{ marginRight: 4 }} />
-              <Text style={styles.specText}>{item.type}</Text>
-            </View>
-          </View>
-
-          {/* Creator Profile Row */}
-          <View style={styles.creatorRow}>
-            <View style={styles.creatorProfile}>
-              <Image source={{ uri: item.creator.avatar }} style={styles.creatorAvatar} />
-              <Text style={styles.creatorName} numberOfLines={1}>
-                {item.creator.role}: {item.creator.name}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.optionsBtn}>
-              <Feather name="more-vertical" size={16} color={COLORS.textMuted} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Divider */}
-          <View style={styles.cardDivider} />
-
-          {/* Actions & Interactions Row */}
-          <View style={styles.actionsRow}>
-            <View style={styles.leftActions}>
-              <TouchableOpacity 
-                style={styles.actionItem} 
-                onPress={() => toggleAppreciation(item.id, isFeatured)}
-                activeOpacity={0.7}
-              >
-                <Feather 
-                  name="heart" 
-                  size={15} 
-                  color={item.hasAppreciated ? COLORS.green : COLORS.textMuted}
-                  style={item.hasAppreciated && { fill: COLORS.green }}
-                />
-                <Text style={[styles.appreciationsCount, item.hasAppreciated && { color: COLORS.green }]}>
-                  {item.appreciations} Appreciations
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.actionItem} activeOpacity={0.7}>
-                <Feather name="message-square" size={15} color={COLORS.textMuted} />
-                <Text style={styles.commentsCount}>{item.comments}</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity 
-              onPress={() => toggleBookmark(item.id, isFeatured)}
-              activeOpacity={0.7}
-            >
-              <Feather 
-                name="bookmark" 
-                size={16} 
-                color={item.hasBookmarked ? COLORS.teal : COLORS.textMuted}
-                style={item.hasBookmarked && { fill: COLORS.teal }}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-
+        </TouchableOpacity>
       </View>
     );
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      
       {/* ================= HEADER ================= */}
       <View style={styles.header}>
-        <View style={styles.headerTitles}>
-          <Text style={styles.headerTitle}>Discover</Text>
-          <Text style={styles.headerSubtitle}>Explore inspiring projects and ideas</Text>
-        </View>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconBtn}>
-            <Feather name="bell" size={20} color={COLORS.textDark} />
-            <View style={styles.badge}><Text style={styles.badgeText}>3</Text></View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/chats')}>
-            <Feather name="message-square" size={20} color={COLORS.textDark} />
-            <View style={styles.badge}><Text style={styles.badgeText}>5</Text></View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/profile')}>
-            <Image 
-              source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop' }} 
-              style={styles.profileImage}
-            />
-          </TouchableOpacity>
-        </View>
+        <Text style={styles.headerTitle}>Discover</Text>
+        <NotificationBell size={22} color={COLORS.textDark} style={styles.bellBtn} />
       </View>
 
-      {/* ================= SCROLL CONTENT ================= */}
+      {/* ================= FILTER CHIPS ROW ================= */}
+      <View style={styles.filterSection}>
+        <View style={styles.chipsContainer}>
+          {CATEGORIES.map(cat => {
+            const isActive = activeCategory === cat.name;
+            return (
+              <TouchableOpacity
+                key={cat.name}
+                style={[styles.categoryChip, isActive && styles.categoryChipActive]}
+                onPress={() => setActiveCategory(cat.name)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.categoryText, isActive && styles.categoryTextActive]}>
+                  {cat.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <TouchableOpacity style={styles.filterBtn} activeOpacity={0.7}>
+          <Feather name="sliders" size={16} color={COLORS.textDark} />
+        </TouchableOpacity>
+      </View>
+
+      {/* ================= FEED SCROLLVIEW ================= */}
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
-        {/* Categories Horizontal Row */}
-        <View style={styles.categoriesSection}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
-            {CATEGORIES.map((cat) => {
-              const isActive = activeCategory === cat.name;
-              return (
-                <TouchableOpacity
-                  key={cat.name}
-                  style={[styles.categoryCard, isActive && styles.categoryCardActive]}
-                  onPress={() => setActiveCategory(cat.name)}
-                  activeOpacity={0.8}
-                >
-                  {cat.icon !== '' && (
-                    cat.iconType === 'Feather' ? (
-                      <Feather name={cat.icon as any} size={13} color={isActive ? COLORS.white : COLORS.textDark} style={{ marginRight: 6 }} />
-                    ) : (
-                      <FontAwesome5 name={cat.icon} size={13} color={isActive ? COLORS.white : COLORS.textDark} style={{ marginRight: 6 }} />
-                    )
+        {/* Subheading */}
+        <Text style={styles.subHeadingText}>Showing posts from people you follow</Text>
+
+        {/* Posts List */}
+        {filteredPosts.map(post => (
+          <View key={post.id} style={styles.postCard}>
+            
+            {/* Card Header */}
+            <View style={styles.cardHeader}>
+              <Image source={{ uri: post.creator.avatar }} style={styles.avatar} contentFit="cover" />
+              <View style={styles.headerInfo}>
+                <View style={styles.nameRow}>
+                  <Text style={styles.profileName}>{post.creator.name}</Text>
+                  {post.creator.isVerified && (
+                    <MaterialCommunityIcons name="check-circle" size={14} color={COLORS.green} style={styles.verifiedIcon} />
                   )}
-                  <Text style={[styles.categoryText, isActive && styles.categoryTextActive]}>
-                    {cat.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-          <TouchableOpacity style={styles.filterBtn}>
-            <Feather name="sliders" size={16} color={COLORS.textDark} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Featured Projects Section */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Featured Projects</Text>
-            <TouchableOpacity>
-              <Text style={styles.viewAllText}>View All</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            contentContainerStyle={styles.horizontalScrollContent}
-            decelerationRate="fast"
-            snapToInterval={width * 0.84 + 16}
-          >
-            {featuredProjects
-              .filter(p => activeCategory === 'All' || p.creator.role === activeCategory || (activeCategory === 'Renovation' && p.type === 'Renovation'))
-              .map(p => renderProjectCard(p, true))}
-
-            {featuredProjects.filter(p => activeCategory === 'All' || p.creator.role === activeCategory || (activeCategory === 'Renovation' && p.type === 'Renovation')).length === 0 && (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No featured projects in this category</Text>
+                </View>
+                <Text style={styles.profileMeta}>{post.creator.role} • {post.creator.location}</Text>
+                <View style={styles.timeRow}>
+                  <Text style={styles.timeText}>{post.timeAgo} • </Text>
+                  <Feather name="globe" size={11} color="#9CA3AF" />
+                </View>
               </View>
-            )}
-          </ScrollView>
-        </View>
+              <TouchableOpacity style={styles.menuBtn} activeOpacity={0.7}>
+                <Feather name="more-horizontal" size={20} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            </View>
 
-        {/* Recent Projects Section */}
-        <View style={[styles.sectionContainer, { marginBottom: 30 }]}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Projects</Text>
-            <TouchableOpacity>
-              <Text style={styles.viewAllText}>View All</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            contentContainerStyle={styles.horizontalScrollContent}
-            decelerationRate="fast"
-            snapToInterval={width * 0.76 + 16}
-          >
-            {recentProjects
-              .filter(p => activeCategory === 'All' || p.creator.role === activeCategory || p.creator.role.includes(activeCategory) || (activeCategory === 'Renovation' && p.type === 'Renovation'))
-              .map(p => renderProjectCard(p, false))}
+            {/* Post Body Text */}
+            <Text style={styles.bodyText}>{post.bodyText}</Text>
 
-            {recentProjects.filter(p => activeCategory === 'All' || p.creator.role === activeCategory || p.creator.role.includes(activeCategory) || (activeCategory === 'Renovation' && p.type === 'Renovation')).length === 0 && (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No recent projects in this category</Text>
+            {/* Post Images Grid */}
+            {renderImageGrid(post.images, post.id)}
+
+            {/* Stats Summary Row */}
+            <View style={styles.statsSummaryRow}>
+              <View style={styles.likesCountWrap}>
+                <View style={styles.likeBadge}>
+                  <FontAwesome5 name="thumbs-up" size={9} color={COLORS.white} solid />
+                </View>
+                <Text style={styles.likesText}>{post.likes}</Text>
               </View>
-            )}
-          </ScrollView>
-        </View>
+              <Text style={styles.commentsText}>{post.comments} Comments</Text>
+            </View>
 
+            {/* Card Actions Row */}
+            <View style={styles.cardDivider} />
+            <View style={styles.actionsRow}>
+              <TouchableOpacity 
+                style={styles.actionBtn} 
+                onPress={() => handleAppreciate(post.id)}
+                activeOpacity={0.7}
+              >
+                <Feather 
+                  name="thumbs-up" 
+                  size={15} 
+                  color={post.hasLiked ? COLORS.green : COLORS.textMuted} 
+                />
+                <Text style={[styles.actionBtnText, post.hasLiked && { color: COLORS.green, fontWeight: '700' }]}>
+                  Appreciate
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
+                <Feather name="message-square" size={15} color={COLORS.textMuted} />
+                <Text style={styles.actionBtnText}>Comment</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.actionBtn} 
+                onPress={() => handleConnect(post.id)}
+                activeOpacity={0.7}
+              >
+                <Feather 
+                  name="user-plus" 
+                  size={15} 
+                  color={post.hasConnected ? COLORS.green : COLORS.textMuted} 
+                />
+                <Text style={[styles.actionBtnText, post.hasConnected && { color: COLORS.green, fontWeight: '700' }]}>
+                  {post.hasConnected ? 'Connected' : 'Connect'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.actionBtn} 
+                onPress={() => handleSave(post.id)}
+                activeOpacity={0.7}
+              >
+                {post.hasSaved ? (
+                  <FontAwesome5 name="bookmark" size={14} color={COLORS.green} solid />
+                ) : (
+                  <Feather name="bookmark" size={15} color={COLORS.textMuted} />
+                )}
+                <Text style={[styles.actionBtnText, post.hasSaved && { color: COLORS.green, fontWeight: '700' }]}>
+                  {post.hasSaved ? 'Saved' : 'Save'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        ))}
+
+        {filteredPosts.length === 0 && (
+          <View style={styles.emptyContainer}>
+            <Feather name="alert-circle" size={40} color={COLORS.textMuted} style={{ marginBottom: 12 }} />
+            <Text style={styles.emptyText}>No posts available in this category.</Text>
+          </View>
+        )}
       </ScrollView>
-
     </SafeAreaView>
   );
 }
@@ -423,9 +406,10 @@ export default function DiscoverScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.white,
+    backgroundColor: '#F3F4F6', // Lighter soft background color matching mockup
   },
   scrollContent: {
+    paddingHorizontal: 16,
     paddingBottom: 40,
   },
   
@@ -434,95 +418,62 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingVertical: 14,
+    backgroundColor: COLORS.white,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
-  },
-  headerTitles: {
-    justifyContent: 'center',
   },
   headerTitle: {
     fontSize: 26,
     fontWeight: '800',
     color: COLORS.textDark,
   },
-  headerSubtitle: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  headerIcons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  iconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#F3F4F6',
-    justifyContent: 'center',
-    alignItems: 'center',
+  bellBtn: {
     position: 'relative',
+    padding: 4,
   },
-  badge: {
+  bellDot: {
     position: 'absolute',
-    top: -2,
-    right: -2,
+    top: 4,
+    right: 4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: '#EF4444',
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 3,
-  },
-  badgeText: {
-    color: COLORS.white,
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  profileBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: COLORS.border,
-  },
-  profileImage: {
-    width: '100%',
-    height: '100%',
+    borderColor: COLORS.white,
   },
 
-  /* CATEGORIES */
-  categoriesSection: {
+  /* FILTER SECTION */
+  filterSection: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 8,
+    paddingVertical: 12,
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  categoriesScroll: {
-    gap: 8,
-  },
-  categoryCard: {
+  chipsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
+    gap: 8,
+  },
+  categoryChip: {
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.white,
   },
-  categoryCardActive: {
-    backgroundColor: COLORS.teal,
-    borderColor: COLORS.teal,
+  categoryChipActive: {
+    backgroundColor: COLORS.green,
+    borderColor: COLORS.green,
   },
   categoryText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: COLORS.textDark,
   },
@@ -540,181 +491,206 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
   },
 
-  /* SECTION STRUCTURE */
-  sectionContainer: {
+  /* SUBHEADING */
+  subHeadingText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    fontWeight: '500',
     marginTop: 16,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.textDark,
-  },
-  viewAllText: {
-    fontSize: 12,
-    color: COLORS.teal,
-    fontWeight: '700',
-  },
-  horizontalScrollContent: {
-    paddingHorizontal: 16,
-    gap: 16,
+    marginBottom: 10,
   },
 
-  /* PROJECT CARDS */
-  projectCard: {
+  /* POST CARD */
+  postCard: {
     backgroundColor: COLORS.white,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
+    borderColor: '#E5E7EB',
+    padding: 16,
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.03,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
   },
-  cardImageContainer: {
-    height: 190,
-    width: '100%',
-    position: 'relative',
-  },
-  cardImage: {
-    width: '100%',
-    height: '100%',
-  },
-  topRightOverlay: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
   },
-  overlayText: {
-    color: COLORS.white,
-    fontSize: 10,
-    fontWeight: '700',
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
-  locationOverlay: {
-    position: 'absolute',
-    bottom: 10,
-    left: 10,
+  headerInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
   },
-  locationText: {
-    color: COLORS.textDark,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  cardContent: {
-    padding: 14,
-  },
-  cardTitle: {
+  profileName: {
     fontSize: 15,
     fontWeight: '800',
     color: COLORS.textDark,
   },
-  specsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginTop: 8,
+  verifiedIcon: {
+    marginLeft: 6,
   },
-  specItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  specText: {
+  profileMeta: {
     fontSize: 11,
     color: COLORS.textMuted,
     fontWeight: '600',
+    marginTop: 1,
   },
-  creatorRow: {
+  timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 12,
+    marginTop: 1,
   },
-  creatorProfile: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 10,
+  timeText: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    fontWeight: '500',
   },
-  creatorAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    marginRight: 8,
-  },
-  creatorName: {
-    fontSize: 12,
-    color: COLORS.textDark,
-    fontWeight: '600',
-    flex: 1,
-  },
-  optionsBtn: {
+  menuBtn: {
     padding: 4,
   },
+  bodyText: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
+    marginTop: 12,
+  },
+
+  /* IMAGE GRID */
+  imageGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    width: '100%',
+  },
+  singleImage: {
+    width: '100%',
+    height: 160,
+    borderRadius: 12,
+  },
+  doubleImage: {
+    flex: 1,
+    height: 120,
+    borderRadius: 12,
+  },
+  gridImage: {
+    flex: 1,
+    height: 120,
+    borderRadius: 12,
+  },
+  moreImageContainer: {
+    position: 'relative',
+    flex: 1,
+    height: 120,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  moreOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  moreText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  /* STATS SUMMARY ROW */
+  statsSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  likesCountWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  likeBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: COLORS.blue,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  likesText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  commentsText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '600',
+  },
+
+  /* CARD DIVIDER */
   cardDivider: {
     height: 1,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F3F4F6',
     marginVertical: 12,
   },
+
+  /* ACTIONS ROW */
   actionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  leftActions: {
+  actionBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 4,
   },
-  actionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  appreciationsCount: {
-    fontSize: 11,
-    color: COLORS.green,
-    fontWeight: '700',
-  },
-  commentsCount: {
+  actionBtnText: {
     fontSize: 11,
     color: COLORS.textMuted,
     fontWeight: '600',
   },
 
-  /* EMPTY */
+  scrollableContainer: {
+    marginTop: 12,
+    width: '100%',
+  },
+  scrollableContent: {
+    gap: 8,
+    paddingRight: 16,
+  },
+  scrollImageItem: {
+    width: width * 0.72,
+    height: 160,
+    borderRadius: 12,
+  },
+
+  /* EMPTY STATE */
   emptyContainer: {
-    width: width - 32,
-    height: 200,
-    justifyContent: 'center',
+    paddingVertical: 40,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderStyle: 'dashed',
-    borderRadius: 16,
   },
   emptyText: {
-    color: COLORS.textMuted,
     fontSize: 13,
+    color: COLORS.textMuted,
   },
 });

@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking, TextInput, ActivityIndicator, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { BACKEND_URL } from '../constants/Config';
 
 const { width } = Dimensions.get('window');
 
@@ -33,13 +34,13 @@ export default function DesignDetailScreen() {
   const rating = (params.rating as string) || '4.8';
 
   // Architect Params
-  const authorId = (params.authorId as string) || '1';
+  const authorId = (params.authorId as string) || '60c72b2f9b1d8a2a4c8b0001';
   const authorName = (params.authorName as string) || 'Ar. Neha Sharma';
   const authorAvatar = (params.authorAvatar as string) || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80';
   const authorCover = (params.authorCover as string) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80';
   const authorFirm = (params.authorFirm as string) || 'Design Space Architects';
   const authorExperience = (params.authorExperience as string) || '8+ Years';
-  const authorProjects = (params.authorProjects as string) || '120';
+  const authorProjects = (params.authorProjects as string) || '0';
   const authorFollowers = (params.authorFollowers as string) || '256';
   const authorPhone = (params.authorPhone as string) || '+91 98765 43210';
   const authorReviews = (params.authorReviews as string) || '124';
@@ -48,12 +49,314 @@ export default function DesignDetailScreen() {
     ? (params.imagesList as string).split(',')
     : [mainImage];
 
+  const description = (params.description as string) || 'A modern and minimal 2BHK apartment design with a perfect blend of comfort, functionality and premium aesthetics. Warm wood tones, soft natural light, and space-optimized custom layouts make this home feel open and truly beautiful. Perfect choice for urban families looking for upscale styling.';
+
+  // Parse quotation params
+  const initialQuotation = params.quotation 
+    ? JSON.parse(params.quotation as string) 
+    : { civilStructure: '', flooringTiling: '', electricalPlumbing: '', modularWoodwork: '' };
+
   // States
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    let user = (global as any).currentUser;
+    if (!user && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('currentUser');
+      if (stored) {
+        user = JSON.parse(stored);
+      }
+    }
+    setCurrentUser(user);
+  }, []);
+
   const [activeTab, setActiveTab] = useState<'photos' | 'videos' | 'quotation'>('photos');
   const [showFullOverview, setShowFullOverview] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
-  const [hasLiked, setHasLiked] = useState(false);
   const [hasSaved, setHasSaved] = useState(false);
+  const [authorFollowersVal, setAuthorFollowersVal] = useState<number>(parseInt(authorFollowers, 10) || 0);
+  const [showUnfollowModal, setShowUnfollowModal] = useState(false);
+
+  useEffect(() => {
+    if (currentUser?._id && authorId) {
+      // Fetch follow status
+      fetch(`${BACKEND_URL}/api/follow/status/${authorId}?followerId=${currentUser._id}`)
+        .then(res => res.json())
+        .then(data => {
+          setIsFollowing(!!data.isFollowing);
+        })
+        .catch(err => console.error("Error fetching follow status:", err));
+
+      // Fetch live author followers count
+      fetch(`${BACKEND_URL}/api/professional/${authorId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.professional) {
+            setAuthorFollowersVal(data.professional.followersCount || 0);
+          }
+        })
+        .catch(err => console.error("Error fetching professional info:", err));
+    }
+  }, [currentUser, authorId]);
+
+  const handleFollowPress = () => {
+    if (!currentUser) {
+      Alert.alert('Login Required', 'Please log in to follow other users.');
+      return;
+    }
+
+    if (isFollowing) {
+      setShowUnfollowModal(true);
+    } else {
+      executeFollow();
+    }
+  };
+
+  const executeFollow = async () => {
+    setIsFollowing(true);
+    setAuthorFollowersVal(prev => prev + 1);
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/follow/${authorId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: currentUser._id }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Error following user');
+      }
+    } catch (error: any) {
+      setIsFollowing(false);
+      setAuthorFollowersVal(prev => Math.max(0, prev - 1));
+      Alert.alert('Error', error.message || 'Could not follow user.');
+    }
+  };
+
+  const executeUnfollow = async () => {
+    setShowUnfollowModal(false);
+    setIsFollowing(false);
+    setAuthorFollowersVal(prev => Math.max(0, prev - 1));
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/unfollow/${authorId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: currentUser._id }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Error unfollowing user');
+      }
+    } catch (error: any) {
+      setIsFollowing(true);
+      setAuthorFollowersVal(prev => prev + 1);
+      Alert.alert('Error', error.message || 'Could not unfollow user.');
+    }
+  };
+
+  // Likes, Dislikes, and Comments Dynamic States
+  const [likesCount, setLikesCount] = useState(parseInt(likes) || 0);
+  const [dislikesCount, setDislikesCount] = useState(0);
+  const [hasLiked, setHasLiked] = useState(false);
+  const [hasDisliked, setHasDisliked] = useState(false);
+  const [commentsCount, setCommentsCount] = useState(parseInt(comments) || 0);
+  const [commentsList, setCommentsList] = useState<any[]>([]);
+  const [showComments, setShowComments] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
+
+  // Edit states for architect
+  const [localTitle, setLocalTitle] = useState(title);
+  const [localDescription, setLocalDescription] = useState(description);
+  const [civilCost, setCivilCost] = useState(initialQuotation?.civilStructure || '');
+  const [flooringCost, setFlooringCost] = useState(initialQuotation?.flooringTiling || '');
+  const [electricalCost, setElectricalCost] = useState(initialQuotation?.electricalPlumbing || '');
+  const [modularCost, setModularCost] = useState(initialQuotation?.modularWoodwork || '');
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+
+  const isOwner = currentUser && currentUser._id === authorId;
+
+  // Dynamic visible tabs list based on actual content
+  const hasQuotation = !!(civilCost || flooringCost || electricalCost || modularCost);
+  const hasVideo = imagesList.some(url => url.toLowerCase().endsWith('.mp4') || url.toLowerCase().endsWith('.mov') || url.toLowerCase().endsWith('.avi'));
+
+  const visibleTabs: string[] = ['photos'];
+  if (hasVideo) visibleTabs.push('videos');
+  if (hasQuotation) visibleTabs.push('quotation');
+
+  useEffect(() => {
+    if (!visibleTabs.includes(activeTab)) {
+      setActiveTab('photos');
+    }
+  }, [civilCost, flooringCost, electricalCost, modularCost]);
+
+  // Fetch latest post data and user saved state from backend on mount
+  useEffect(() => {
+    const fetchPostAndUserState = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/posts/${designId}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.post) {
+            const p = data.post;
+            setLikesCount(p.likes || 0);
+            setDislikesCount(p.dislikedBy ? p.dislikedBy.length : 0);
+            setCommentsCount(p.comments || 0);
+            setCommentsList(p.commentsList || []);
+            
+            // Check if current user liked
+            if (currentUser) {
+              setHasLiked(p.likedBy ? p.likedBy.includes(currentUser._id) : false);
+            }
+          }
+        }
+
+        // Fetch user's saved list to see if this design is saved
+        if (currentUser) {
+          const userRes = await fetch(`${BACKEND_URL}/api/user/saved-designs/${currentUser._id}`);
+          if (userRes.ok) {
+            const userData = await userRes.json();
+            const savedList = userData.savedDesigns || [];
+            const isSaved = savedList.some((item: any) => item._id === designId || item === designId);
+            setHasSaved(isSaved);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching post/user details:', err);
+      }
+    };
+    if (designId && currentUser) {
+      fetchPostAndUserState();
+    }
+  }, [designId, currentUser]);
+
+  const handleLike = async () => {
+    if (!currentUser) {
+      Alert.alert('Login Required', 'Please log in to like this design.');
+      return;
+    }
+    
+    // Optimistic UI updates
+    const nextHasLiked = !hasLiked;
+    setHasLiked(nextHasLiked);
+    setLikesCount(prev => nextHasLiked ? prev + 1 : Math.max(0, prev - 1));
+    
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/posts/${designId}/like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser._id })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setLikesCount(data.likes);
+        setHasLiked(data.likedBy.includes(currentUser._id));
+      }
+    } catch (err) {
+      console.error('Error liking post:', err);
+    }
+  };
+
+  const handleSaveDesign = async () => {
+    if (!currentUser) {
+      Alert.alert('Login Required', 'Please log in to save this design.');
+      return;
+    }
+
+    // Optimistic UI update
+    const nextHasSaved = !hasSaved;
+    setHasSaved(nextHasSaved);
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/user/save-design`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser._id, designId })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setHasSaved(data.isSaved);
+      }
+    } catch (err) {
+      console.error('Error saving design:', err);
+    }
+  };
+
+  const handleCommentSubmit = async () => {
+    if (!commentText.trim()) return;
+    if (!currentUser) {
+      Alert.alert('Login Required', 'Please log in to comment.');
+      return;
+    }
+    
+    setIsPostingComment(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/posts/${designId}/comment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser._id,
+          userName: currentUser.fullName || 'Anonymous',
+          userAvatar: currentUser.avatarUrl || '',
+          text: commentText
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setCommentsList(prev => [...prev, data.comment]);
+        setCommentsCount(data.commentsCount);
+        setCommentText('');
+      } else {
+        Alert.alert('Error', 'Failed to post comment.');
+      }
+    } catch (err) {
+      console.error('Error posting comment:', err);
+      Alert.alert('Error', 'Network error. Please try again.');
+    } finally {
+      setIsPostingComment(false);
+    }
+  };
+
+  const handleSaveChanges = async () => {
+    setIsSaving(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/posts/${designId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: localTitle,
+          description: localDescription,
+          quotation: {
+            civilStructure: civilCost,
+            flooringTiling: flooringCost,
+            electricalPlumbing: electricalCost,
+            modularWoodwork: modularCost,
+          }
+        }),
+      });
+
+      if (response.ok) {
+        Alert.alert('Success', 'Design details updated successfully.');
+        setIsEditing(false);
+      } else {
+        Alert.alert('Update Failed', 'Failed to save changes. Please try again.');
+      }
+    } catch (err) {
+      console.error('Update design error:', err);
+      // Fallback
+      Alert.alert('Test Mode', 'Offline simulation: Changes saved locally.');
+      setIsEditing(false);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleViewProfile = () => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -100,6 +403,14 @@ export default function DesignDetailScreen() {
         </TouchableOpacity>
         
         <View style={styles.headerRight}>
+          {isOwner && (
+            <TouchableOpacity 
+              onPress={() => setIsEditing(!isEditing)} 
+              style={[styles.headerCircleBtn, isEditing && { backgroundColor: COLORS.greenLight }]}
+            >
+              <Feather name="edit" size={17} color={isEditing ? COLORS.green : COLORS.textDark} />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity onPress={handleShare} style={styles.headerCircleBtn}>
             <Feather name="share-2" size={18} color={COLORS.textDark} />
           </TouchableOpacity>
@@ -116,7 +427,27 @@ export default function DesignDetailScreen() {
         
         {/* Title Block */}
         <View style={styles.titleBlock}>
-          <Text style={styles.designTitle}>{title}</Text>
+          {isEditing ? (
+            <View style={{ marginBottom: 8 }}>
+              <Text style={styles.smallLabel}>Design Title</Text>
+              <TextInput
+                style={styles.editInput}
+                value={localTitle}
+                onChangeText={setLocalTitle}
+                placeholder="Enter design title..."
+              />
+            </View>
+          ) : (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={[styles.designTitle, { flex: 1, marginRight: 10 }]}>{localTitle}</Text>
+              {isOwner && !isEditing && (
+                <TouchableOpacity onPress={() => setIsEditing(true)} style={styles.smallEditBtn}>
+                  <Feather name="edit-2" size={11} color={COLORS.green} />
+                  <Text style={styles.smallEditBtnText}>Edit</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
           <Text style={styles.designLoc}>
             <Feather name="map-pin" size={13} color={COLORS.textMuted} /> {location}
           </Text>
@@ -141,14 +472,14 @@ export default function DesignDetailScreen() {
           </View>
           <View style={styles.designerActions}>
             <TouchableOpacity 
-              style={[styles.miniBtn, isFollowing && { backgroundColor: COLORS.bgLight }]}
-              onPress={() => setIsFollowing(!isFollowing)}
+              style={[styles.miniBtn, !isFollowing ? styles.miniBtnFollowActive : styles.miniBtnFollowingActive]}
+              onPress={handleFollowPress}
             >
-              <Text style={styles.miniBtnText}>{isFollowing ? 'Following' : 'Follow'}</Text>
+              <Text style={[styles.miniBtnText, !isFollowing ? { color: COLORS.white } : { color: COLORS.textDark }]}>
+                {isFollowing ? 'Following \u2713' : 'Follow'}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.miniBtn} onPress={handleViewProfile}>
-              <Text style={styles.miniBtnText}>View Profile</Text>
-            </TouchableOpacity>
+
             <TouchableOpacity style={[styles.miniBtn, styles.miniBtnGreen]} onPress={handleWhatsApp}>
               <Feather name="message-circle" size={12} color={COLORS.white} style={{ marginRight: 2 }} />
               <Text style={[styles.miniBtnText, { color: COLORS.white }]}>Contact</Text>
@@ -157,55 +488,85 @@ export default function DesignDetailScreen() {
         </View>
 
         {/* Sub-Tabs Selector */}
-        <View style={styles.subTabsContainer}>
-          {(['photos', 'videos', 'quotation'] as const).map((tab) => {
-            const isActive = activeTab === tab;
-            return (
-              <TouchableOpacity 
-                key={tab} 
-                style={[styles.subTabBtn, isActive && styles.subTabBtnActive]}
-                onPress={() => setActiveTab(tab)}
-              >
-                <Feather 
-                  name={tab === 'photos' ? 'image' : tab === 'videos' ? 'play-circle' : 'file-text'} 
-                  size={14} 
-                  color={isActive ? COLORS.green : COLORS.textMuted} 
-                  style={{ marginRight: 6 }}
-                />
-                <Text style={[styles.subTabBtnText, isActive && styles.subTabBtnTextActive]}>
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {visibleTabs.length > 1 && (
+          <View style={styles.subTabsContainer}>
+            {visibleTabs.map((tab) => {
+              const isActive = activeTab === tab;
+              return (
+                <TouchableOpacity 
+                  key={tab} 
+                  style={[styles.subTabBtn, isActive && styles.subTabBtnActive]}
+                  onPress={() => setActiveTab(tab as any)}
+                >
+                  <Feather 
+                    name={tab === 'photos' ? 'image' : tab === 'videos' ? 'play-circle' : 'file-text'} 
+                    size={14} 
+                    color={isActive ? COLORS.green : COLORS.textMuted} 
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={[styles.subTabBtnText, isActive && styles.subTabBtnTextActive]}>
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
         {/* Photos Grid Tab Content */}
         {activeTab === 'photos' && (
           <View style={styles.photosGrid}>
-            <View style={styles.mainPhotoCol}>
-              <Image source={{ uri: mainImage }} style={styles.mainPhoto} contentFit="cover" />
-              <View style={styles.mediaCountBadge}>
-                <Text style={styles.mediaCountText}>1/{imagesList.length || 1}</Text>
-              </View>
-            </View>
-            <View style={styles.sidePhotoCol}>
-              <Image 
-                source={{ uri: imagesList[1] || 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=200&q=80' }} 
-                style={styles.sidePhotoTop} 
-                contentFit="cover" 
-              />
-              <View style={styles.sidePhotoBottomContainer}>
-                <Image 
-                  source={{ uri: imagesList[2] || 'https://images.unsplash.com/photo-1616594039964-ae9021a400a0?auto=format&fit=crop&w=200&q=80' }} 
-                  style={styles.sidePhotoBottom} 
-                  contentFit="cover" 
-                />
-                <View style={styles.morePhotosOverlay}>
-                  <Text style={styles.morePhotosText}>+9 More</Text>
+            {imagesList.length === 1 ? (
+              <View style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}>
+                <Image source={{ uri: imagesList[0] }} style={styles.mainPhoto} contentFit="cover" />
+                <View style={styles.mediaCountBadge}>
+                  <Text style={styles.mediaCountText}>1/1</Text>
                 </View>
               </View>
-            </View>
+            ) : imagesList.length === 2 ? (
+              <View style={{ flex: 1, flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}>
+                  <Image source={{ uri: imagesList[0] }} style={styles.mainPhoto} contentFit="cover" />
+                  <View style={styles.mediaCountBadge}>
+                    <Text style={styles.mediaCountText}>1/2</Text>
+                  </View>
+                </View>
+                <View style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}>
+                  <Image source={{ uri: imagesList[1] }} style={styles.mainPhoto} contentFit="cover" />
+                  <View style={styles.mediaCountBadge}>
+                    <Text style={styles.mediaCountText}>2/2</Text>
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <>
+                <View style={styles.mainPhotoCol}>
+                  <Image source={{ uri: imagesList[0] }} style={styles.mainPhoto} contentFit="cover" />
+                  <View style={styles.mediaCountBadge}>
+                    <Text style={styles.mediaCountText}>1/{imagesList.length}</Text>
+                  </View>
+                </View>
+                <View style={styles.sidePhotoCol}>
+                  <Image 
+                    source={{ uri: imagesList[1] }} 
+                    style={styles.sidePhotoTop} 
+                    contentFit="cover" 
+                  />
+                  <View style={styles.sidePhotoBottomContainer}>
+                    <Image 
+                      source={{ uri: imagesList[2] }} 
+                      style={styles.sidePhotoBottom} 
+                      contentFit="cover" 
+                    />
+                    {imagesList.length > 3 && (
+                      <View style={styles.morePhotosOverlay}>
+                        <Text style={styles.morePhotosText}>+{imagesList.length - 3} More</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </>
+            )}
           </View>
         )}
 
@@ -227,63 +588,229 @@ export default function DesignDetailScreen() {
                 <Text style={styles.quotationSub}>Based on standard material finishes</Text>
               </View>
             </View>
-            <View style={styles.quoteRow}>
-              <Text style={styles.quoteLabel}>Civil & Structure</Text>
-              <Text style={styles.quoteValue}>₹4.5 L - ₹5.8 L</Text>
-            </View>
-            <View style={styles.quoteRow}>
-              <Text style={styles.quoteLabel}>Flooring & Tiling</Text>
-              <Text style={styles.quoteValue}>₹1.2 L - ₹1.8 L</Text>
-            </View>
-            <View style={styles.quoteRow}>
-              <Text style={styles.quoteLabel}>Electrical & Plumbing</Text>
-              <Text style={styles.quoteValue}>₹0.8 L - ₹1.2 L</Text>
-            </View>
-            <View style={styles.quoteRow}>
-              <Text style={styles.quoteLabel}>Modular Woodwork</Text>
-              <Text style={styles.quoteValue}>₹2.5 L - ₹3.8 L</Text>
-            </View>
-            <View style={[styles.quoteRow, { borderBottomWidth: 0, marginTop: 10 }]}>
-              <Text style={[styles.quoteLabel, { fontWeight: '800' }]}>Total Approx Cost</Text>
-              <Text style={[styles.quoteValue, { color: COLORS.green, fontWeight: '800' }]}>₹9.0 L - ₹12.6 L</Text>
-            </View>
+
+            {isEditing ? (
+              <View style={{ gap: 10 }}>
+                <View style={styles.editQuoteRow}>
+                  <Text style={styles.editQuoteLabel}>Civil & Structure</Text>
+                  <TextInput
+                    style={styles.editQuoteInput}
+                    value={civilCost}
+                    onChangeText={setCivilCost}
+                    placeholder="e.g. 4.5 L - 5.8 L"
+                    placeholderTextColor={COLORS.textMuted}
+                  />
+                </View>
+                <View style={styles.editQuoteRow}>
+                  <Text style={styles.editQuoteLabel}>Flooring & Tiling</Text>
+                  <TextInput
+                    style={styles.editQuoteInput}
+                    value={flooringCost}
+                    onChangeText={setFlooringCost}
+                    placeholder="e.g. 1.2 L - 1.8 L"
+                    placeholderTextColor={COLORS.textMuted}
+                  />
+                </View>
+                <View style={styles.editQuoteRow}>
+                  <Text style={styles.editQuoteLabel}>Electrical & Plumbing</Text>
+                  <TextInput
+                    style={styles.editQuoteInput}
+                    value={electricalCost}
+                    onChangeText={setElectricalCost}
+                    placeholder="e.g. 0.8 L - 1.2 L"
+                    placeholderTextColor={COLORS.textMuted}
+                  />
+                </View>
+                <View style={styles.editQuoteRow}>
+                  <Text style={styles.editQuoteLabel}>Modular Woodwork</Text>
+                  <TextInput
+                    style={styles.editQuoteInput}
+                    value={modularCost}
+                    onChangeText={setModularCost}
+                    placeholder="e.g. 2.5 L - 3.8 L"
+                    placeholderTextColor={COLORS.textMuted}
+                  />
+                </View>
+              </View>
+            ) : (!civilCost && !flooringCost && !electricalCost && !modularCost) ? (
+              <View style={styles.noQuotationBox}>
+                <Feather name="alert-circle" size={26} color={COLORS.textMuted} style={{ marginBottom: 6 }} />
+                <Text style={styles.noQuotationText}>No estimated cost quotation provided for this design.</Text>
+                {isOwner && (
+                  <TouchableOpacity style={styles.addQuoteBtn} onPress={() => setIsEditing(true)}>
+                    <Text style={styles.addQuoteBtnText}>Add Quotation</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ) : (
+              <View>
+                {civilCost ? (
+                  <View style={styles.quoteRow}>
+                    <Text style={styles.quoteLabel}>Civil & Structure</Text>
+                    <Text style={styles.quoteValue}>₹{civilCost}</Text>
+                  </View>
+                ) : null}
+                {flooringCost ? (
+                  <View style={styles.quoteRow}>
+                    <Text style={styles.quoteLabel}>Flooring & Tiling</Text>
+                    <Text style={styles.quoteValue}>₹{flooringCost}</Text>
+                  </View>
+                ) : null}
+                {electricalCost ? (
+                  <View style={styles.quoteRow}>
+                    <Text style={styles.quoteLabel}>Electrical & Plumbing</Text>
+                    <Text style={styles.quoteValue}>₹{electricalCost}</Text>
+                  </View>
+                ) : null}
+                {modularCost ? (
+                  <View style={styles.quoteRow}>
+                    <Text style={styles.quoteLabel}>Modular Woodwork</Text>
+                    <Text style={styles.quoteValue}>₹{modularCost}</Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
           </View>
         )}
 
         {/* Design Overview */}
         <View style={styles.overviewSection}>
-          <Text style={styles.sectionHeaderTitle}>Design Overview</Text>
-          <Text style={styles.overviewText} numberOfLines={showFullOverview ? undefined : 3}>
-            A modern and minimal 2BHK apartment design with a perfect blend of comfort, functionality and premium aesthetics. Warm wood tones, soft natural light, and space-optimized custom layouts make this home feel open and truly beautiful. Perfect choice for urban families looking for upscale styling.
-          </Text>
-          <TouchableOpacity style={styles.showMoreRow} onPress={() => setShowFullOverview(!showFullOverview)}>
-            <Text style={styles.showMoreText}>{showFullOverview ? 'Show Less' : 'Show More'}</Text>
-            <Feather name={showFullOverview ? "chevron-up" : "chevron-down"} size={14} color={COLORS.green} />
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={styles.sectionHeaderTitle}>Design Overview</Text>
+            {isOwner && !isEditing && (
+              <TouchableOpacity onPress={() => setIsEditing(true)} style={styles.smallEditBtn}>
+                <Feather name="edit-2" size={11} color={COLORS.green} />
+                <Text style={styles.smallEditBtnText}>Edit</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          {isEditing ? (
+            <View>
+              <TextInput
+                style={[styles.editInput, styles.editTextArea]}
+                value={localDescription}
+                onChangeText={setLocalDescription}
+                multiline={true}
+                numberOfLines={4}
+                placeholder="Enter design overview description..."
+              />
+              
+              {/* Optional Quotation Form inside editing mode alongside description */}
+              <View style={styles.editQuotationFormSection}>
+                <Text style={styles.editQuotationSectionTitle}>Cost Quotation (Optional)</Text>
+                <Text style={styles.editQuotationSectionSub}>Provide estimated price ranges for this design layout (e.g. 4.5 L - 5.8 L)</Text>
+                
+                <View style={styles.editQuoteRowInline}>
+                  <Text style={styles.editQuoteLabelInline}>Civil & Structure</Text>
+                  <TextInput
+                    style={styles.editQuoteInputInline}
+                    value={civilCost}
+                    onChangeText={setCivilCost}
+                    placeholder="e.g. 4.5 L - 5.8 L"
+                    placeholderTextColor={COLORS.textMuted}
+                  />
+                </View>
+
+                <View style={styles.editQuoteRowInline}>
+                  <Text style={styles.editQuoteLabelInline}>Flooring & Tiling</Text>
+                  <TextInput
+                    style={styles.editQuoteInputInline}
+                    value={flooringCost}
+                    onChangeText={setFlooringCost}
+                    placeholder="e.g. 1.2 L - 1.8 L"
+                    placeholderTextColor={COLORS.textMuted}
+                  />
+                </View>
+
+                <View style={styles.editQuoteRowInline}>
+                  <Text style={styles.editQuoteLabelInline}>Electrical & Plumbing</Text>
+                  <TextInput
+                    style={styles.editQuoteInputInline}
+                    value={electricalCost}
+                    onChangeText={setElectricalCost}
+                    placeholder="e.g. 0.8 L - 1.2 L"
+                    placeholderTextColor={COLORS.textMuted}
+                  />
+                </View>
+
+                <View style={styles.editQuoteRowInline}>
+                  <Text style={styles.editQuoteLabelInline}>Modular Woodwork</Text>
+                  <TextInput
+                    style={styles.editQuoteInputInline}
+                    value={modularCost}
+                    onChangeText={setModularCost}
+                    placeholder="e.g. 2.5 L - 3.8 L"
+                    placeholderTextColor={COLORS.textMuted}
+                  />
+                </View>
+              </View>
+            </View>
+          ) : (
+            <Text style={styles.overviewText} numberOfLines={showFullOverview ? undefined : 3}>
+              {localDescription}
+            </Text>
+          )}
+          {!isEditing && (
+            <TouchableOpacity style={styles.showMoreRow} onPress={() => setShowFullOverview(!showFullOverview)}>
+              <Text style={styles.showMoreText}>{showFullOverview ? 'Show Less' : 'Show More'}</Text>
+              <Feather name={showFullOverview ? "chevron-up" : "chevron-down"} size={14} color={COLORS.green} />
+            </TouchableOpacity>
+          )}
         </View>
+
+        {isEditing && (
+          <View style={{ paddingHorizontal: 20, marginTop: 20 }}>
+            <TouchableOpacity 
+              style={[styles.saveChangesBtn, isSaving && { opacity: 0.8 }]} 
+              onPress={handleSaveChanges}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <ActivityIndicator size="small" color={COLORS.white} />
+              ) : (
+                <>
+                  <Feather name="check-circle" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+                  <Text style={styles.saveChangesBtnText}>Save Changes</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Stats and Action Bar */}
         <View style={styles.statsRow}>
           <View style={styles.statsCol}>
+            {/* Like Button (Orange-yellow filled when liked) */}
             <TouchableOpacity 
-              style={[styles.statActionBtn, hasLiked && { backgroundColor: COLORS.greenLight }]} 
-              onPress={() => setHasLiked(!hasLiked)}
+              style={[styles.statActionBtn, hasLiked && { backgroundColor: '#FEF3C7', borderColor: '#FEF3C7' }]} 
+              onPress={handleLike}
             >
-              <Feather name="heart" size={16} color={hasLiked ? COLORS.green : COLORS.textDark} style={hasLiked && { fill: COLORS.green }} />
-              <Text style={[styles.statActionText, hasLiked && { color: COLORS.green }]}>
-                {hasLiked ? parseInt(likes) + 1 : likes}
+              <Feather 
+                name="heart" 
+                size={16} 
+                color={hasLiked ? '#F59E0B' : COLORS.textDark} 
+                style={hasLiked && { fill: '#F59E0B' }} 
+              />
+              <Text style={[styles.statActionText, hasLiked && { color: '#F59E0B', fontWeight: '800' }]}>
+                {likesCount}
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.statActionBtn}>
-              <Feather name="message-square" size={16} color={COLORS.textDark} />
-              <Text style={styles.statActionText}>{comments}</Text>
+            {/* Comment Button */}
+            <TouchableOpacity 
+              style={[styles.statActionBtn, showComments && { backgroundColor: COLORS.greenLight }]}
+              onPress={() => setShowComments(!showComments)}
+            >
+              <Feather name="message-square" size={16} color={showComments ? COLORS.green : COLORS.textDark} />
+              <Text style={[styles.statActionText, showComments && { color: COLORS.green }]}>
+                {commentsCount}
+              </Text>
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity 
             style={[styles.statActionBtn, hasSaved && { backgroundColor: COLORS.greenLight }]}
-            onPress={() => setHasSaved(!hasSaved)}
+            onPress={handleSaveDesign}
           >
             <Feather name="bookmark" size={16} color={hasSaved ? COLORS.green : COLORS.textDark} style={hasSaved && { fill: COLORS.green }} />
             <Text style={[styles.statActionText, hasSaved && { color: COLORS.green }]}>
@@ -291,6 +818,61 @@ export default function DesignDetailScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Dynamic Comments List & Input Section */}
+        {showComments && (
+          <View style={styles.commentsSection}>
+            <Text style={styles.commentsSectionTitle}>Comments ({commentsCount})</Text>
+            
+            {/* Input Form */}
+            <View style={styles.commentInputRow}>
+              <TextInput
+                style={styles.commentTextInput}
+                placeholder="Write a comment..."
+                placeholderTextColor={COLORS.textMuted}
+                value={commentText}
+                onChangeText={setCommentText}
+                multiline
+              />
+              <TouchableOpacity 
+                style={styles.commentSendBtn}
+                onPress={handleCommentSubmit}
+                disabled={isPostingComment || !commentText.trim()}
+              >
+                {isPostingComment ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Feather name="send" size={16} color={COLORS.white} />
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Comments List */}
+            {commentsList.length === 0 ? (
+              <Text style={styles.noCommentsText}>No comments yet. Be the first to comment!</Text>
+            ) : (
+              <View style={styles.commentsListContainer}>
+                {commentsList.map((item, idx) => (
+                  <View key={idx} style={styles.commentItem}>
+                    <Image 
+                      source={{ uri: item.userAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=80&q=80' }} 
+                      style={styles.commentAvatar} 
+                    />
+                    <View style={styles.commentBubble}>
+                      <View style={styles.commentHeaderRow}>
+                        <Text style={styles.commentUserName}>{item.userName}</Text>
+                        <Text style={styles.commentTime}>
+                          {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'Just now'}
+                        </Text>
+                      </View>
+                      <Text style={styles.commentText}>{item.text}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={styles.sectionDivider} />
 
@@ -369,6 +951,38 @@ export default function DesignDetailScreen() {
           <Text style={styles.contactDesignerBtnText}>Contact Designer</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Unfollow Confirmation Modal */}
+      <Modal
+        visible={showUnfollowModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowUnfollowModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Image source={{ uri: authorAvatar }} style={styles.modalAvatar} />
+            <Text style={styles.modalTitle}>Unfollow {authorName}?</Text>
+            <Text style={styles.modalSubtitle}>You will stop seeing their updates in your feed.</Text>
+            
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity 
+                style={styles.modalCancelBtn} 
+                onPress={() => setShowUnfollowModal(false)}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.modalConfirmBtn} 
+                onPress={executeUnfollow}
+              >
+                <Text style={styles.modalConfirmBtnText}>Unfollow</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -680,4 +1294,307 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   contactDesignerBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.white },
+
+  /* EDITING VIEWS */
+  editInput: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    color: COLORS.textDark,
+    backgroundColor: '#F8FAFC',
+    height: 40,
+    marginTop: 4,
+  },
+  editTextArea: {
+    height: 100,
+    textAlignVertical: 'top',
+    paddingTop: 8,
+  },
+  editQuoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  editQuoteLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    flex: 1,
+  },
+  editQuoteInput: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    fontSize: 12,
+    color: COLORS.textDark,
+    backgroundColor: COLORS.white,
+    width: 140,
+    height: 34,
+  },
+  noQuotationBox: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  noQuotationText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  addQuoteBtn: {
+    backgroundColor: COLORS.green,
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+  },
+  addQuoteBtnText: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  saveChangesBtn: {
+    height: 44,
+    backgroundColor: COLORS.green,
+    borderRadius: 8,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  saveChangesBtnText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  editQuotationFormSection: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 12,
+    marginTop: 14,
+    marginBottom: 8,
+  },
+  editQuotationSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    marginBottom: 2,
+  },
+  editQuotationSectionSub: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    marginBottom: 10,
+  },
+  editQuoteRowInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+  },
+  editQuoteLabelInline: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.textDark,
+    flex: 1,
+  },
+  editQuoteInputInline: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    fontSize: 11,
+    color: COLORS.textDark,
+    backgroundColor: COLORS.white,
+    width: 140,
+    height: 32,
+  },
+  smallEditBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.greenLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.green + '22',
+  },
+  smallEditBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.green,
+    marginLeft: 3,
+  },
+  commentsSection: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    padding: 12,
+    backgroundColor: '#F9FAFB',
+  },
+  commentsSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    marginBottom: 10,
+  },
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  commentTextInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+    color: COLORS.textDark,
+    backgroundColor: COLORS.white,
+    maxHeight: 60,
+  },
+  commentSendBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.green,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noCommentsText: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+  commentsListContainer: {
+    gap: 10,
+  },
+  commentItem: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'flex-start',
+  },
+  commentAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  commentBubble: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  commentHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  commentUserName: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textDark,
+  },
+  commentTime: {
+    fontSize: 9,
+    color: COLORS.textMuted,
+  },
+  commentText: {
+    fontSize: 11,
+    color: COLORS.textDark,
+    lineHeight: 14,
+  },
+  miniBtnFollowActive: {
+    backgroundColor: '#1BC47D',
+    borderColor: '#1BC47D',
+    borderRadius: 12,
+  },
+  miniBtnFollowingActive: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: width * 0.85,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalAvatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 40,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+  },
+  modalCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textDark,
+  },
+  modalConfirmBtn: {
+    flex: 1,
+    height: 40,
+    backgroundColor: '#EF4444',
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalConfirmBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.white,
+  },
 });

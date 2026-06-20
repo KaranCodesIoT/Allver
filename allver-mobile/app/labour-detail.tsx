@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, TextInput, Alert } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, TextInput, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { BACKEND_URL } from '../constants/Config';
 
 const { width } = Dimensions.get('window');
 
@@ -77,9 +78,10 @@ export default function LabourDetailScreen() {
   const params = useLocalSearchParams();
 
   // Load params with fallbacks
+  const id = (params.id as string) || '60c72b2f9b1d8a2a4c8b0004';
   const name = (params.name as string) || 'Ramesh Yadav';
   const role = (params.role as string) || 'Mason';
-  const avatar = (params.avatar as string) || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop';
+  const avatar = (params.avatar as string) || '';
   const experience = (params.experience as string) || '12+ Years Experience';
   const location = (params.location as string) || 'Mumbai, Maharashtra';
   const rating = (params.rating as string) || '4.8';
@@ -89,6 +91,11 @@ export default function LabourDetailScreen() {
   const [activeTab, setActiveTab] = useState<'attendance' | 'payments' | 'documents'>('attendance');
   const [currentUser, setCurrentUser] = useState<any>(null);
   
+  // States for Follow/Unfollow
+  const [followersCountVal, setFollowersCountVal] = useState(0);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [showUnfollowModal, setShowUnfollowModal] = useState(false);
+
   // States for editable attendance
   const [days, setDays] = useState<CalendarDay[]>(INITIAL_CALENDAR_DAYS);
   const [selectedDay, setSelectedDay] = useState<CalendarDay | null>(null);
@@ -112,6 +119,91 @@ export default function LabourDetailScreen() {
       setCurrentUser(user);
     }
   }, []);
+
+  useEffect(() => {
+    if (currentUser?._id && id) {
+      // Fetch follow status
+      fetch(`${BACKEND_URL}/api/follow/status/${id}?followerId=${currentUser._id}`)
+        .then(res => res.json())
+        .then(data => {
+          setIsFollowing(!!data.isFollowing);
+        })
+        .catch(err => console.error("Error fetching follow status:", err));
+
+      // Fetch live user info (followers count)
+      fetch(`${BACKEND_URL}/api/professional/${id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.professional) {
+            setFollowersCountVal(data.professional.followersCount || 0);
+          }
+        })
+        .catch(err => console.error("Error fetching professional info:", err));
+    }
+  }, [currentUser, id]);
+
+  const handleFollowPress = () => {
+    if (!currentUser) {
+      Alert.alert('Login Required', 'Please log in to follow other users.');
+      return;
+    }
+
+    if (isFollowing) {
+      setShowUnfollowModal(true);
+    } else {
+      executeFollow();
+    }
+  };
+
+  const executeFollow = async () => {
+    // Optimistic update
+    setIsFollowing(true);
+    setFollowersCountVal(prev => prev + 1);
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/follow/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: currentUser._id }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Error following user');
+      }
+    } catch (error: any) {
+      // Rollback
+      setIsFollowing(false);
+      setFollowersCountVal(prev => Math.max(0, prev - 1));
+      Alert.alert('Error', error.message || 'Could not follow user.');
+    }
+  };
+
+  const executeUnfollow = async () => {
+    setShowUnfollowModal(false);
+    
+    // Optimistic update
+    setIsFollowing(false);
+    setFollowersCountVal(prev => Math.max(0, prev - 1));
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/unfollow/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: currentUser._id }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Error unfollowing user');
+      }
+    } catch (error: any) {
+      // Rollback
+      setIsFollowing(true);
+      setFollowersCountVal(prev => prev + 1);
+      Alert.alert('Error', error.message || 'Could not unfollow user.');
+    }
+  };
 
   // Load persisted attendance when name changes
   useEffect(() => {
@@ -254,7 +346,7 @@ export default function LabourDetailScreen() {
         {/* ================= PROFILE DETAILS CARD ================= */}
         <View style={styles.profileCard}>
           <View style={styles.profileAvatarWrapper}>
-            <Image source={{ uri: avatar }} style={styles.avatarImage} contentFit="cover" />
+            <Image source={avatar ? { uri: avatar } : require('@/assets/images/app-icon.png')} style={styles.avatarImage} contentFit={avatar ? "cover" : "contain"} />
             <View style={styles.verifiedBadge}>
               <Feather name="check" size={10} color={COLORS.white} />
             </View>
@@ -282,10 +374,38 @@ export default function LabourDetailScreen() {
               <Feather name="award" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
               <Text style={styles.metaText}>{experience}</Text>
             </View>
+            
+            {id && (
+              <TouchableOpacity 
+                style={styles.followersContainer}
+                onPress={() => {
+                  router.push({
+                    pathname: '/followers-list',
+                    params: { userId: id, type: 'followers', userName: name }
+                  });
+                }}
+              >
+                <Feather name="users" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
+                <Text style={styles.followersText}>{followersCountVal} Followers</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Action Buttons */}
           <View style={styles.headerActionsColumn}>
+            {id && currentUser && currentUser._id !== id && (
+              <TouchableOpacity 
+                style={[styles.followBtn, isFollowing && styles.followingBtn]} 
+                onPress={handleFollowPress}
+                activeOpacity={0.7}
+              >
+                <Feather name={isFollowing ? "check" : "user-plus"} size={12} color={isFollowing ? COLORS.textDark : COLORS.white} style={{ marginRight: 4 }} />
+                <Text style={[styles.followBtnText, isFollowing && { color: COLORS.textDark }]}>
+                  {isFollowing ? 'Following \u2713' : 'Follow'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity style={styles.messageBtn} onPress={handleMessage} activeOpacity={0.7}>
               <Feather name="message-square" size={13} color={COLORS.teal} style={{ marginRight: 6 }} />
               <Text style={styles.messageBtnText}>Message</Text>
@@ -731,6 +851,37 @@ export default function LabourDetailScreen() {
         </View>
       )}
 
+      {/* Unfollow Confirmation Modal */}
+      <Modal
+        visible={showUnfollowModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowUnfollowModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Image source={{ uri: avatar }} style={styles.modalAvatar} />
+            <Text style={styles.modalTitle}>Unfollow {name}?</Text>
+            <Text style={styles.modalSubtitle}>You will stop seeing their updates in your feed.</Text>
+            
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity 
+                style={styles.modalCancelBtn} 
+                onPress={() => setShowUnfollowModal(false)}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.modalConfirmBtn} 
+                onPress={executeUnfollow}
+              >
+                <Text style={styles.modalConfirmBtnText}>Unfollow</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1491,5 +1642,108 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.white,
     fontWeight: '700',
+  },
+  
+  followersContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  followersText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  followBtn: {
+    width: '100%',
+    height: 32,
+    backgroundColor: '#1BC47D',
+    borderRadius: 16,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  followingBtn: {
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  followBtnText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: width * 0.85,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalAvatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+  },
+  modalCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textDark,
+  },
+  modalConfirmBtn: {
+    flex: 1,
+    height: 44,
+    backgroundColor: '#EF4444',
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalConfirmBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.white,
   },
 });

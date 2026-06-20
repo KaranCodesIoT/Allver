@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { BACKEND_URL } from '../constants/Config';
 
 const { width } = Dimensions.get('window');
 
@@ -22,12 +23,12 @@ const COLORS = {
 
 // Mock Team Members
 const TEAM_MEMBERS = [
-  { name: 'Ramesh Yadav', role: 'Site Supervisor', experience: '8 Years', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop' },
-  { name: 'Suresh Patil', role: 'Mason', experience: '10 Years', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=150&auto=format&fit=crop' },
-  { name: 'Ravi Singh', role: 'Carpenter', experience: '7 Years', avatar: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=150&auto=format&fit=crop' },
-  { name: 'Imran Shaikh', role: 'Electrician', experience: '6 Years', avatar: 'https://images.unsplash.com/photo-1500048993953-d23a436266cf?q=80&w=150&auto=format&fit=crop' },
-  { name: 'Mahesh Gupta', role: 'Plumber', experience: '9 Years', avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=150&auto=format&fit=crop' },
-  { name: 'Anil Naik', role: 'Painter', experience: '5 Years', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop' }
+  { id: '60c72b2f9b1d8a2a4c8b0004', name: 'Ramesh Yadav', role: 'Site Supervisor', experience: '8 Years', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop' },
+  { id: '60c72b2f9b1d8a2a4c8b0005', name: 'Suresh Patil', role: 'Mason', experience: '10 Years', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=150&auto=format&fit=crop' },
+  { id: '60c72b2f9b1d8a2a4c8b0006', name: 'Ravi Singh', role: 'Carpenter', experience: '7 Years', avatar: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=150&auto=format&fit=crop' },
+  { id: '60c72b2f9b1d8a2a4c8b0007', name: 'Imran Shaikh', role: 'Electrician', experience: '6 Years', avatar: 'https://images.unsplash.com/photo-1500048993953-d23a436266cf?q=80&w=150&auto=format&fit=crop' },
+  { id: '60c72b2f9b1d8a2a4c8b0008', name: 'Mahesh Gupta', role: 'Plumber', experience: '9 Years', avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=150&auto=format&fit=crop' },
+  { id: '60c72b2f9b1d8a2a4c8b0009', name: 'Anil Naik', role: 'Painter', experience: '5 Years', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop' }
 ];
 
 export default function ContractorDetailScreen() {
@@ -35,16 +36,16 @@ export default function ContractorDetailScreen() {
   const params = useLocalSearchParams();
 
   // Load params with fallbacks
-  const id = (params.id as string) || '1';
+  const id = (params.id as string) || '60c72b2f9b1d8a2a4c8b0010';
   const name = (params.name as string) || 'Raj Construction Services';
-  const avatar = (params.avatar as string) || 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=200&auto=format&fit=crop';
+  const avatar = (params.avatar as string) || '';
   const coverImage = (params.coverImage as string) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
   const rating = (params.rating as string) || '4.8';
   const reviews = (params.reviews as string) || '124';
   const location = (params.location as string) || 'Mumbai, Maharashtra';
   const experience = (params.experience as string) || '12+ Years';
   const specialization = (params.specialization as string) || 'Specialized in residential and commercial construction with quality and timely delivery.';
-  const projects = (params.projects as string) || '156';
+  const projects = (params.projects as string) || '0';
   const followers = (params.followers as string) || '320';
   const firmName = (params.firmName as string) || 'BuildWell Construction Group';
   const phone = (params.phone as string) || '+91 98765 43210';
@@ -58,6 +59,9 @@ export default function ContractorDetailScreen() {
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [showFullAbout, setShowFullAbout] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [followerCountVal, setFollowerCountVal] = useState<number>(parseInt(followers, 10) || 0);
+  const [showUnfollowModal, setShowUnfollowModal] = useState(false);
+  const [labours, setLabours] = useState<any[]>([]);
 
   useEffect(() => {
     let user = (global as any).currentUser;
@@ -74,7 +78,102 @@ export default function ContractorDetailScreen() {
     if (user) {
       setCurrentUser(user);
     }
+
+    // Fetch live labours list to display in the Team tab
+    fetch(`${BACKEND_URL}/api/professionals/Labour`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.professionals && data.professionals.length > 0) {
+          setLabours(data.professionals);
+        }
+      })
+      .catch(err => console.error("Error fetching labours:", err));
   }, []);
+
+  useEffect(() => {
+    if (currentUser?._id && id) {
+      // Fetch follow status
+      fetch(`${BACKEND_URL}/api/follow/status/${id}?followerId=${currentUser._id}`)
+        .then(res => res.json())
+        .then(data => {
+          setIsFollowing(!!data.isFollowing);
+        })
+        .catch(err => console.error("Error fetching follow status:", err));
+
+      // Fetch live user info (followers count)
+      fetch(`${BACKEND_URL}/api/professional/${id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.professional) {
+            setFollowerCountVal(data.professional.followersCount || 0);
+          }
+        })
+        .catch(err => console.error("Error fetching professional info:", err));
+    }
+  }, [currentUser, id]);
+
+  const handleFollowPress = () => {
+    if (!currentUser) {
+      Alert.alert('Login Required', 'Please log in to follow other users.');
+      return;
+    }
+
+    if (isFollowing) {
+      setShowUnfollowModal(true);
+    } else {
+      executeFollow();
+    }
+  };
+
+  const executeFollow = async () => {
+    // Optimistic update
+    setIsFollowing(true);
+    setFollowerCountVal(prev => prev + 1);
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/follow/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: currentUser._id }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Error following user');
+      }
+    } catch (error: any) {
+      // Rollback
+      setIsFollowing(false);
+      setFollowerCountVal(prev => Math.max(0, prev - 1));
+      Alert.alert('Error', error.message || 'Could not follow user.');
+    }
+  };
+
+  const executeUnfollow = async () => {
+    setShowUnfollowModal(false);
+    
+    // Optimistic update
+    setIsFollowing(false);
+    setFollowerCountVal(prev => Math.max(0, prev - 1));
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/unfollow/${id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: currentUser._id }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Error unfollowing user');
+      }
+    } catch (error: any) {
+      // Rollback
+      setIsFollowing(true);
+      setFollowerCountVal(prev => prev + 1);
+      Alert.alert('Error', error.message || 'Could not unfollow user.');
+    }
+  };
 
   const isOwnProfile = currentUser && currentUser._id === id;
 
@@ -96,20 +195,22 @@ export default function ContractorDetailScreen() {
     Linking.openURL(`tel:${phone}`);
   };
 
-  const handleLabourClick = (worker: typeof TEAM_MEMBERS[0]) => {
+  const handleLabourClick = (worker: any) => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       (document.activeElement as HTMLElement)?.blur();
     }
     router.push({
       pathname: '/labour-detail',
       params: {
-        name: worker.name,
-        role: worker.role,
-        avatar: worker.avatar,
+        id: worker._id || worker.id || '',
+        name: worker.fullName || worker.name,
+        role: worker.skillType || worker.role,
+        avatar: worker.avatarUrl || worker.avatar,
         experience: worker.experience,
         contractorName: name,
-        rating: '4.8',
-        reviews: '124'
+        rating: worker.rating?.toString() || '4.8',
+        reviews: worker.reviews?.toString() || '124',
+        location: worker.city || worker.location || 'Mumbai, Maharashtra'
       }
     });
   };
@@ -141,7 +242,7 @@ export default function ContractorDetailScreen() {
         <View style={styles.coverContainer}>
           <Image source={{ uri: coverImage }} style={styles.coverImage} contentFit="cover" />
           <View style={styles.avatarWrapper}>
-            <Image source={{ uri: avatar }} style={styles.avatarImage} contentFit="cover" />
+            <Image source={avatar ? { uri: avatar } : require('@/assets/images/app-icon.png')} style={styles.avatarImage} contentFit={avatar ? "cover" : "contain"} />
             <View style={styles.verifiedBadge}>
               <Feather name="check" size={12} color={COLORS.white} />
             </View>
@@ -152,9 +253,17 @@ export default function ContractorDetailScreen() {
         <View style={styles.profileDetailsBlock}>
           <View style={styles.nameSection}>
             <Text style={styles.profileName}>{name}</Text>
-            <TouchableOpacity style={styles.followersContainer}>
+            <TouchableOpacity 
+              style={styles.followersContainer}
+              onPress={() => {
+                router.push({
+                  pathname: '/followers-list',
+                  params: { userId: id, type: 'followers', userName: name }
+                });
+              }}
+            >
               <Feather name="users" size={14} color={COLORS.textMuted} />
-              <Text style={styles.followersText}>{followers} Followers</Text>
+              <Text style={styles.followersText}>{followerCountVal} Followers</Text>
             </TouchableOpacity>
           </View>
           
@@ -201,11 +310,11 @@ export default function ContractorDetailScreen() {
             <View style={styles.actionButtonsRow}>
               <TouchableOpacity 
                 style={[styles.followBtn, isFollowing && styles.followingBtn]} 
-                onPress={() => setIsFollowing(!isFollowing)}
+                onPress={handleFollowPress}
               >
                 <Feather name={isFollowing ? "check" : "user-plus"} size={16} color={isFollowing ? COLORS.textDark : COLORS.white} style={{ marginRight: 6 }} />
                 <Text style={[styles.followBtnText, isFollowing && { color: COLORS.textDark }]}>
-                  {isFollowing ? 'Following' : 'Follow'}
+                  {isFollowing ? 'Following \u2713' : 'Follow'}
                 </Text>
               </TouchableOpacity>
 
@@ -214,9 +323,26 @@ export default function ContractorDetailScreen() {
                 <Text style={styles.outlineActionText}>Chat</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.outlineActionBtn} onPress={handleCall}>
-                <Feather name="phone" size={16} color={COLORS.textDark} style={{ marginRight: 6 }} />
-                <Text style={styles.outlineActionText}>Call</Text>
+              <TouchableOpacity 
+                style={[styles.outlineActionBtn, { borderColor: COLORS.blue, backgroundColor: '#EFF6FF' }]} 
+                onPress={() => {
+                  if (!currentUser) {
+                    Alert.alert('Login Required', 'Please log in to send messages.');
+                    return;
+                  }
+                  router.push({
+                    pathname: '/chat-room',
+                    params: {
+                      receiverId: id,
+                      name: name,
+                      role: 'Contractor',
+                      avatar: avatar,
+                    }
+                  });
+                }}
+              >
+                <Feather name="message-circle" size={16} color={COLORS.blue} style={{ marginRight: 6 }} />
+                <Text style={[styles.outlineActionText, { color: COLORS.blue }]}>Message</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -343,23 +469,29 @@ export default function ContractorDetailScreen() {
             {/* TEAM TAB */}
             {activeTab === 'team' && (
               <View style={styles.teamListCol}>
-                {TEAM_MEMBERS.map((worker, idx) => (
-                  <TouchableOpacity 
-                    key={idx} 
-                    style={styles.teamListItem} 
-                    activeOpacity={0.8}
-                    onPress={() => handleLabourClick(worker)}
-                  >
-                    <Image source={{ uri: worker.avatar }} style={styles.teamMemberAvatar} contentFit="cover" />
-                    <View style={styles.teamMemberDetails}>
-                      <Text style={styles.teamMemberName}>{worker.name}</Text>
-                      <Text style={styles.teamMemberRole}>{worker.role} • {worker.experience} Exp</Text>
-                    </View>
-                    <View style={styles.availabilityBadge}>
-                      <Text style={styles.availabilityText}>Available</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                {(labours.length > 0 ? labours : TEAM_MEMBERS).map((worker, idx) => {
+                  const workerName = worker.fullName || worker.name;
+                  const workerRole = worker.skillType || worker.role;
+                  const workerAvatar = worker.avatarUrl || worker.avatar;
+                  const workerExp = worker.experience;
+                  return (
+                    <TouchableOpacity 
+                      key={idx} 
+                      style={styles.teamListItem} 
+                      activeOpacity={0.8}
+                      onPress={() => handleLabourClick(worker)}
+                    >
+                      <Image source={{ uri: workerAvatar }} style={styles.teamMemberAvatar} contentFit="cover" />
+                      <View style={styles.teamMemberDetails}>
+                        <Text style={styles.teamMemberName}>{workerName}</Text>
+                        <Text style={styles.teamMemberRole}>{workerRole} • {workerExp} Exp</Text>
+                      </View>
+                      <View style={styles.availabilityBadge}>
+                        <Text style={styles.availabilityText}>{worker.availability || 'Available'}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             )}
 
@@ -426,6 +558,38 @@ export default function ContractorDetailScreen() {
         </View>
 
       </ScrollView>
+
+      {/* Unfollow Confirmation Modal */}
+      <Modal
+        visible={showUnfollowModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowUnfollowModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Image source={{ uri: avatar }} style={styles.modalAvatar} />
+            <Text style={styles.modalTitle}>Unfollow {name}?</Text>
+            <Text style={styles.modalSubtitle}>You will stop seeing their updates in your feed.</Text>
+            
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity 
+                style={styles.modalCancelBtn} 
+                onPress={() => setShowUnfollowModal(false)}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.modalConfirmBtn} 
+                onPress={executeUnfollow}
+              >
+                <Text style={styles.modalConfirmBtnText}>Unfollow</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -517,8 +681,8 @@ const styles = StyleSheet.create({
   followBtn: {
     flex: 1.5,
     height: 44,
-    backgroundColor: COLORS.blue,
-    borderRadius: 8,
+    backgroundColor: '#1BC47D', // Premium green accent
+    borderRadius: 22, // Rounded buttons
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -618,4 +782,76 @@ const styles = StyleSheet.create({
   reviewDate: { fontSize: 11, color: COLORS.textMuted, marginTop: 2 },
   reviewStarsRow: { flexDirection: 'row' },
   reviewText: { fontSize: 13, color: COLORS.textDark, marginTop: 8, lineHeight: 18 },
+  
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: width * 0.85,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalAvatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+  },
+  modalCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textDark,
+  },
+  modalConfirmBtn: {
+    flex: 1,
+    height: 44,
+    backgroundColor: '#EF4444',
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalConfirmBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.white,
+  },
 });

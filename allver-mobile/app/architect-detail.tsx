@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking, Alert, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { BACKEND_URL } from '../constants/Config';
 
 const { width } = Dimensions.get('window');
 
@@ -27,15 +28,15 @@ export default function ArchitectDetailScreen() {
   const params = useLocalSearchParams();
 
   // Dynamic values with fallbacks to Neha Sharma (from third screenshot)
-  const architectId = (params.id as string) || '1';
+  const architectId = (params.id as string) || '60c72b2f9b1d8a2a4c8b0001';
   const name = (params.name as string) || 'Ar. Neha Sharma';
-  const avatar = (params.avatar as string) || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80';
+  const avatar = (params.avatar as string) || '';
   const coverImage = (params.coverImage as string) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80';
   const rating = (params.rating as string) || '4.8';
   const reviews = (params.reviews as string) || '124';
   const location = (params.location as string) || 'Mumbai, Maharashtra';
   const experience = (params.experience as string) || '8+ Years';
-  const projectsCount = (params.projects as string) || '120';
+  const projectsCount = (params.projects as string) || '0';
   const followersCount = (params.followers as string) || '256';
   const firmName = (params.firmName as string) || 'Design Space Architects';
   const phone = (params.phone as string) || '+91 98765 43210';
@@ -46,6 +47,8 @@ export default function ArchitectDetailScreen() {
   const [activeTab, setActiveTab] = useState<'projects' | 'videos' | 'team' | 'reviews'>('projects');
   const [isFollowing, setIsFollowing] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [followers, setFollowers] = useState<number>(parseInt(followersCount, 10) || 0);
+  const [showUnfollowModal, setShowUnfollowModal] = useState(false);
 
   useEffect(() => {
     let user = (global as any).currentUser;
@@ -63,6 +66,91 @@ export default function ArchitectDetailScreen() {
       setCurrentUser(user);
     }
   }, []);
+
+  useEffect(() => {
+    if (currentUser?._id && architectId) {
+      // Fetch follow status
+      fetch(`${BACKEND_URL}/api/follow/status/${architectId}?followerId=${currentUser._id}`)
+        .then(res => res.json())
+        .then(data => {
+          setIsFollowing(!!data.isFollowing);
+        })
+        .catch(err => console.error("Error fetching follow status:", err));
+
+      // Fetch live user info (followers count)
+      fetch(`${BACKEND_URL}/api/professional/${architectId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.professional) {
+            setFollowers(data.professional.followersCount || 0);
+          }
+        })
+        .catch(err => console.error("Error fetching professional info:", err));
+    }
+  }, [currentUser, architectId]);
+
+  const handleFollowPress = () => {
+    if (!currentUser) {
+      Alert.alert('Login Required', 'Please log in to follow other users.');
+      return;
+    }
+
+    if (isFollowing) {
+      setShowUnfollowModal(true);
+    } else {
+      executeFollow();
+    }
+  };
+
+  const executeFollow = async () => {
+    // Optimistic update
+    setIsFollowing(true);
+    setFollowers(prev => prev + 1);
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/follow/${architectId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: currentUser._id }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Error following user');
+      }
+    } catch (error: any) {
+      // Rollback
+      setIsFollowing(false);
+      setFollowers(prev => Math.max(0, prev - 1));
+      Alert.alert('Error', error.message || 'Could not follow user.');
+    }
+  };
+
+  const executeUnfollow = async () => {
+    setShowUnfollowModal(false);
+    
+    // Optimistic update
+    setIsFollowing(false);
+    setFollowers(prev => Math.max(0, prev - 1));
+
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/unfollow/${architectId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ followerId: currentUser._id }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Error unfollowing user');
+      }
+    } catch (error: any) {
+      // Rollback
+      setIsFollowing(true);
+      setFollowers(prev => prev + 1);
+      Alert.alert('Error', error.message || 'Could not unfollow user.');
+    }
+  };
 
   const isOwnProfile = currentUser && currentUser._id === architectId;
 
@@ -123,7 +211,7 @@ export default function ArchitectDetailScreen() {
         <View style={styles.coverContainer}>
           <Image source={{ uri: coverImage }} style={styles.coverImage} contentFit="cover" />
           <View style={styles.avatarWrapper}>
-            <Image source={{ uri: avatar }} style={styles.avatarImage} contentFit="cover" />
+            <Image source={avatar ? { uri: avatar } : require('@/assets/images/app-icon.png')} style={styles.avatarImage} contentFit={avatar ? "cover" : "contain"} />
             <View style={styles.verifiedBadge}>
               <Feather name="check" size={12} color={COLORS.white} />
             </View>
@@ -134,9 +222,17 @@ export default function ArchitectDetailScreen() {
         <View style={styles.profileDetailsBlock}>
           <View style={styles.nameSection}>
             <Text style={styles.profileName}>{firmName}</Text>
-            <TouchableOpacity style={styles.followersContainer}>
+            <TouchableOpacity 
+              style={styles.followersContainer}
+              onPress={() => {
+                router.push({
+                  pathname: '/followers-list',
+                  params: { userId: architectId, type: 'followers', userName: firmName || name }
+                });
+              }}
+            >
               <Feather name="users" size={14} color={COLORS.textMuted} />
-              <Text style={styles.followersText}>{followersCount} Followers</Text>
+              <Text style={styles.followersText}>{followers} Followers</Text>
             </TouchableOpacity>
           </View>
           
@@ -153,7 +249,7 @@ export default function ArchitectDetailScreen() {
             </View>
             <View style={styles.infoTag}>
               <Feather name="grid" size={14} color={COLORS.blue} />
-              <Text style={styles.infoTagText}>{projectsCount}+ Projects</Text>
+              <Text style={styles.infoTagText}>{projectsCount} Projects</Text>
             </View>
             <View style={styles.infoTag}>
               <Feather name="map-pin" size={14} color={COLORS.green} />
@@ -187,11 +283,11 @@ export default function ArchitectDetailScreen() {
               <View style={styles.actionButtonsRow}>
                 <TouchableOpacity 
                   style={[styles.followBtn, isFollowing && styles.followingBtn]} 
-                  onPress={() => setIsFollowing(!isFollowing)}
+                  onPress={handleFollowPress}
                 >
                   <Feather name={isFollowing ? "check" : "user-plus"} size={16} color={isFollowing ? COLORS.textDark : COLORS.white} style={{ marginRight: 6 }} />
                   <Text style={[styles.followBtnText, isFollowing && { color: COLORS.textDark }]}>
-                    {isFollowing ? 'Following' : 'Follow'}
+                    {isFollowing ? 'Following \u2713' : 'Follow'}
                   </Text>
                 </TouchableOpacity>
 
@@ -200,10 +296,27 @@ export default function ArchitectDetailScreen() {
                   <Text style={styles.outlineActionText}>Chat</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.outlineActionBtn}>
-                  <Feather name="message-square" size={16} color={COLORS.textDark} style={{ marginRight: 6 }} />
-                  <Text style={styles.outlineActionText}>Message</Text>
-                </TouchableOpacity>
+                <TouchableOpacity 
+                style={[styles.outlineActionBtn, { borderColor: COLORS.blue, backgroundColor: '#EFF6FF' }]}
+                onPress={() => {
+                  if (!currentUser) {
+                    Alert.alert('Login Required', 'Please log in to send messages.');
+                    return;
+                  }
+                  router.push({
+                    pathname: '/chat-room',
+                    params: {
+                      receiverId: architectId,
+                      name: name,
+                      role: 'Architect',
+                      avatar: avatar,
+                    }
+                  });
+                }}
+              >
+                <Feather name="message-circle" size={16} color={COLORS.blue} style={{ marginRight: 6 }} />
+                <Text style={[styles.outlineActionText, { color: COLORS.blue }]}>Message</Text>
+              </TouchableOpacity>
               </View>
 
               <TouchableOpacity style={styles.hireBtn}>
@@ -421,6 +534,38 @@ export default function ArchitectDetailScreen() {
           </View>
         </View>
       </ScrollView>
+
+      {/* Unfollow Confirmation Modal */}
+      <Modal
+        visible={showUnfollowModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowUnfollowModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Image source={{ uri: avatar }} style={styles.modalAvatar} />
+            <Text style={styles.modalTitle}>Unfollow {firmName || name}?</Text>
+            <Text style={styles.modalSubtitle}>You will stop seeing their updates in your feed.</Text>
+            
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity 
+                style={styles.modalCancelBtn} 
+                onPress={() => setShowUnfollowModal(false)}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.modalConfirmBtn} 
+                onPress={executeUnfollow}
+              >
+                <Text style={styles.modalConfirmBtnText}>Unfollow</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -511,8 +656,8 @@ const styles = StyleSheet.create({
   followBtn: {
     flex: 2,
     height: 44,
-    backgroundColor: COLORS.blue,
-    borderRadius: 8,
+    backgroundColor: '#1BC47D', // Premium green accent
+    borderRadius: 22, // Rounded buttons
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -664,4 +809,76 @@ const styles = StyleSheet.create({
   reviewText: { fontSize: 13, color: COLORS.textDark, marginTop: 10, lineHeight: 18 },
   reviewImagesRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   reviewImgThumb: { width: 50, height: 50, borderRadius: 6 },
+  
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: width * 0.85,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalAvatar: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+  },
+  modalCancelBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textDark,
+  },
+  modalConfirmBtn: {
+    flex: 1,
+    height: 44,
+    backgroundColor: '#EF4444',
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalConfirmBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.white,
+  },
 });

@@ -5,6 +5,7 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
+import NotificationBell from '../components/NotificationBell';
 
 const { width } = Dimensions.get('window');
 
@@ -99,7 +100,6 @@ export default function ContractorsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [locationQuery, setLocationQuery] = useState('');
   const [ratingQuery, setRatingQuery] = useState('');
-  const [showRatingDropdown, setShowRatingDropdown] = useState(false);
   const [contractors, setContractors] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -136,10 +136,6 @@ export default function ContractorsScreen() {
     return matchesSearch && matchesLocation && matchesRating;
   });
 
-  const handleSelectRating = (rating: string) => {
-    setRatingQuery(rating);
-    setShowRatingDropdown(false);
-  };
 
   const navigateToDetail = (contractor: any) => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -192,69 +188,51 @@ export default function ContractorsScreen() {
             <Text style={styles.headerTitle}>Contractor</Text>
             <Text style={styles.headerSubtitle}>Find the best contractors for your project</Text>
           </View>
-          <TouchableOpacity style={styles.notificationBtn}>
-            <Feather name="bell" size={22} color={COLORS.textDark} />
-            <View style={styles.redDot} />
-          </TouchableOpacity>
+          <NotificationBell size={22} color={COLORS.textDark} style={styles.notificationBtn} />
         </View>
 
         {/* Search & Filter Bar */}
         <View style={styles.filterSection}>
-          <View style={styles.searchBox}>
-            <Feather name="user" size={18} color={COLORS.textMuted} style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Enter contractor name"
-              placeholderTextColor={COLORS.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
+          <View style={styles.filterRow}>
+            <View style={[styles.searchBox, { flex: 1 }]}>
+              <Feather name="search" size={14} color={COLORS.textMuted} style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Name or skill"
+                placeholderTextColor={COLORS.textMuted}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
+            <View style={[styles.searchBox, { flex: 1 }]}>
+              <Feather name="map-pin" size={14} color={COLORS.textMuted} style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Location"
+                placeholderTextColor={COLORS.textMuted}
+                value={locationQuery}
+                onChangeText={setLocationQuery}
+              />
+            </View>
           </View>
 
-          <View style={styles.searchBox}>
-            <Feather name="map-pin" size={18} color={COLORS.textMuted} style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Enter location"
-              placeholderTextColor={COLORS.textMuted}
-              value={locationQuery}
-              onChangeText={setLocationQuery}
-            />
-            <TouchableOpacity style={styles.locationGps}>
-              <Feather name="navigation" size={16} color={COLORS.textMuted} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Rating Dropdown Trigger */}
-          <View style={styles.dropdownContainer}>
-            <TouchableOpacity 
-              style={styles.dropdownTrigger} 
-              onPress={() => setShowRatingDropdown(!showRatingDropdown)}
-            >
-              <Feather name="star" size={18} color={COLORS.textMuted} style={styles.searchIcon} />
-              <Text style={[styles.dropdownValue, !ratingQuery && { color: COLORS.textMuted }]}>
-                {ratingQuery ? `${ratingQuery}+ Rating` : 'Select rating'}
-              </Text>
-              <Feather name={showRatingDropdown ? "chevron-up" : "chevron-down"} size={18} color={COLORS.textDark} />
-            </TouchableOpacity>
-
-            {showRatingDropdown && (
-              <View style={styles.dropdownMenu}>
-                <TouchableOpacity style={styles.dropdownOption} onPress={() => handleSelectRating('')}>
-                  <Text style={styles.dropdownOptionText}>All Ratings</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.dropdownOption} onPress={() => handleSelectRating('4.8')}>
-                  <Text style={styles.dropdownOptionText}>4.8+ Excellent</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.dropdownOption} onPress={() => handleSelectRating('4.7')}>
-                  <Text style={styles.dropdownOptionText}>4.7+ Very Good</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.dropdownOption} onPress={() => handleSelectRating('4.5')}>
-                  <Text style={styles.dropdownOptionText}>4.5+ Good</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
+          {/* Rating Pills */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ratingPillScroll} contentContainerStyle={styles.ratingPillRow}>
+            {[
+              { label: 'All', value: '' },
+              { label: '⭐ 4.8+', value: '4.8' },
+              { label: '⭐ 4.5+', value: '4.5' },
+              { label: '⭐ 4.0+', value: '4.0' },
+            ].map((r) => (
+              <TouchableOpacity
+                key={r.value}
+                style={[styles.ratingPill, ratingQuery === r.value && styles.ratingPillActive]}
+                onPress={() => setRatingQuery(r.value)}
+              >
+                <Text style={[styles.ratingPillText, ratingQuery === r.value && styles.ratingPillTextActive]}>{r.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
 
         {/* Contractors List */}
@@ -345,19 +323,17 @@ const styles = StyleSheet.create({
   redDot: { position: 'absolute', top: 5, right: 6, width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', borderWidth: 1, borderColor: COLORS.white },
 
   /* FILTERS */
-  filterSection: { paddingHorizontal: 20, paddingTop: 15, gap: 10 },
-  searchBox: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 12, height: 44, backgroundColor: COLORS.bgLight },
-  searchIcon: { marginRight: 10 },
-  searchInput: { flex: 1, fontSize: 14, color: COLORS.textDark, height: '100%' },
-  locationGps: { padding: 5 },
-
-  /* DROPDOWN */
-  dropdownContainer: { position: 'relative', zIndex: 10 },
-  dropdownTrigger: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 12, height: 44, backgroundColor: COLORS.bgLight },
-  dropdownValue: { flex: 1, fontSize: 14, color: COLORS.textDark },
-  dropdownMenu: { position: 'absolute', top: 48, left: 0, right: 0, backgroundColor: COLORS.white, borderRadius: 8, borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 5, paddingVertical: 5 },
-  dropdownOption: { paddingHorizontal: 15, paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: COLORS.border },
-  dropdownOptionText: { fontSize: 14, color: COLORS.textDark },
+  filterSection: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 8 },
+  filterRow: { flexDirection: 'row', gap: 8 },
+  searchBox: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, paddingHorizontal: 10, height: 38, backgroundColor: COLORS.bgLight },
+  searchIcon: { marginRight: 6 },
+  searchInput: { flex: 1, fontSize: 13, color: COLORS.textDark, height: '100%' },
+  ratingPillScroll: { flexGrow: 0 },
+  ratingPillRow: { flexDirection: 'row', gap: 8, paddingBottom: 2 },
+  ratingPill: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: COLORS.bgLight, borderWidth: 1, borderColor: COLORS.border },
+  ratingPillActive: { backgroundColor: '#F0FDF4', borderColor: COLORS.green },
+  ratingPillText: { fontSize: 12, color: COLORS.textMuted, fontWeight: '500' },
+  ratingPillTextActive: { color: COLORS.green, fontWeight: '700' },
 
   /* CONTRACTOR CARDS */
   contractorCard: { backgroundColor: COLORS.white, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, padding: 15, marginBottom: 15, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },

@@ -410,7 +410,7 @@ export default function EditProfileScreen() {
                     {profilePhoto ? (
                       <Image source={{ uri: profilePhoto }} style={styles.avatarImage} contentFit="cover" />
                     ) : (
-                      <Text style={styles.avatarInitials}>{initials}</Text>
+                      <Image source={require('@/assets/images/app-icon.png')} style={styles.avatarImage} contentFit="contain" />
                     )}
                     <TouchableOpacity 
                       style={styles.avatarCamIcon}
