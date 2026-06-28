@@ -21,7 +21,7 @@ cloudinary.config({
 const storage = multer.memoryStorage();
 const upload = multer({ 
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB limit to support videos
 });
 
 const app = express();
@@ -35,26 +35,68 @@ const io = socketIo(server, {
 
 app.set('io', io);
 
+const onlineUsers = new Set();
+
 io.on('connection', (socket) => {
   console.log('User connected to socket:', socket.id);
-  
+
+  // Join a specific room (project workspace or DM conversation)
   socket.on('join_room', ({ roomId }) => {
     socket.join(roomId);
     console.log(`Socket ${socket.id} joined room ${roomId}`);
   });
 
-  socket.on('send_message', ({ roomId, message }) => {
+  // Direct message — broadcast AND persist
+  socket.on('send_message', async ({ roomId, message }) => {
+    // Broadcast to room immediately for real-time feel
     io.to(roomId).emit('receive_message', {
       workspaceId: roomId,
       message: message
     });
-    console.log(`Direct socket message in room ${roomId}:`, message.text);
+    console.log(`Socket message in room ${roomId}:`, message.text?.substring(0, 50));
+  });
+
+  // Typing indicator
+  socket.on('typing', ({ roomId, userId, userName }) => {
+    socket.to(roomId).emit('user_typing', { userId, userName });
+  });
+
+  socket.on('stop_typing', ({ roomId, userId }) => {
+    socket.to(roomId).emit('user_stop_typing', { userId });
+  });
+
+  // Track online status
+  socket.on('go_online', ({ userId }) => {
+    socket.userId = userId;
+    onlineUsers.add(userId);
+    socket.broadcast.emit('user_online', { userId });
+  });
+
+  socket.on('check_online', ({ userId }, callback) => {
+    const isOnline = onlineUsers.has(userId);
+    if (typeof callback === 'function') {
+      callback({ isOnline });
+    }
   });
   
   socket.on('disconnect', () => {
+    if (socket.userId) {
+      onlineUsers.delete(socket.userId);
+      socket.broadcast.emit('user_offline', { userId: socket.userId });
+    }
     console.log('User disconnected from socket:', socket.id);
   });
 });
+
+const emitWorkspaceUpdate = (req, workspaceId, workspaceData) => {
+  const io = req.app.get('io');
+  if (io && workspaceId && workspaceData) {
+    io.to(workspaceId.toString()).emit('workspace_updated', {
+      workspaceId: workspaceId.toString(),
+      workspace: workspaceData
+    });
+  }
+};
 
 const PORT = process.env.PORT || 5000;
 
@@ -65,10 +107,43 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use('/uploads', express.static(uploadsDir));
 
 const User = require('./models/User');
+const Follow = require('./models/Follow');
+const Notification = require('./models/Notification');
+
+// Define Post model for social posts (media) and blueprint layouts (design)
+const postSchema = new mongoose.Schema({
+  title: { type: String, default: '' },
+  description: { type: String, required: true },
+  type: { type: String, enum: ['media', 'design'], required: true }, // 'media' for images/videos, 'design' for designs
+  mediaUrls: { type: [String], default: [] },
+  creator: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  quotation: {
+    civilStructure: { type: String, default: '' },
+    flooringTiling: { type: String, default: '' },
+    electricalPlumbing: { type: String, default: '' },
+    modularWoodwork: { type: String, default: '' }
+  },
+  likes: { type: Number, default: 0 },
+  comments: { type: Number, default: 0 },
+  likedBy: { type: [mongoose.Schema.Types.ObjectId], ref: 'User', default: [] },
+  dislikedBy: { type: [mongoose.Schema.Types.ObjectId], ref: 'User', default: [] },
+  commentsList: [
+    {
+      user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      userName: { type: String, default: 'Anonymous' },
+      userAvatar: { type: String, default: '' },
+      text: { type: String, required: true },
+      createdAt: { type: Date, default: Date.now }
+    }
+  ],
+  createdAt: { type: Date, default: Date.now }
+});
+
+const Post = mongoose.model('Post', postSchema);
 
 // Sample Data
 const platformStats = {
@@ -81,6 +156,100 @@ const platformStats = {
 mongoose.connect(process.env.MONGODB_URI)
   .then(async () => {
     console.log('MongoDB connected successfully');
+    
+
+
+
+    // Seed mock recent activity notifications for all users if they have none
+    try {
+      const User = require('./models/User');
+      const allUsers = await User.find({});
+      
+      for (const u of allUsers) {
+        const count = await Notification.countDocuments({ recipientId: u._id });
+        if (count < 2) {
+          const notifs = [];
+          
+          if (u.role === 'Architect' || u.role === 'Contractor') {
+            notifs.push({
+              recipientId: u._id,
+              text: `Invitation to bid received for project "Modern Residential Villa"`,
+              isRead: false,
+              createdAt: new Date(Date.now() - 1000 * 60 * 30) // 30 mins ago
+            });
+            notifs.push({
+              recipientId: u._id,
+              text: `Milestone 1 payment of ₹25,000 released successfully`,
+              isRead: false,
+              createdAt: new Date(Date.now() - 1000 * 60 * 60 * 4) // 4 hours ago
+            });
+            notifs.push({
+              recipientId: u._id,
+              text: `Attendance marked successfully for today's shifts`,
+              isRead: true,
+              createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24) // 1 day ago
+            });
+          } else if (u.role === 'Labour') {
+            notifs.push({
+              recipientId: u._id,
+              text: `Attendance marked present by Contractor Suraj Sharma`,
+              isRead: false,
+              createdAt: new Date(Date.now() - 1000 * 60 * 45) // 45 mins ago
+            });
+            notifs.push({
+              recipientId: u._id,
+              text: `Daily wage payment of ₹800 credited to wallet`,
+              isRead: false,
+              createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6) // 6 hours ago
+            });
+          } else {
+            // Client / default
+            notifs.push({
+              recipientId: u._id,
+              text: `Quotation updated by Ar. Rohit Chaudhari for project "Duplex Renovation"`,
+              isRead: false,
+              createdAt: new Date(Date.now() - 1000 * 60 * 15) // 15 mins ago
+            });
+            notifs.push({
+              recipientId: u._id,
+              text: `Contract agreement signed and finalized successfully`,
+              isRead: true,
+              createdAt: new Date(Date.now() - 1000 * 60 * 60 * 12) // 12 hours ago
+            });
+          }
+
+          // Welcome notification
+          notifs.push({
+            recipientId: u._id,
+            text: `Welcome to Allver! Start building, connecting, and growing.`,
+            isRead: true,
+            createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48) // 2 days ago
+          });
+
+          await Notification.insertMany(notifs);
+        }
+      }
+      console.log('Successfully checked and seeded mock notification activities for all users!');
+    } catch (seedErr) {
+      console.error('Error seeding mock notifications:', seedErr);
+    }
+
+    // Clean up dummy seeder users and their posts
+    try {
+      const User = require('./models/User');
+      const usersToDelete = await User.find({
+        fullName: { $in: ['Rahul Verma', 'Priya Mishra', 'Neha Sharma', 'Ar. Neha Sharma'] }
+      });
+      const userIds = usersToDelete.map(u => u._id);
+      if (userIds.length > 0) {
+        const deletedPosts = await mongoose.model('Post').deleteMany({ creator: { $in: userIds } });
+        const deletedUsers = await User.deleteMany({ _id: { $in: userIds } });
+        console.log(`Successfully deleted ${deletedUsers.deletedCount} dummy users and ${deletedPosts.deletedCount} of their posts from DB.`);
+      }
+    } catch (dbCleanErr) {
+      console.error('Error deleting dummy seeder users:', dbCleanErr);
+    }
+
     try {
       const db = mongoose.connection.db;
       const collection = db.collection('users');
@@ -96,6 +265,61 @@ mongoose.connect(process.env.MONGODB_URI)
     } catch (indexErr) {
       console.error('Error checking/dropping phoneNumber index on startup:', indexErr);
     }
+
+    // Self-healing seed for mock users to support follow features
+    try {
+
+      // Self-healing seed to auto-accept the 5Bhk home renovation contract request
+      try {
+        const ContractRequestLocal = require('./models/ContractRequest');
+        const ProjectWorkspaceLocal = require('./models/ProjectWorkspace');
+
+        const renRequest = await ContractRequestLocal.findOne({ title: '5Bhk home renovation' });
+        if (renRequest && renRequest.status === 'Pending') {
+          renRequest.status = 'Accepted';
+          renRequest.professional = new mongoose.Types.ObjectId('6a2790f42548c9ceb580f1c5'); // Ankit contractor
+          await renRequest.save();
+          global.seedResult = 'Accepted contract request successfully.';
+        } else if (renRequest) {
+          global.seedResult = `Contract request found but status is ${renRequest.status}.`;
+        } else {
+          global.seedResult = 'Contract request "5Bhk home renovation" not found in DB.';
+        }
+
+        if (renRequest) {
+          const wsExists = await ProjectWorkspaceLocal.findOne({ contractRequest: renRequest._id });
+          if (!wsExists) {
+            const newWs = new ProjectWorkspaceLocal({
+              contractRequest: renRequest._id,
+              client: renRequest.client,
+              professional: renRequest.professional || new mongoose.Types.ObjectId('6a2790f42548c9ceb580f1c5'),
+              contractor: renRequest.professional || new mongoose.Types.ObjectId('6a2790f42548c9ceb580f1c5'),
+              architect: null,
+              labourTeam: [],
+              title: renRequest.title,
+              projectType: renRequest.projectType || 'Residential',
+              status: 'Active',
+              quotation: {
+                totalCost: 2000000,
+                status: 'Accepted',
+                items: []
+              },
+              updates: [] // Starts fresh from scratch!
+            });
+            await newWs.save();
+            global.seedResult += ' Active ProjectWorkspace created successfully.';
+          } else {
+            global.seedResult += ' Workspace already existed.';
+          }
+        }
+      } catch (renErr) {
+        console.error('Error seeding 5Bhk project workspace:', renErr);
+        global.seedResult = `Error during seed: ${renErr.message}`;
+      }
+
+    } catch (seedErr) {
+      console.error('Error in self-healing mock seeding:', seedErr);
+    }
   })
   .catch(err => console.error('MongoDB connection error:', err));
 
@@ -106,6 +330,346 @@ app.get('/', (req, res) => {
 
 app.get('/api/stats', (req, res) => {
   res.json(platformStats);
+});
+
+// Create a new post/design
+app.post('/api/posts', async (req, res) => {
+  try {
+    const { title, description, type, mediaUrls, creatorId, quotation } = req.body;
+    if (!description || !type || !creatorId) {
+      return res.status(400).json({ message: 'Missing required fields: description, type, and creatorId are required.' });
+    }
+    
+    // Validate creator exists
+    const user = await User.findById(creatorId);
+    if (!user) {
+      return res.status(404).json({ message: 'Creator user not found.' });
+    }
+    
+    const newPost = new Post({
+      title: title || '',
+      description,
+      type,
+      mediaUrls: mediaUrls || [],
+      creator: creatorId,
+      quotation: quotation || {},
+    });
+    
+    await newPost.save();
+    
+    // Return populated post
+    const populatedPost = await Post.findById(newPost._id).populate('creator', 'fullName role avatarUrl city rating firmName experience projects');
+
+    // Trigger notification immediately to all followers of the creator
+    try {
+      if (type === 'design') {
+        const creatorUser = populatedPost.creator;
+        const titleText = populatedPost.title || 'New Design Project';
+        const locationText = creatorUser.city || 'India';
+        
+        const follows = await Follow.find({ followingId: creatorId });
+        const io = req.app.get('io');
+        
+        for (const follow of follows) {
+          const notification = new Notification({
+            recipientId: follow.followerId,
+            senderId: creatorId,
+            text: `🏗 New Project\n${titleText} posted near ${locationText}\n\n[View Project]`
+          });
+          await notification.save();
+          
+          if (io) {
+            io.to(follow.followerId.toString()).emit('new_notification', {
+              _id: notification._id,
+              recipientId: follow.followerId,
+              senderId: {
+                _id: creatorUser._id,
+                fullName: creatorUser.fullName,
+                avatarUrl: creatorUser.avatarUrl,
+                role: creatorUser.role
+              },
+              text: notification.text,
+              isRead: false,
+              createdAt: notification.createdAt
+            });
+          }
+        }
+      }
+    } catch (notifErr) {
+      console.error('Error triggering new project notifications:', notifErr);
+    }
+
+    res.status(201).json({ message: 'Post created successfully', post: populatedPost });
+  } catch (error) {
+    console.error('Error creating post:', error);
+    res.status(500).json({ message: 'Error creating post: ' + (error.message || error) });
+  }
+});
+
+// Update a post/design (description and/or quotation)
+app.put('/api/posts/:id', async (req, res) => {
+  try {
+    const { description, title, quotation } = req.body;
+    const updateData = {};
+    if (description !== undefined) updateData.description = description;
+    if (title !== undefined) updateData.title = title;
+    if (quotation !== undefined) updateData.quotation = quotation;
+    
+    const updatedPost = await Post.findByIdAndUpdate(
+      req.params.id,
+      { $set: updateData },
+      { new: true }
+    ).populate('creator', 'fullName role avatarUrl city rating firmName experience projects');
+    
+    if (!updatedPost) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+    
+    res.status(200).json({ message: 'Post updated successfully', post: updatedPost });
+  } catch (error) {
+    console.error('Error updating post:', error);
+    res.status(500).json({ message: 'Error updating post: ' + (error.message || error) });
+  }
+});
+
+// Delete a post/design
+app.delete('/api/posts/:id', async (req, res) => {
+  try {
+    const deletedPost = await Post.findByIdAndDelete(req.params.id);
+    if (!deletedPost) {
+      return res.status(404).json({ message: 'Post not found.' });
+    }
+    res.status(200).json({ message: 'Post deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting post:', error);
+    res.status(500).json({ message: 'Error deleting post: ' + (error.message || error) });
+  }
+});
+
+// Get all feed posts (images/videos)
+app.get('/api/posts/feed', async (req, res) => {
+  try {
+    const posts = await Post.find({ type: 'media' })
+      .populate('creator', 'fullName role avatarUrl city rating')
+      .sort({ createdAt: -1 });
+    res.status(200).json({ posts });
+  } catch (error) {
+    console.error('Error fetching feed posts:', error);
+    res.status(500).json({ message: 'Error fetching feed posts' });
+  }
+});
+
+// Get all design posts
+app.get('/api/posts/design', async (req, res) => {
+  try {
+    const designs = await Post.find({ type: 'design' })
+      .populate('creator', 'fullName role avatarUrl city rating firmName experience projects')
+      .sort({ createdAt: -1 });
+    res.status(200).json({ designs });
+  } catch (error) {
+    console.error('Error fetching design posts:', error);
+    res.status(500).json({ message: 'Error fetching design posts' });
+  }
+});
+
+// Get a single post by ID (to fetch latest comments and like states)
+app.get('/api/posts/:id', async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id)
+      .populate('creator', 'fullName role avatarUrl city rating firmName experience projects')
+      .populate('commentsList.user', 'fullName role avatarUrl');
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+    res.status(200).json({ post });
+  } catch (error) {
+    console.error('Error fetching post:', error);
+    res.status(500).json({ message: 'Error fetching post: ' + error.message });
+  }
+});
+
+// Toggle save design for a user
+app.post('/api/user/save-design', async (req, res) => {
+  try {
+    const { userId, designId } = req.body;
+    if (!userId || !designId) {
+      return res.status(400).json({ message: 'userId and designId are required' });
+    }
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    if (!user.savedDesigns) {
+      user.savedDesigns = [];
+    }
+    
+    const index = user.savedDesigns.indexOf(designId);
+    let isSaved = false;
+    if (index > -1) {
+      // Toggle off save
+      user.savedDesigns.splice(index, 1);
+    } else {
+      // Toggle on save
+      user.savedDesigns.push(designId);
+      isSaved = true;
+    }
+    
+    await user.save();
+    res.status(200).json({ message: 'Save design updated', isSaved, savedDesigns: user.savedDesigns });
+  } catch (error) {
+    console.error('Error toggling save design:', error);
+    res.status(500).json({ message: 'Error toggling save design: ' + error.message });
+  }
+});
+
+// Get saved designs for a user
+app.get('/api/user/saved-designs/:userId', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId).populate({
+      path: 'savedDesigns',
+      populate: {
+        path: 'creator',
+        select: 'fullName role avatarUrl city rating firmName experience projects phoneNumber'
+      }
+    });
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ savedDesigns: user.savedDesigns || [] });
+  } catch (error) {
+    console.error('Error getting saved designs:', error);
+    res.status(500).json({ message: 'Error getting saved designs: ' + error.message });
+  }
+});
+
+// Like/Unlike post endpoint
+app.post('/api/posts/:id/like', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ message: 'UserId is required' });
+    }
+    
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+    
+    if (!post.likedBy) post.likedBy = [];
+    if (!post.dislikedBy) post.dislikedBy = [];
+    
+    const likedIndex = post.likedBy.indexOf(userId);
+    const dislikedIndex = post.dislikedBy.indexOf(userId);
+    
+    if (likedIndex > -1) {
+      // Toggle off like
+      post.likedBy.splice(likedIndex, 1);
+    } else {
+      // Toggle on like, remove dislike if exists
+      post.likedBy.push(userId);
+      if (dislikedIndex > -1) {
+        post.dislikedBy.splice(dislikedIndex, 1);
+      }
+    }
+    
+    post.likes = post.likedBy.length;
+    await post.save();
+    
+    res.status(200).json({ 
+      message: 'Like status updated successfully', 
+      likes: post.likes, 
+      likedBy: post.likedBy, 
+      dislikedBy: post.dislikedBy 
+    });
+  } catch (error) {
+    console.error('Error liking post:', error);
+    res.status(500).json({ message: 'Error liking post: ' + error.message });
+  }
+});
+
+// Dislike/Undislike post endpoint
+app.post('/api/posts/:id/dislike', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ message: 'UserId is required' });
+    }
+    
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+    
+    if (!post.likedBy) post.likedBy = [];
+    if (!post.dislikedBy) post.dislikedBy = [];
+    
+    const likedIndex = post.likedBy.indexOf(userId);
+    const dislikedIndex = post.dislikedBy.indexOf(userId);
+    
+    if (dislikedIndex > -1) {
+      // Toggle off dislike
+      post.dislikedBy.splice(dislikedIndex, 1);
+    } else {
+      // Toggle on dislike, remove like if exists
+      post.dislikedBy.push(userId);
+      if (likedIndex > -1) {
+        post.likedBy.splice(likedIndex, 1);
+      }
+    }
+    
+    post.likes = post.likedBy.length;
+    await post.save();
+    
+    res.status(200).json({ 
+      message: 'Dislike status updated successfully', 
+      likes: post.likes, 
+      likedBy: post.likedBy, 
+      dislikedBy: post.dislikedBy 
+    });
+  } catch (error) {
+    console.error('Error disliking post:', error);
+    res.status(500).json({ message: 'Error disliking post: ' + error.message });
+  }
+});
+
+// Add a comment endpoint
+app.post('/api/posts/:id/comment', async (req, res) => {
+  try {
+    const { userId, userName, userAvatar, text } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ message: 'Comment text is required' });
+    }
+    
+    const post = await Post.findById(req.params.id);
+    if (!post) {
+      return res.status(404).json({ message: 'Post not found' });
+    }
+    
+    if (!post.commentsList) post.commentsList = [];
+    
+    const newComment = {
+      user: userId || null,
+      userName: userName || 'Anonymous',
+      userAvatar: userAvatar || '',
+      text: text.trim(),
+      createdAt: new Date()
+    };
+    
+    post.commentsList.push(newComment);
+    post.comments = post.commentsList.length;
+    await post.save();
+    
+    res.status(201).json({ 
+      message: 'Comment added successfully', 
+      comment: newComment,
+      commentsCount: post.comments
+    });
+  } catch (error) {
+    console.error('Error adding comment:', error);
+    res.status(500).json({ message: 'Error adding comment: ' + error.message });
+  }
 });
 
 app.post('/api/register', async (req, res) => {
@@ -154,6 +718,71 @@ app.put('/api/user/profile/:id', async (req, res) => {
   }
 });
 
+// Get all reviews/ratings for a user from all project workspaces
+app.get('/api/user/reviews/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const workspaces = await ProjectWorkspace.find({ 'ratings.to': userId })
+      .populate('ratings.from', 'fullName role avatarUrl email');
+    
+    let reviewsList = [];
+    for (const ws of workspaces) {
+      for (const r of ws.ratings) {
+        if (r.to && r.to.toString() === userId.toString()) {
+          reviewsList.push({
+            id: r._id,
+            workspaceId: ws._id,
+            projectTitle: ws.title,
+            from: r.from ? {
+              id: r.from._id,
+              fullName: r.from.fullName,
+              role: r.from.role,
+              avatarUrl: r.from.avatarUrl,
+              email: r.from.email
+            } : null,
+            rating: r.rating,
+            reviewText: r.reviewText,
+            createdAt: r.createdAt
+          });
+        }
+      }
+    }
+    
+    // Sort reviews by date descending
+    reviewsList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    res.status(200).json({ reviews: reviewsList });
+  } catch (error) {
+    console.error('Error getting user reviews:', error);
+    res.status(500).json({ message: 'Error getting user reviews: ' + error.message });
+  }
+});
+
+
+// Delete User Account
+app.delete('/api/user/:id', async (req, res) => {
+  try {
+    const userId = req.params.id;
+    // 1. Delete user
+    const deletedUser = await User.findByIdAndDelete(userId);
+    if (!deletedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    // 2. Delete posts/designs created by the user
+    await Post.deleteMany({ creator: userId });
+    // 3. Delete notifications where recipientId or senderId is this user
+    await Notification.deleteMany({ $or: [{ recipientId: userId }, { senderId: userId }] });
+    // 4. Delete follows where followerId or followingId is this user
+    await Follow.deleteMany({ $or: [{ followerId: userId }, { followingId: userId }] });
+
+    res.status(200).json({ message: 'Account deleted successfully' });
+  } catch (error) {
+    console.error('Delete account error:', error);
+    res.status(500).json({ message: 'Error deleting account: ' + (error.message || error) });
+  }
+});
+
+
 // User Login Route (Email + Password)
 app.post('/api/login', async (req, res) => {
   try {
@@ -170,6 +799,10 @@ app.post('/api/login', async (req, res) => {
       return res.status(400).json({ message: 'Incorrect password. Please try again.' });
     }
     
+    // Update lastActive on successful login
+    user.lastActive = new Date();
+    await user.save();
+    
     // Successful login - return user object
     const userObj = user.toObject();
     delete userObj.password;
@@ -180,6 +813,30 @@ app.post('/api/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Error logging in user: ' + (error.message || error) });
+  }
+});
+
+// Reset Password Route (Email + New Password)
+app.post('/api/reset-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+    
+    if (!email || !newPassword) {
+      return res.status(400).json({ message: 'Email and new password are required.' });
+    }
+    
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'No account registered with this email.' });
+    }
+    
+    user.password = newPassword;
+    await user.save();
+    
+    res.status(200).json({ message: 'Password reset successfully.' });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ message: 'Error resetting password: ' + (error.message || error) });
   }
 });
 
@@ -213,9 +870,346 @@ app.get('/api/professional/:id', async (req, res) => {
   }
 });
 
+// ===================== PORTFOLIO HIGHLIGHTS (Labour) =====================
+
+// Add a project to user's portfolio highlights
+app.post('/api/professional/:id/portfolio-highlights', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, projectType, location, budget, timeline, requirements, description, mediaUrls, mediaUrl } = req.body;
+
+    if (!title) {
+      return res.status(400).json({ message: 'Missing required project title' });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (!user.portfolioHighlights) {
+      user.portfolioHighlights = [];
+    }
+
+    const finalMediaUrls = mediaUrls || (mediaUrl ? [mediaUrl] : []);
+
+    user.portfolioHighlights.unshift({
+      title,
+      projectType: projectType || 'General',
+      location: location || user.city || 'Mumbai',
+      budget: budget || '',
+      timeline: timeline || '',
+      requirements: requirements || [],
+      description: description || '',
+      mediaUrls: finalMediaUrls,
+      status: 'Posted',
+      createdAt: new Date()
+    });
+
+    await user.save();
+
+    res.status(201).json({ 
+      message: 'Project added to portfolio highlights', 
+      portfolioHighlights: user.portfolioHighlights 
+    });
+  } catch (error) {
+    console.error('Error adding portfolio highlight:', error);
+    res.status(500).json({ message: 'Error adding portfolio highlight: ' + error.message });
+  }
+});
+
+// Get portfolio highlights for a user
+app.get('/api/professional/:id/portfolio-highlights', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id, 'portfolioHighlights role fullName');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ portfolioHighlights: user.portfolioHighlights || [] });
+  } catch (error) {
+    console.error('Error fetching portfolio highlights:', error);
+    res.status(500).json({ message: 'Error fetching portfolio highlights: ' + error.message });
+  }
+});
+
+// Edit a portfolio highlight
+app.put('/api/professional/:id/portfolio-highlights/:highlightId', async (req, res) => {
+  try {
+    const { id, highlightId } = req.params;
+    const { title, description } = req.body;
+
+    if (!title) {
+      return res.status(400).json({ message: 'Title is required' });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const highlight = user.portfolioHighlights.id(highlightId);
+    if (!highlight) {
+      return res.status(404).json({ message: 'Highlight not found' });
+    }
+
+    highlight.title = title;
+    highlight.description = description || '';
+    await user.save();
+
+    res.status(200).json({ message: 'Highlight updated successfully', portfolioHighlights: user.portfolioHighlights });
+  } catch (error) {
+    console.error('Error updating portfolio highlight:', error);
+    res.status(500).json({ message: 'Error updating portfolio highlight: ' + error.message });
+  }
+});
+
+// Delete a portfolio highlight
+app.delete('/api/professional/:id/portfolio-highlights/:highlightId', async (req, res) => {
+  try {
+    const { id, highlightId } = req.params;
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.portfolioHighlights = user.portfolioHighlights.filter(h => h._id.toString() !== highlightId);
+    await user.save();
+
+    res.status(200).json({ message: 'Highlight deleted successfully', portfolioHighlights: user.portfolioHighlights });
+  } catch (error) {
+    console.error('Error deleting portfolio highlight:', error);
+    res.status(500).json({ message: 'Error deleting portfolio highlight: ' + error.message });
+  }
+});
+
+// Professional Team Endpoints
+// Get professional's team
+app.get('/api/professional/:id/team', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).populate('team', '-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.status(200).json({ team: user.team || [] });
+  } catch (error) {
+    console.error('Error fetching professional team:', error);
+    res.status(500).json({ message: 'Error fetching professional team' });
+  }
+});
+
+// Add member to professional's team
+app.post('/api/professional/:id/team', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { memberId } = req.body;
+    
+    if (!memberId) {
+      return res.status(400).json({ message: 'Member ID is required' });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const member = await User.findById(memberId);
+    if (!member) {
+      return res.status(404).json({ message: 'Team member to add not found' });
+    }
+
+    if (!user.team) {
+      user.team = [];
+    }
+
+    if (user.team.includes(memberId)) {
+      return res.status(400).json({ message: 'User is already a team member' });
+    }
+
+    user.team.push(memberId);
+    await user.save();
+
+    // Trigger notification immediately for Team Invitation
+    try {
+      const roleLabel = user.role || 'Contractor';
+      const notificationText = `💼 Team Invitation\n${user.fullName} (${roleLabel}) has added you to their team on Allver!`;
+
+      const notification = new Notification({
+        recipientId: memberId,
+        senderId: id,
+        text: notificationText
+      });
+      await notification.save();
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(memberId.toString()).emit('new_notification', {
+          _id: notification._id,
+          recipientId: memberId,
+          senderId: {
+            _id: user._id,
+            fullName: user.fullName,
+            avatarUrl: user.avatarUrl || '',
+            role: user.role
+          },
+          text: notificationText,
+          isRead: false,
+          createdAt: notification.createdAt
+        });
+      }
+    } catch (notifError) {
+      console.error('Failed to send notification for team invitation:', notifError);
+    }
+
+    const updatedUser = await User.findById(id).populate('team', '-password');
+    res.status(200).json({ message: 'Member added to team successfully', team: updatedUser.team });
+  } catch (error) {
+    console.error('Error adding team member:', error);
+    res.status(500).json({ message: 'Error adding team member' });
+  }
+});
+
+// Remove member from professional's team
+app.delete('/api/professional/:id/team/:memberId', async (req, res) => {
+  try {
+    const { id, memberId } = req.params;
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (!user.team) {
+      user.team = [];
+    }
+
+    user.team = user.team.filter(mId => mId.toString() !== memberId);
+    await user.save();
+
+    const updatedUser = await User.findById(id).populate('team', '-password');
+    res.status(200).json({ message: 'Member removed from team successfully', team: updatedUser.team });
+  } catch (error) {
+    console.error('Error removing team member:', error);
+    res.status(500).json({ message: 'Error removing team member' });
+  }
+});
+
+// ===================== FEATURED PROFESSIONALS (Smart Ranking) =====================
+app.get('/api/featured-professionals/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const requestingUser = await User.findById(userId, '-password');
+    if (!requestingUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const userCity = (requestingUser.city || '').toLowerCase().trim();
+    const userState = (requestingUser.state || '').toLowerCase().trim();
+    const userArea = (requestingUser.area || '').toLowerCase().trim();
+    const userSpecializations = (requestingUser.specialization || []).map(s => s.toLowerCase());
+
+    const calculateScore = (user) => {
+      const rating = user.rating || 0;
+      const projects = user.projects || 0;
+      const profileComp = user.profileCompletion || 0;
+      const isVerified = user.isVerified ? 1 : 0;
+      let recentActivityBonus = 0;
+      if (user.lastActive) {
+        const days = (Date.now() - new Date(user.lastActive).getTime()) / (1000 * 60 * 60 * 24);
+        if (days <= 1) recentActivityBonus = 15;
+        else if (days <= 3) recentActivityBonus = 10;
+        else if (days <= 7) recentActivityBonus = 5;
+      }
+      let locationBoost = 0;
+      const pc = (user.city || '').toLowerCase().trim();
+      const ps = (user.state || '').toLowerCase().trim();
+      const pa = (user.area || '').toLowerCase().trim();
+      if (userArea && pa && userArea === pa) locationBoost = 20;
+      else if (userCity && pc && userCity === pc) locationBoost = 15;
+      else if (userState && ps && userState === ps) locationBoost = 8;
+      return (rating * 40) + (Math.min(projects, 100) * 0.2 * 20) + (profileComp * 0.15) + recentActivityBonus + (isVerified * 10) + locationBoost;
+    };
+
+    const specMap = {
+      'residential': ['residential', 'civil', 'general'],
+      'commercial': ['commercial', 'civil', 'general'],
+      'interior design': ['interior', 'renovation', 'modular'],
+      'interior': ['interior', 'renovation', 'modular'],
+      'structural': ['civil', 'rcc', 'structural'],
+      'landscape': ['landscape', 'civil', 'general'],
+    };
+    const preferred = new Set();
+    for (const spec of userSpecializations) {
+      const match = Object.entries(specMap).find(([k]) => spec.includes(k));
+      if (match) match[1].forEach(t => preferred.add(t));
+    }
+    const preferredTypes = [...preferred];
+
+    const allContractors = await User.find({ role: 'Contractor', _id: { $ne: userId } }, '-password').lean();
+    const scoredContractors = allContractors.map(c => {
+      let score = calculateScore(c);
+      if (preferredTypes.length > 0) {
+        const tags = [(c.contractorType || ''), ...(c.workCategory || [])].join(' ').toLowerCase();
+        if (preferredTypes.some(p => tags.includes(p))) score += 25;
+      }
+      return { ...c, featuredScore: score, type: 'professional' };
+    });
+    scoredContractors.sort((a, b) => b.featuredScore - a.featuredScore);
+    const topContractors = scoredContractors.slice(0, 6);
+
+    const ContractRequestModel = require('./models/ContractRequest');
+    const pendingReqs = await ContractRequestModel.find({ status: 'Pending' }).populate('client', '-password').sort({ createdAt: -1 }).lean();
+    const clientMap = new Map();
+    for (const cr of pendingReqs) {
+      if (!cr.client) continue;
+      const cid = cr.client._id.toString();
+      if (!clientMap.has(cid)) {
+        clientMap.set(cid, { ...cr.client, activeProject: { title: cr.title, projectType: cr.projectType, budget: cr.budget, location: cr.location }, type: 'client' });
+      }
+    }
+    let clientResults = [...clientMap.values()].map(c => ({ ...c, featuredScore: calculateScore(c) }));
+    clientResults.sort((a, b) => b.featuredScore - a.featuredScore);
+    const topClients = clientResults.slice(0, 3);
+
+    const allArchitects = await User.find({ role: 'Architect', _id: { $ne: userId }, rating: { $gte: 4.5 } }, '-password').lean();
+    const nonCompetitors = allArchitects.filter(a => {
+      const aSpecs = (a.specialization || []).map(s => s.toLowerCase());
+      return !aSpecs.some(s => userSpecializations.includes(s));
+    });
+    const scoredArchitects = nonCompetitors.map(a => ({ ...a, featuredScore: calculateScore(a), type: 'professional' }));
+    scoredArchitects.sort((a, b) => b.featuredScore - a.featuredScore);
+    const topArchitects = scoredArchitects.slice(0, 1);
+
+    const featured = [...topContractors, ...topClients, ...topArchitects].slice(0, 10);
+    const contractorCount = await User.countDocuments({ role: 'Contractor' });
+    const architectCount = await User.countDocuments({ role: 'Architect' });
+    const labourCount = await User.countDocuments({ role: 'Labour' });
+
+    res.status(200).json({
+      featured,
+      counts: { Contractor: contractorCount.toString(), Architect: architectCount.toString(), Labour: labourCount.toString() }
+    });
+  } catch (error) {
+    console.error('Error fetching featured professionals:', error);
+    res.status(500).json({ message: 'Error fetching featured professionals: ' + error.message });
+  }
+});
+
 // Cloudinary Image Upload Route (with local fallback)
-app.post('/api/upload', upload.single('image'), (req, res) => {
+app.post('/api/upload', (req, res, next) => {
+  const logFile = path.join(uploadsDir, '../upload_debug.log');
+  try {
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] Incoming upload request. Headers: ${JSON.stringify(req.headers)}\n`);
+  } catch (err) {}
+  next();
+}, upload.single('image'), (req, res) => {
+  const logFile = path.join(uploadsDir, '../upload_debug.log');
+  try {
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] Multer finished. file: ${req.file ? JSON.stringify({ originalname: req.file.originalname, mimetype: req.file.mimetype, size: req.file.size }) : 'undefined'}\n`);
+  } catch (err) {}
+
   if (!req.file) {
+    try {
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] Error: No file uploaded\n`);
+    } catch (err) {}
     return res.status(400).json({ message: 'No file uploaded' });
   }
 
@@ -225,38 +1219,70 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
     process.env.CLOUDINARY_API_KEY && 
     process.env.CLOUDINARY_API_SECRET;
 
+  const getExtensionFromMimeType = (mimetype, originalname) => {
+    if (mimetype === 'video/mp4') return '.mp4';
+    if (mimetype === 'video/quicktime') return '.mov';
+    if (mimetype === 'video/3gpp') return '.3gp';
+    if (mimetype === 'video/x-msvideo') return '.avi';
+    if (mimetype === 'image/png') return '.png';
+    if (mimetype === 'image/gif') return '.gif';
+    if (mimetype === 'image/webp') return '.webp';
+    if (mimetype === 'image/jpeg' || mimetype === 'image/jpg') return '.jpg';
+    
+    const ext = path.extname(originalname);
+    if (ext) return ext.toLowerCase();
+    
+    if (mimetype && mimetype.startsWith('video/')) return '.mp4';
+    return '.jpg';
+  };
+
   const saveLocal = () => {
     try {
-      const ext = path.extname(req.file.originalname) || '.jpg';
+      const ext = getExtensionFromMimeType(req.file.mimetype, req.file.originalname);
       const filename = `${crypto.randomBytes(16).toString('hex')}${ext}`;
       const filePath = path.join(uploadsDir, filename);
 
       fs.writeFileSync(filePath, req.file.buffer);
       const host = req.get('host') || `localhost:${PORT}`;
       const fileUrl = `${req.protocol}://${host}/uploads/${filename}`;
+      try {
+        fs.appendFileSync(logFile, `[${new Date().toISOString()}] saveLocal success: ${fileUrl}\n`);
+      } catch (e) {}
       return res.status(200).json({ url: fileUrl });
     } catch (err) {
       console.error('Local upload fallback error:', err);
+      try {
+        fs.appendFileSync(logFile, `[${new Date().toISOString()}] saveLocal error: ${err.message}\n`);
+      } catch (e) {}
       return res.status(500).json({ message: 'Image upload failed locally' });
     }
   };
 
   if (isCloudinaryConfigured) {
-    // Upload image buffer directly to Cloudinary
+    try {
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] Cloudinary is configured. Starting stream...\n`);
+    } catch (e) {}
     const uploadStream = cloudinary.uploader.upload_stream(
-      { folder: 'allverhq' },
+      { folder: 'allverhq', resource_type: 'auto' },
       (error, result) => {
         if (error) {
           console.error('Cloudinary upload error:', error);
-          console.log('Falling back to local storage...');
+          try {
+            fs.appendFileSync(logFile, `[${new Date().toISOString()}] Cloudinary upload error: ${JSON.stringify(error)}. Falling back to local...\n`);
+          } catch (e) {}
           return saveLocal();
         }
+        try {
+          fs.appendFileSync(logFile, `[${new Date().toISOString()}] Cloudinary success: ${result.secure_url}\n`);
+        } catch (e) {}
         return res.status(200).json({ url: result.secure_url });
       }
     );
     uploadStream.end(req.file.buffer);
   } else {
-    console.log('Cloudinary not configured or using default placeholders. Saving locally...');
+    try {
+      fs.appendFileSync(logFile, `[${new Date().toISOString()}] Cloudinary NOT configured. Saving locally...\n`);
+    } catch (e) {}
     return saveLocal();
   }
 });
@@ -265,28 +1291,131 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 
 const ContractRequest = require('./models/ContractRequest');
 const ProjectWorkspace = require('./models/ProjectWorkspace');
+const ProjectBid = require('./models/ProjectBid');
 
 // 1. Submit a Contract Request
 app.post('/api/contract-requests', async (req, res) => {
   try {
-    const { client, professional, title, projectType, location, budget, startDate, description } = req.body;
+    const { client, professional, title, projectType, location, budget, startDate, description, timeline, requirements } = req.body;
     
-    if (!client || !professional || !title || !location || !budget) {
+    if (!client || !title || !location || !budget) {
       return res.status(400).json({ message: 'Missing required project details' });
     }
 
     const newRequest = new ContractRequest({
       client,
-      professional,
+      professional: professional || undefined,
       title,
       projectType: projectType || 'General',
       location,
       budget,
       startDate: startDate ? new Date(startDate) : new Date(),
-      description: description || ''
+      description: description || '',
+      timeline: timeline || '',
+      requirements: requirements || []
     });
 
     await newRequest.save();
+
+    // Trigger notification immediately
+    try {
+      const clientUser = await User.findById(client);
+      const io = req.app.get('io');
+
+      if (professional) {
+        // Direct invitation / application flow
+        const professionalUser = await User.findById(professional);
+        const senderId = req.body.senderId || client; // default to client if not specified
+        const isClientSender = senderId.toString() === client.toString();
+
+        if (isClientSender) {
+          // Client invited Professional -> Project Invitation
+          const notificationText = `📩 Project Invitation\n${clientUser.fullName} invited you to the project: ${title}\n\n[View Invitation]`;
+          const notification = new Notification({
+            recipientId: professional,
+            senderId: client,
+            text: notificationText
+          });
+          await notification.save();
+
+          if (io) {
+            io.to(professional.toString()).emit('new_notification', {
+              _id: notification._id,
+              recipientId: professional,
+              senderId: {
+                _id: clientUser._id,
+                fullName: clientUser.fullName,
+                avatarUrl: clientUser.avatarUrl,
+                role: clientUser.role
+              },
+              text: notification.text,
+              isRead: false,
+              createdAt: notification.createdAt
+            });
+          }
+        } else {
+          // Professional applied to Client -> Contractor Applied (or Architect Applied)
+          const isContractor = professionalUser?.role === 'Contractor';
+          const roleLabel = isContractor ? 'Contractor' : 'Architect';
+          const emoji = isContractor ? '👷' : '📐';
+          const notificationText = `${emoji} ${roleLabel} Applied\n${professionalUser.fullName} applied to your project: ${title}\n\n[View Application]`;
+          
+          const notification = new Notification({
+            recipientId: client,
+            senderId: professional,
+            text: notificationText
+          });
+          await notification.save();
+
+          if (io) {
+            io.to(client.toString()).emit('new_notification', {
+              _id: notification._id,
+              recipientId: client,
+              senderId: {
+                _id: professionalUser._id,
+                fullName: professionalUser.fullName,
+                avatarUrl: professionalUser.avatarUrl,
+                role: professionalUser.role
+              },
+              text: notification.text,
+              isRead: false,
+              createdAt: notification.createdAt
+            });
+          }
+        }
+      } else {
+        // Public project posting -> Send notification to all professionals
+        const professionals = await User.find({ role: { $in: ['Architect', 'Contractor', 'Labour'] } });
+        const notificationText = `🏗 New Project\n${title} posted near ${location}\n\n[View Project]`;
+
+        for (const prof of professionals) {
+          const notification = new Notification({
+            recipientId: prof._id,
+            senderId: client,
+            text: notificationText
+          });
+          await notification.save();
+
+          if (io) {
+            io.to(prof._id.toString()).emit('new_notification', {
+              _id: notification._id,
+              recipientId: prof._id,
+              senderId: {
+                _id: clientUser._id,
+                fullName: clientUser.fullName,
+                avatarUrl: clientUser.avatarUrl,
+                role: clientUser.role
+              },
+              text: notification.text,
+              isRead: false,
+              createdAt: notification.createdAt
+            });
+          }
+        }
+      }
+    } catch (notifErr) {
+      console.error('Error triggering project invitation/application/post notification:', notifErr);
+    }
     
     res.status(201).json({ 
       message: 'Contract request sent successfully', 
@@ -305,8 +1434,8 @@ app.get('/api/contract-requests/user/:userId', async (req, res) => {
     const requests = await ContractRequest.find({
       $or: [{ client: userId }, { professional: userId }]
     })
-    .populate('client', 'fullName email phoneNumber role city')
-    .populate('professional', 'fullName email phoneNumber role city')
+    .populate('client', 'fullName email phoneNumber role city avatarUrl')
+    .populate('professional', 'fullName email phoneNumber role city avatarUrl')
     .sort({ createdAt: -1 });
 
     res.status(200).json({ requests });
@@ -316,11 +1445,30 @@ app.get('/api/contract-requests/user/:userId', async (req, res) => {
   }
 });
 
-// 3. Accept or Reject a contract request
+// 2.5 Get a single contract request by ID
+app.get('/api/contract-requests/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const request = await ContractRequest.findById(id)
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl');
+    
+    if (!request) {
+      return res.status(404).json({ message: 'Contract request not found' });
+    }
+    
+    res.status(200).json({ request });
+  } catch (error) {
+    console.error('Error fetching contract request:', error);
+    res.status(500).json({ message: 'Error fetching contract request: ' + error.message });
+  }
+});
+
+// 3. Accept or Reject a contract request (SINGLE ACCEPTANCE with rejection notifications)
 app.put('/api/contract-requests/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body; // 'Accepted' or 'Rejected'
+    const { status, professional, bidId } = req.body; // 'Accepted' or 'Rejected'
 
     if (!['Accepted', 'Rejected'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status update' });
@@ -331,33 +1479,166 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
       return res.status(404).json({ message: 'Contract request not found' });
     }
 
+    // RESTRICTION: Prevent accepting if already accepted
+    if (status === 'Accepted' && request.status === 'Accepted') {
+      return res.status(400).json({ message: 'A bid has already been accepted for this project. You cannot accept another.' });
+    }
+
+    if (professional) {
+      request.professional = professional;
+    }
     request.status = status;
     await request.save();
+
+    const io = req.app.get('io');
+    const clientUser = await User.findById(request.client);
+
+    if (status === 'Accepted') {
+      try {
+        // 1. Mark the accepted bid
+        if (bidId) {
+          await ProjectBid.findByIdAndUpdate(bidId, { status: 'Accepted' });
+        } else if (professional) {
+          await ProjectBid.findOneAndUpdate(
+            { contractRequest: id, professional: professional },
+            { status: 'Accepted' }
+          );
+        }
+
+        // 2. Send acceptance notification to the winning professional
+        const professionalUser = await User.findById(request.professional);
+        const acceptText = `✅ Proposal Accepted!\nCongratulations! ${clientUser.fullName} accepted your bid for "${request.title}". Project timeline starts now.\n\n[View Project]`;
+        const acceptNotif = new Notification({
+          recipientId: request.professional,
+          senderId: request.client,
+          text: acceptText
+        });
+        await acceptNotif.save();
+
+        if (io) {
+          io.to(request.professional.toString()).emit('new_notification', {
+            _id: acceptNotif._id,
+            recipientId: request.professional,
+            senderId: { _id: clientUser._id, fullName: clientUser.fullName, avatarUrl: clientUser.avatarUrl, role: clientUser.role },
+            text: acceptNotif.text,
+            isRead: false,
+            createdAt: acceptNotif.createdAt
+          });
+        }
+
+        // 3. REJECT all other bids and send rejection notifications
+        const otherBids = await ProjectBid.find({
+          contractRequest: id,
+          professional: { $ne: request.professional },
+          status: 'Pending'
+        }).populate('professional', 'fullName avatarUrl role');
+
+        for (const bid of otherBids) {
+          bid.status = 'Rejected';
+          await bid.save();
+
+          // Send rejection notification
+          const rejectText = `❌ Bid Not Selected\nYour bid for "${request.title}" was not selected. The client chose another contractor. Keep applying to new projects!\n\n[Browse Projects]`;
+          const rejectNotif = new Notification({
+            recipientId: bid.professional._id,
+            senderId: request.client,
+            text: rejectText
+          });
+          await rejectNotif.save();
+
+          if (io) {
+            io.to(bid.professional._id.toString()).emit('new_notification', {
+              _id: rejectNotif._id,
+              recipientId: bid.professional._id,
+              senderId: { _id: clientUser._id, fullName: clientUser.fullName, avatarUrl: clientUser.avatarUrl, role: clientUser.role },
+              text: rejectNotif.text,
+              isRead: false,
+              createdAt: rejectNotif.createdAt
+            });
+          }
+        }
+
+        // 4. Also send confirmation to client
+        const clientConfirmText = `🎉 Bid Accepted\nYou accepted ${professionalUser.fullName}'s bid for "${request.title}". Project workspace is now active.\n\n[View Progress]`;
+        const clientNotif = new Notification({
+          recipientId: request.client,
+          senderId: request.professional,
+          text: clientConfirmText
+        });
+        await clientNotif.save();
+
+        if (io) {
+          io.to(request.client.toString()).emit('new_notification', {
+            _id: clientNotif._id,
+            recipientId: request.client,
+            senderId: { _id: professionalUser._id, fullName: professionalUser.fullName, avatarUrl: professionalUser.avatarUrl, role: professionalUser.role },
+            text: clientNotif.text,
+            isRead: false,
+            createdAt: clientNotif.createdAt
+          });
+        }
+      } catch (notifErr) {
+        console.error('Error in acceptance flow notifications:', notifErr);
+      }
+    }
 
     let workspace = null;
     if (status === 'Accepted') {
       // Check if a workspace already exists for this request
       const existing = await ProjectWorkspace.findOne({ contractRequest: id });
       if (!existing) {
-        const clientUser = await User.findById(request.client);
         const professionalUser = await User.findById(request.professional);
         
         const isContractor = professionalUser?.role === 'Contractor';
         const isArchitect = professionalUser?.role === 'Architect';
         const isLabour = professionalUser?.role === 'Labour';
 
-        workspace = new ProjectWorkspace({
-          contractRequest: id,
+        // Check if an active workspace with the same client and title already exists
+        const sameProjectWorkspace = await ProjectWorkspace.findOne({
           client: request.client,
-          professional: request.professional,
-          contractor: isContractor ? request.professional : (clientUser?.role === 'Contractor' ? request.client : null),
-          architect: isArchitect ? request.professional : (clientUser?.role === 'Architect' ? request.client : null),
-          labourTeam: isLabour ? [request.professional] : [],
-          title: request.title,
-          projectType: request.projectType || 'General',
-          status: 'Discussion'
+          title: { $regex: new RegExp(`^${request.title.trim()}$`, 'i') },
+          status: { $ne: 'Cancelled' }
         });
-        await workspace.save();
+
+        if (sameProjectWorkspace) {
+          workspace = sameProjectWorkspace;
+          if (isContractor) workspace.contractor = request.professional;
+          if (isArchitect) workspace.architect = request.professional;
+          if (isLabour && !workspace.labourTeam.includes(request.professional)) {
+            workspace.labourTeam.push(request.professional);
+          }
+          
+          workspace.messages.push({
+            sender: request.client,
+            text: `📢 Hired professional assigned to project team: ${professionalUser?.fullName || 'Professional'} (${professionalUser?.role || 'Professional'})`,
+            createdAt: new Date()
+          });
+          workspace.updates.push({
+            title: `${professionalUser?.role || 'Professional'} Hired`,
+            description: `${professionalUser?.fullName || 'Professional'} has been hired and added to the project team.`,
+            category: 'General',
+            postedBy: {
+              senderId: request.client,
+              senderName: 'System',
+              senderRole: 'System'
+            },
+            createdAt: new Date()
+          });
+          await workspace.save();
+        } else {
+          workspace = new ProjectWorkspace({
+            contractRequest: id,
+            client: request.client,
+            professional: request.professional,
+            contractor: isContractor ? request.professional : (clientUser?.role === 'Contractor' ? request.client : null),
+            architect: isArchitect ? request.professional : (clientUser?.role === 'Architect' ? request.client : null),
+            labourTeam: isLabour ? [request.professional] : [],
+            title: request.title,
+            projectType: request.projectType || 'General',
+            status: 'Active'
+          });
+          await workspace.save();
+        }
       } else {
         workspace = existing;
       }
@@ -374,11 +1655,130 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
   }
 });
 
+// --- Project Bid Routes (Real contractor applications) ---
+
+// Submit a bid for a contract request
+app.post('/api/project-bids', async (req, res) => {
+  try {
+    const { contractRequest, professional, cost, costValue, duration, durationDays, proposal } = req.body;
+
+    if (!contractRequest || !professional || !cost || !duration) {
+      return res.status(400).json({ message: 'Missing required bid fields: contractRequest, professional, cost, duration' });
+    }
+
+    // Check if the contract request exists and is still Pending
+    const request = await ContractRequest.findById(contractRequest);
+    if (!request) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+    if (request.status === 'Accepted') {
+      return res.status(400).json({ message: 'This project has already accepted a bid. No more applications allowed.' });
+    }
+
+    // Prevent duplicate bids
+    const existing = await ProjectBid.findOne({ contractRequest, professional });
+    if (existing) {
+      return res.status(400).json({ message: 'You have already submitted a bid for this project.' });
+    }
+
+    const bid = new ProjectBid({
+      contractRequest,
+      professional,
+      cost,
+      costValue: costValue || 0,
+      duration,
+      durationDays: durationDays || 0,
+      proposal: proposal || ''
+    });
+    await bid.save();
+
+    // Send notification to the client about new application
+    try {
+      const professionalUser = await User.findById(professional);
+      const clientUser = await User.findById(request.client);
+      const io = req.app.get('io');
+
+      const isContractor = professionalUser?.role === 'Contractor';
+      const roleLabel = isContractor ? 'Contractor' : (professionalUser?.role || 'Professional');
+      const emoji = isContractor ? '👷' : '📐';
+
+      const notifText = `${emoji} ${roleLabel} Applied\n${professionalUser.fullName} submitted a bid of ${cost} for "${request.title}"\n\n[View Applications]`;
+      const notification = new Notification({
+        recipientId: request.client,
+        senderId: professional,
+        text: notifText
+      });
+      await notification.save();
+
+      if (io) {
+        io.to(request.client.toString()).emit('new_notification', {
+          _id: notification._id,
+          recipientId: request.client,
+          senderId: { _id: professionalUser._id, fullName: professionalUser.fullName, avatarUrl: professionalUser.avatarUrl, role: professionalUser.role },
+          text: notification.text,
+          isRead: false,
+          createdAt: notification.createdAt
+        });
+      }
+    } catch (notifErr) {
+      console.error('Error sending bid notification:', notifErr);
+    }
+
+    res.status(201).json({ message: 'Bid submitted successfully', bid });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'You have already submitted a bid for this project.' });
+    }
+    console.error('Error submitting bid:', error);
+    res.status(500).json({ message: 'Error submitting bid: ' + error.message });
+  }
+});
+
+// Get all bids for a contract request (with professional details)
+app.get('/api/project-bids/request/:requestId', async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const bids = await ProjectBid.find({ contractRequest: requestId })
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl firmName completedProjects rating')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({ bids, count: bids.length });
+  } catch (error) {
+    console.error('Error fetching bids:', error);
+    res.status(500).json({ message: 'Error fetching bids: ' + error.message });
+  }
+});
+
+// Get bid count for a contract request
+app.get('/api/project-bids/request/:requestId/count', async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const count = await ProjectBid.countDocuments({ contractRequest: requestId });
+    const acceptedBid = await ProjectBid.findOne({ contractRequest: requestId, status: 'Accepted' }).populate('professional', 'fullName');
+    
+    res.status(200).json({ count, hasAccepted: !!acceptedBid, acceptedBid });
+  } catch (error) {
+    console.error('Error counting bids:', error);
+    res.status(500).json({ message: 'Error counting bids: ' + error.message });
+  }
+});
+
 // 4. Get all workspaces for a user
 app.get('/api/project-workspaces/user/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const workspaces = await ProjectWorkspace.find({
+    
+    // Cast userId to ObjectId if valid to ensure mongoose matches correctly
+    const userObjId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : null;
+    const query = userObjId ? {
+      $or: [
+        { client: userObjId },
+        { professional: userObjId },
+        { contractor: userObjId },
+        { architect: userObjId },
+        { labourTeam: userObjId }
+      ]
+    } : {
       $or: [
         { client: userId },
         { professional: userId },
@@ -386,18 +1786,115 @@ app.get('/api/project-workspaces/user/:userId', async (req, res) => {
         { architect: userId },
         { labourTeam: userId }
       ]
-    })
-    .populate('client', 'fullName email phoneNumber role city')
-    .populate('professional', 'fullName email phoneNumber role city')
-    .populate('contractor', 'fullName email phoneNumber role city')
-    .populate('architect', 'fullName email phoneNumber role city')
-    .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
-    .sort({ createdAt: -1 });
+    };
+
+    const workspaces = await ProjectWorkspace.find(query)
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate('contractRequest')
+      .sort({ createdAt: -1 });
 
     res.status(200).json({ workspaces });
+
   } catch (error) {
     console.error('Error fetching workspaces:', error);
     res.status(500).json({ message: 'Error fetching workspaces: ' + error.message });
+  }
+});
+
+// Direct Hire: creates a ContractRequest (status: Accepted) and a ProjectWorkspace
+app.post('/api/project-workspaces/hire', async (req, res) => {
+  try {
+    const { client, professional, title, category, location, budget, timeline, description } = req.body;
+    if (!client || !professional || !title) {
+      return res.status(400).json({ message: 'Missing client, professional, or project name (title)' });
+    }
+
+    const clientUser = await User.findById(client);
+    if (!clientUser) {
+      return res.status(404).json({ message: 'Client not found' });
+    }
+
+    const professionalUser = await User.findById(professional);
+    if (!professionalUser) {
+      return res.status(404).json({ message: 'Professional not found' });
+    }
+
+    // Create a ContractRequest with Accepted status
+    const isContractor = professionalUser.role === 'Contractor';
+    const isArchitect = professionalUser.role === 'Architect';
+    const isLabour = professionalUser.role === 'Labour';
+
+    const defaultProjectType = isContractor ? 'Residential' : (isArchitect ? 'Architecture' : 'General');
+    const finalProjectType = category || defaultProjectType;
+
+    const newRequest = new ContractRequest({
+      client,
+      professional,
+      title,
+      projectType: finalProjectType,
+      location: location || professionalUser.city || 'Mumbai',
+      budget: budget || 'Direct Hire',
+      description: description || '',
+      timeline: timeline || 'Not Specified',
+      status: 'Accepted',
+      startDate: new Date()
+    });
+
+    await newRequest.save();
+
+    // Create the ProjectWorkspace
+    const workspace = new ProjectWorkspace({
+      contractRequest: newRequest._id,
+      client,
+      professional,
+      contractor: isContractor ? professional : (clientUser.role === 'Contractor' ? client : null),
+      architect: isArchitect ? professional : (clientUser.role === 'Architect' ? client : null),
+      labourTeam: isLabour ? [professional] : [],
+      title,
+      projectType: finalProjectType,
+      status: 'Active'
+    });
+
+    await workspace.save();
+
+    // Send Notification to the hired professional
+    try {
+      const io = req.app.get('io');
+      const acceptText = `🎉 You've been Hired!\n${clientUser.fullName} has hired you directly for the project: "${title}". A workspace has been created.`;
+      const acceptNotif = new Notification({
+        recipientId: professional,
+        senderId: client,
+        text: acceptText
+      });
+      await acceptNotif.save();
+
+      if (io) {
+        io.to(professional.toString()).emit('new_notification', {
+          _id: acceptNotif._id,
+          recipientId: professional,
+          senderId: { _id: clientUser._id, fullName: clientUser.fullName, avatarUrl: clientUser.avatarUrl, role: clientUser.role },
+          text: acceptNotif.text,
+          isRead: false,
+          createdAt: acceptNotif.createdAt
+        });
+      }
+    } catch (notifErr) {
+      console.error('Error sending hire notification:', notifErr);
+    }
+
+    res.status(201).json({
+      message: 'Successfully hired professional and created project workspace.',
+      workspace,
+      contractRequest: newRequest
+    });
+
+  } catch (error) {
+    console.error('Error hiring professional:', error);
+    res.status(500).json({ message: 'Error hiring professional: ' + error.message });
   }
 });
 
@@ -410,14 +1907,15 @@ app.get('/api/project-workspaces/:id', async (req, res) => {
     }
 
     const workspace = await ProjectWorkspace.findById(req.params.id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate('contractRequest')
       .populate({
         path: 'messages.sender',
-        select: 'fullName email role'
+        select: 'fullName email role avatarUrl'
       });
 
     if (!workspace) {
@@ -493,15 +1991,62 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
 
     await workspace.save();
 
+    // Trigger notification immediately for New Chat Message in Workspace
+    try {
+      const senderUser = await User.findById(sender);
+      const textPreview = text || (attachment && attachment.name ? `sent a file: ${attachment.name}` : 'sent an attachment');
+      const notificationText = `💬 New Message\n${senderUser.fullName} (in project): ${textPreview}\n\n[View Chat]`;
+
+      const members = new Set();
+      if (workspace.client && workspace.client.toString() !== sender) members.add(workspace.client.toString());
+      if (workspace.professional && workspace.professional.toString() !== sender) members.add(workspace.professional.toString());
+      if (workspace.contractor && workspace.contractor.toString() !== sender) members.add(workspace.contractor.toString());
+      if (workspace.architect && workspace.architect.toString() !== sender) members.add(workspace.architect.toString());
+      if (workspace.labourTeam) {
+        workspace.labourTeam.forEach(l => {
+          if (l.toString() !== sender) members.add(l.toString());
+        });
+      }
+
+      const io = req.app.get('io');
+      for (const recipientId of members) {
+        const notification = new Notification({
+          recipientId,
+          senderId: sender,
+          text: notificationText
+        });
+        await notification.save();
+
+        if (io) {
+          io.to(recipientId).emit('new_notification', {
+            _id: notification._id,
+            recipientId,
+            senderId: {
+              _id: senderUser._id,
+              fullName: senderUser.fullName,
+              avatarUrl: senderUser.avatarUrl,
+              role: senderUser.role
+            },
+            text: notification.text,
+            isRead: false,
+            createdAt: notification.createdAt
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.error('Error triggering workspace message notifications:', notifErr);
+    }
+
     const updatedWorkspace = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate('contractRequest')
       .populate({
         path: 'messages.sender',
-        select: 'fullName email role'
+        select: 'fullName email role avatarUrl'
       });
 
     const savedMsg = updatedWorkspace.messages[updatedWorkspace.messages.length - 1];
@@ -583,14 +2128,14 @@ app.put('/api/project-workspaces/:id/quotation', async (req, res) => {
     await workspace.save();
 
     const updatedWorkspace = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
       .populate({
         path: 'messages.sender',
-        select: 'fullName email role'
+        select: 'fullName email role avatarUrl'
       });
 
     res.status(200).json({ message: 'Quotation updated successfully', workspace: updatedWorkspace });
@@ -642,15 +2187,59 @@ app.post('/api/project-workspaces/:id/files', async (req, res) => {
 
     await workspace.save();
 
+    // Trigger notification immediately for Document Shared
+    try {
+      const uploaderUser = await User.findById(uploadedBy);
+      
+      const members = new Set();
+      if (workspace.client && workspace.client.toString() !== uploadedBy) members.add(workspace.client.toString());
+      if (workspace.professional && workspace.professional.toString() !== uploadedBy) members.add(workspace.professional.toString());
+      if (workspace.contractor && workspace.contractor.toString() !== uploadedBy) members.add(workspace.contractor.toString());
+      if (workspace.architect && workspace.architect.toString() !== uploadedBy) members.add(workspace.architect.toString());
+      if (workspace.labourTeam) {
+        workspace.labourTeam.forEach(l => {
+          if (l.toString() !== uploadedBy) members.add(l.toString());
+        });
+      }
+
+      const io = req.app.get('io');
+      for (const recipientId of members) {
+        const notification = new Notification({
+          recipientId,
+          senderId: uploadedBy,
+          text: `📁 Document Shared\n${uploaderUser.fullName} shared "${name}" in ${workspace.title}\n\n[View Document]`
+        });
+        await notification.save();
+
+        if (io) {
+          io.to(recipientId).emit('new_notification', {
+            _id: notification._id,
+            recipientId,
+            senderId: {
+              _id: uploaderUser._id,
+              fullName: uploaderUser.fullName,
+              avatarUrl: uploaderUser.avatarUrl,
+              role: uploaderUser.role
+            },
+            text: notification.text,
+            isRead: false,
+            createdAt: notification.createdAt
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.error('Error triggering document shared notifications:', notifErr);
+    }
+
     const updatedWorkspace = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
       .populate({
         path: 'messages.sender',
-        select: 'fullName email role'
+        select: 'fullName email role avatarUrl'
       });
 
     res.status(201).json({ message: 'File uploaded successfully', workspace: updatedWorkspace });
@@ -689,17 +2278,86 @@ app.put('/api/project-workspaces/:id/assign-architect', async (req, res) => {
       text: `📢 Architect assigned: ${arch.fullName}`,
       createdAt: new Date()
     });
+    workspace.updates.push({
+      title: 'Architect Assigned',
+      description: `Ar. ${arch.fullName} has been assigned to the project.`,
+      category: 'General',
+      postedBy: {
+        senderId: userId,
+        senderName: 'System',
+        senderRole: 'System'
+      },
+      createdAt: new Date()
+    });
     await workspace.save();
     
     const updated = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
-      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
       
+    emitWorkspaceUpdate(req, id, updated);
     res.status(200).json({ message: 'Architect assigned successfully', workspace: updated });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// 9b. Assign Contractor to a project (by client or architect/professional with check)
+app.put('/api/project-workspaces/:id/assign-contractor', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { contractorId, userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+    const isClient = workspace.client?.toString() === userId;
+    const isArchitect = workspace.architect?.toString() === userId || workspace.professional?.toString() === userId;
+    if (!isClient && !isArchitect) {
+      return res.status(403).json({ message: 'Forbidden: Only the client or architect can assign a contractor' });
+    }
+    
+    const contr = await User.findById(contractorId);
+    if (!contr || contr.role !== 'Contractor') {
+      return res.status(400).json({ message: 'Invalid Contractor selected' });
+    }
+    
+    workspace.contractor = contractorId;
+    workspace.messages.push({
+      sender: userId,
+      text: `📢 Contractor assigned: ${contr.fullName}`,
+      createdAt: new Date()
+    });
+    workspace.updates.push({
+      title: 'Contractor Assigned',
+      description: `Contractor ${contr.fullName} has been assigned to the project.`,
+      category: 'General',
+      postedBy: {
+        senderId: userId,
+        senderName: 'System',
+        senderRole: 'System'
+      },
+      createdAt: new Date()
+    });
+    await workspace.save();
+    
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
+      
+    emitWorkspaceUpdate(req, id, updated);
+    res.status(200).json({ message: 'Contractor assigned successfully', workspace: updated });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -717,8 +2375,17 @@ app.put('/api/project-workspaces/:id/add-labour', async (req, res) => {
     const workspace = await ProjectWorkspace.findById(id);
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
 
+    const sender = await User.findById(userId);
+    if (!sender) {
+      return res.status(404).json({ message: 'Sender not found' });
+    }
+    if (sender.role === 'Architect') {
+      return res.status(403).json({ message: 'Forbidden: Architects cannot add labour. Only assigned contractors can add labour.' });
+    }
+
     const isClient = workspace.client?.toString() === userId;
-    const isContractor = workspace.contractor?.toString() === userId || workspace.professional?.toString() === userId;
+    const isContractor = workspace.contractor?.toString() === userId || 
+                         (workspace.professional?.toString() === userId && sender.role === 'Contractor');
     if (!isClient && !isContractor) {
       return res.status(403).json({ message: 'Forbidden: Only the client or contractor can add labour to the project' });
     }
@@ -738,16 +2405,60 @@ app.put('/api/project-workspaces/:id/add-labour', async (req, res) => {
       text: `📢 Added to Labour Team: ${lab.fullName} (${lab.skillType || 'Labour'})`,
       createdAt: new Date()
     });
+    workspace.updates.push({
+      title: 'Labourer Added',
+      description: `${lab.fullName} (${lab.skillType || 'Skilled Labour'}) has joined the project team.`,
+      category: 'General',
+      postedBy: {
+        senderId: userId,
+        senderName: 'System',
+        senderRole: 'System'
+      },
+      createdAt: new Date()
+    });
     await workspace.save();
+
+    // Trigger notification immediately for Labour Joined Project
+    try {
+      const contractorUser = await User.findById(userId);
+      const notificationText = `👷 Labour Joined Project\nYou have been added to the project workspace: ${workspace.title}\n\n[View Project]`;
+
+      const notification = new Notification({
+        recipientId: labourId,
+        senderId: userId,
+        text: notificationText
+      });
+      await notification.save();
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(labourId.toString()).emit('new_notification', {
+          _id: notification._id,
+          recipientId: labourId,
+          senderId: {
+            _id: contractorUser._id,
+            fullName: contractorUser.fullName,
+            avatarUrl: contractorUser.avatarUrl,
+            role: contractorUser.role
+          },
+          text: notification.text,
+          isRead: false,
+          createdAt: notification.createdAt
+        });
+      }
+    } catch (notifErr) {
+      console.error('Error triggering labour joined notification:', notifErr);
+    }
     
     const updated = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
-      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
       
+    emitWorkspaceUpdate(req, id, updated);
     res.status(200).json({ message: 'Labour added successfully', workspace: updated });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -766,8 +2477,17 @@ app.put('/api/project-workspaces/:id/remove-labour', async (req, res) => {
     const workspace = await ProjectWorkspace.findById(id);
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
 
+    const sender = await User.findById(userId);
+    if (!sender) {
+      return res.status(404).json({ message: 'Sender not found' });
+    }
+    if (sender.role === 'Architect') {
+      return res.status(403).json({ message: 'Forbidden: Architects cannot remove labour. Only assigned contractors can remove labour.' });
+    }
+
     const isClient = workspace.client?.toString() === userId;
-    const isContractor = workspace.contractor?.toString() === userId || workspace.professional?.toString() === userId;
+    const isContractor = workspace.contractor?.toString() === userId || 
+                         (workspace.professional?.toString() === userId && sender.role === 'Contractor');
     if (!isClient && !isContractor) {
       return res.status(403).json({ message: 'Forbidden: Only the client or contractor can remove labour from the project' });
     }
@@ -782,16 +2502,28 @@ app.put('/api/project-workspaces/:id/remove-labour', async (req, res) => {
       text: `📢 Removed from Labour Team: ${name}`,
       createdAt: new Date()
     });
+    workspace.updates.push({
+      title: 'Labourer Removed',
+      description: `${name} has been removed from the project team.`,
+      category: 'General',
+      postedBy: {
+        senderId: userId,
+        senderName: 'System',
+        senderRole: 'System'
+      },
+      createdAt: new Date()
+    });
     await workspace.save();
     
     const updated = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
-      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
       
+    emitWorkspaceUpdate(req, id, updated);
     res.status(200).json({ message: 'Labour removed successfully', workspace: updated });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -802,40 +2534,213 @@ app.put('/api/project-workspaces/:id/remove-labour', async (req, res) => {
 app.put('/api/project-workspaces/:id/project-status', async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, senderId } = req.body; // 'Discussion', 'Active', 'Completed'
+    const { status, senderId, reworkComment } = req.body; // 'Discussion', 'Active', 'Waiting for Client Approval', 'Rework Required', 'Completed'
     
     if (!senderId) {
       return res.status(400).json({ message: 'Sender ID is required' });
     }
 
-    if (!['Discussion', 'Active', 'Completed'].includes(status)) {
+    const allowedStatuses = ['Discussion', 'Active', 'Waiting for Client Approval', 'Rework Required', 'Completed', 'Cancelled'];
+    if (!allowedStatuses.includes(status)) {
       return res.status(400).json({ message: 'Invalid status' });
     }
     
     const workspace = await ProjectWorkspace.findById(id);
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
     
+    const getUserIdStr = (u) => {
+      if (!u) return '';
+      if (typeof u === 'string') return u;
+      return u._id ? u._id.toString() : u.toString();
+    };
+    
+    const isClient = getUserIdStr(workspace.client) === senderId;
+    const isContractor = getUserIdStr(workspace.professional) === senderId || getUserIdStr(workspace.contractor) === senderId;
+
+    if (status === 'Completed' || status === 'Rework Required' || status === 'Cancelled') {
+      if (!isClient) {
+        return res.status(403).json({ message: 'Forbidden: Only the client can approve work, request changes, or cancel the project.' });
+      }
+    }
+
+    if (status === 'Waiting for Client Approval') {
+      if (!isContractor) {
+        return res.status(403).json({ message: 'Forbidden: Only the contractor can mark the work as completed.' });
+      }
+    }
+
     const oldStatus = workspace.status;
     workspace.status = status;
     
-    workspace.messages.push({
-      sender: senderId || workspace.client,
-      text: `📢 Project status changed from ${oldStatus} to ${status}`,
+    const senderUser = await User.findById(senderId);
+    const senderName = senderUser ? senderUser.fullName : 'System';
+    let senderRoleName = senderUser ? senderUser.role : 'Member';
+    if (senderRoleName === 'Labour') {
+      senderRoleName = 'Labour Supervisor';
+    }
+
+    // Add Timeline Update representing the status change
+    let updateTitle = `Project Status: ${status}`;
+    let updateDesc = `Status changed from ${oldStatus} to ${status}.`;
+    let updateCategory = 'General';
+
+    if (status === 'Waiting for Client Approval') {
+      updateTitle = "Work Completed - Waiting for Approval";
+      updateDesc = "Contractor has marked the work as completed. Waiting for client approval.";
+      updateCategory = "Milestone";
+    } else if (status === 'Rework Required') {
+      updateTitle = "Rework Required";
+      updateDesc = `Client requested changes. Comment: "${reworkComment || 'No comment provided'}"`;
+      updateCategory = "General";
+    } else if (status === 'Completed') {
+      updateTitle = "Project Completed & Approved";
+      updateDesc = "Client approved the work. Ratings are now enabled and final payment can be released.";
+      updateCategory = "Milestone";
+    } else if (status === 'Active') {
+      updateTitle = "Project Activated";
+      updateDesc = "The project is active and work is in progress.";
+      updateCategory = "Milestone";
+    } else if (status === 'Cancelled') {
+      updateTitle = "Project Cancelled";
+      updateDesc = `Client cancelled the project. Reason/Inconvenience: "${reworkComment || 'Not specified'}"`;
+      updateCategory = "General";
+    }
+
+    workspace.updates.push({
+      title: updateTitle,
+      description: updateDesc,
+      category: updateCategory,
+      postedBy: {
+        senderId,
+        senderName,
+        senderRole: senderRoleName
+      },
+      likes: 0,
+      likedBy: [],
+      comments: [],
       createdAt: new Date()
     });
+    
+    // Add system notification to messages
+    let msgText = `📢 Project status changed from ${oldStatus} to ${status}`;
+    if (status === 'Rework Required' && reworkComment) {
+      msgText += `\nComment: "${reworkComment}"`;
+    }
+    workspace.messages.push({
+      sender: senderId || workspace.client,
+      text: msgText,
+      createdAt: new Date()
+    });
+    
     await workspace.save();
+
+    // Increment/decrement project count for all participants
+    if (status === 'Completed' && oldStatus !== 'Completed') {
+      const participants = new Set();
+      if (workspace.client) participants.add(workspace.client.toString());
+      if (workspace.architect) participants.add(workspace.architect.toString());
+      if (workspace.contractor) participants.add(workspace.contractor.toString());
+      if (workspace.professional) participants.add(workspace.professional.toString());
+      
+      for (const pId of participants) {
+        await User.findByIdAndUpdate(pId, { $inc: { projects: 1 } });
+      }
+    } else if (status !== 'Completed' && oldStatus === 'Completed') {
+      const participants = new Set();
+      if (workspace.client) participants.add(workspace.client.toString());
+      if (workspace.architect) participants.add(workspace.architect.toString());
+      if (workspace.contractor) participants.add(workspace.contractor.toString());
+      if (workspace.professional) participants.add(workspace.professional.toString());
+      
+      for (const pId of participants) {
+        await User.findByIdAndUpdate(pId, { $inc: { projects: -1 } });
+      }
+    }
     
     const updated = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
-      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
       
+    emitWorkspaceUpdate(req, id, updated);
     res.status(200).json({ message: 'Status updated successfully', workspace: updated });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+});
+
+// Rate and review a member of the project workspace
+app.post('/api/project-workspaces/:id/ratings', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { from, to, rating, reviewText, criteria } = req.body;
+
+    if (!from || !to || !rating || !criteria) {
+      return res.status(400).json({ message: 'From, To, Rating, and Criteria are required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found' });
+    }
+
+    if (workspace.status !== 'Completed') {
+      return res.status(400).json({ message: 'Ratings can only be submitted once the project is Completed' });
+    }
+
+    // Check if rating from -> to already exists in this workspace
+    const existingRating = workspace.ratings.find(
+      r => r.from.toString() === from.toString() && r.to.toString() === to.toString()
+    );
+    if (existingRating) {
+      return res.status(400).json({ message: 'You have already rated this user for this project.' });
+    }
+
+    workspace.ratings.push({
+      from,
+      to,
+      rating: Number(rating),
+      reviewText: reviewText || '',
+      criteria: criteria,
+      createdAt: new Date()
+    });
+
+    await workspace.save();
+
+    // Recalculate average rating and reviews count for target user
+    const workspacesWithRatings = await ProjectWorkspace.find({ 'ratings.to': to });
+    const allRatingsForUser = [];
+    for (const ws of workspacesWithRatings) {
+      for (const r of ws.ratings) {
+        if (r.to.toString() === to.toString()) {
+          allRatingsForUser.push(r.rating);
+        }
+      }
+    }
+    const reviewsCount = allRatingsForUser.length;
+    const avgRating = reviewsCount > 0 ? (allRatingsForUser.reduce((sum, val) => sum + val, 0) / reviewsCount) : 0;
+
+    await User.findByIdAndUpdate(to, {
+      rating: parseFloat(avgRating.toFixed(1)),
+      reviews: reviewsCount
+    });
+
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
+
+    emitWorkspaceUpdate(req, id, updated);
+    res.status(200).json({ message: 'Rating submitted successfully', workspace: updated });
+  } catch (error) {
+    console.error('Error submitting rating:', error);
+    res.status(500).json({ message: 'Error submitting rating: ' + error.message });
   }
 });
 
@@ -843,7 +2748,7 @@ app.put('/api/project-workspaces/:id/project-status', async (req, res) => {
 app.post('/api/project-workspaces/:id/updates', async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, category, img, senderId } = req.body;
+    const { title, description, category, img, video, senderId } = req.body;
 
     if (!title || !senderId) {
       return res.status(400).json({ message: 'Title and Sender ID are required' });
@@ -854,17 +2759,17 @@ app.post('/api/project-workspaces/:id/updates', async (req, res) => {
       return res.status(404).json({ message: 'Workspace not found' });
     }
 
-    // Membership check
-    const isMember = 
-      workspace.client?.toString() === senderId ||
+    // Restriction: Only the assigned contractor, architect, or labour team members can post updates
+    const isAssignedContractorOrArchitectOrLabour = 
       workspace.professional?.toString() === senderId ||
       workspace.contractor?.toString() === senderId ||
       workspace.architect?.toString() === senderId ||
-      workspace.labourTeam?.some(l => l.toString() === senderId);
+      workspace.labourTeam?.some(lId => lId.toString() === senderId);
 
-    if (!isMember) {
-      return res.status(403).json({ message: 'Forbidden: You are not assigned to this workspace' });
+    if (!isAssignedContractorOrArchitectOrLabour) {
+      return res.status(403).json({ message: 'Forbidden: Only the assigned contractor, architect, or labour team members can post progress updates.' });
     }
+
 
     const user = await User.findById(senderId);
     let senderRoleName = user ? user.role : 'Member';
@@ -877,6 +2782,7 @@ app.post('/api/project-workspaces/:id/updates', async (req, res) => {
       description: description || '',
       category: category || 'General',
       img: img || '',
+      video: video || '',
       postedBy: {
         senderId,
         senderName: user ? user.fullName : 'Unknown',
@@ -898,18 +2804,135 @@ app.post('/api/project-workspaces/:id/updates', async (req, res) => {
 
     await workspace.save();
 
-    const updated = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
-      .populate({ path: 'messages.sender', select: 'fullName email role' });
+    // Trigger notification immediately for Project Milestone Completed
+    try {
+      const senderUser = await User.findById(senderId);
+      const roleLabel = senderUser?.role || 'Contractor';
+      const notificationText = `✅ ${title}\n\n${roleLabel} ${senderUser ? senderUser.fullName : ''} uploaded progress photos\n\n[View Progress]`;
 
+      // Notify other members
+      const members = new Set();
+      if (workspace.client && workspace.client.toString() !== senderId) members.add(workspace.client.toString());
+      if (workspace.professional && workspace.professional.toString() !== senderId) members.add(workspace.professional.toString());
+      if (workspace.contractor && workspace.contractor.toString() !== senderId) members.add(workspace.contractor.toString());
+      if (workspace.architect && workspace.architect.toString() !== senderId) members.add(workspace.architect.toString());
+
+      const io = req.app.get('io');
+      for (const recipientId of members) {
+        const notification = new Notification({
+          recipientId,
+          senderId,
+          text: notificationText
+        });
+        await notification.save();
+
+        if (io) {
+          io.to(recipientId).emit('new_notification', {
+            _id: notification._id,
+            recipientId,
+            senderId: {
+              _id: senderUser._id,
+              fullName: senderUser.fullName,
+              avatarUrl: senderUser.avatarUrl,
+              role: senderUser.role
+            },
+            text: notification.text,
+            isRead: false,
+            createdAt: notification.createdAt
+          });
+        }
+      }
+    } catch (notifErr) {
+      console.error('Error triggering milestone notification:', notifErr);
+    }
+
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
+
+    emitWorkspaceUpdate(req, id, updated);
     res.status(201).json({ message: 'Progress update posted successfully', workspace: updated });
   } catch (error) {
     console.error('Error posting update:', error);
     res.status(500).json({ message: 'Error posting update: ' + error.message });
+  }
+});
+
+// Edit a progress timeline update
+app.put('/api/project-workspaces/:id/updates/:updateId', async (req, res) => {
+  try {
+    const { id, updateId } = req.params;
+    const { title, description, category, img, video, senderId } = req.body;
+
+    if (!title || !senderId) {
+      return res.status(400).json({ message: 'Title and Sender ID are required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found' });
+    }
+
+    // Restriction: Only the assigned contractor, architect, or labour team members can edit updates
+    const isAssignedContractorOrArchitectOrLabour = 
+      workspace.professional?.toString() === senderId ||
+      workspace.contractor?.toString() === senderId ||
+      workspace.architect?.toString() === senderId ||
+      workspace.labourTeam?.some(lId => lId.toString() === senderId);
+
+    if (!isAssignedContractorOrArchitectOrLabour) {
+      return res.status(403).json({ message: 'Forbidden: Only the assigned contractor, architect, or labour team members can edit progress updates.' });
+    }
+
+
+    const update = workspace.updates.id(updateId);
+    if (!update) {
+      return res.status(404).json({ message: 'Update not found' });
+    }
+
+    // Author check: Only the poster of the update can edit (fallback to isProfessional for legacy updates without postedBy.senderId)
+    const isProfessional = 
+      workspace.professional?.toString() === senderId || 
+      workspace.contractor?.toString() === senderId;
+
+    const isAuthor = update.postedBy?.senderId 
+      ? (update.postedBy.senderId.toString() === senderId)
+      : isProfessional;
+
+    if (!isAuthor) {
+      return res.status(403).json({ message: 'Forbidden: You can only edit your own progress updates.' });
+    }
+
+    // Apply updates
+    update.title = title;
+    update.description = description || '';
+    update.category = category || 'General';
+    if (img !== undefined) {
+      update.img = img;
+    }
+    if (video !== undefined) {
+      update.video = video;
+    }
+
+    await workspace.save();
+
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
+
+    emitWorkspaceUpdate(req, id, updated);
+    res.status(200).json({ message: 'Progress update updated successfully', workspace: updated });
+  } catch (error) {
+    console.error('Error editing update:', error);
+    res.status(500).json({ message: 'Error editing update: ' + error.message });
   }
 });
 
@@ -959,12 +2982,12 @@ app.post('/api/project-workspaces/:id/updates/:updateId/like', async (req, res) 
     await workspace.save();
 
     const updated = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
-      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
 
     res.status(200).json({ message: 'Like toggled successfully', workspace: updated });
   } catch (error) {
@@ -1015,13 +3038,14 @@ app.post('/api/project-workspaces/:id/updates/:updateId/comments', async (req, r
     await workspace.save();
 
     const updated = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
-      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
 
+    emitWorkspaceUpdate(req, id, updated);
     res.status(201).json({ message: 'Comment added successfully', workspace: updated });
   } catch (error) {
     console.error('Error adding comment:', error);
@@ -1042,10 +3066,13 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
     const workspace = await ProjectWorkspace.findById(id);
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
 
-    // Membership check (Contractor only for editing, or Client/Architect depending on rules, but we'll allow Contractor)
     const isContractor = workspace.contractor?.toString() === senderId || workspace.professional?.toString() === senderId;
-    if (!isContractor) {
-      return res.status(403).json({ message: 'Forbidden: Only contractor can mark attendance' });
+
+    // Check if the sender is a registered labour in this workspace
+    const isLabourMember = workspace.labourTeam?.some(l => l?.toString() === senderId);
+
+    if (!isContractor && !isLabourMember) {
+      return res.status(403).json({ message: 'Forbidden: Only contractor or assigned labour can update attendance' });
     }
 
     if (!workspace.labourManagement) {
@@ -1054,27 +3081,137 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
 
     // Find if date already exists
     const existingDateIndex = workspace.labourManagement.attendance.findIndex(a => a.date === date);
-    
-    if (existingDateIndex > -1) {
-      workspace.labourManagement.attendance[existingDateIndex].records = records;
-      workspace.labourManagement.attendance[existingDateIndex].markedBy = senderId;
+
+    if (isLabourMember && !isContractor) {
+      // Labour can ONLY update their own GPS coordinates — not status/hours/other records
+      const gpsRecord = records.find(r => r.labourId?.toString() === senderId);
+      if (!gpsRecord) {
+        return res.status(400).json({ message: 'Labour can only update their own GPS check-in.' });
+      }
+
+      if (existingDateIndex > -1) {
+        // Find the labour's own record and only patch lat/lng
+        const existingRecords = workspace.labourManagement.attendance[existingDateIndex].records || [];
+        const ownRecordIdx = existingRecords.findIndex(r => (r.labourId?._id || r.labourId)?.toString() === senderId);
+        if (ownRecordIdx > -1) {
+          existingRecords[ownRecordIdx].latitude = gpsRecord.latitude;
+          existingRecords[ownRecordIdx].longitude = gpsRecord.longitude;
+        } else {
+          // No existing record for this labour yet — add a GPS-only entry
+          existingRecords.push({
+            labourId: senderId,
+            status: gpsRecord.status || 'Present',
+            hours: gpsRecord.hours || 0,
+            latitude: gpsRecord.latitude,
+            longitude: gpsRecord.longitude
+          });
+        }
+        workspace.labourManagement.attendance[existingDateIndex].records = existingRecords;
+        workspace.markModified('labourManagement');
+      } else {
+        // No attendance entry for this date yet — create one with GPS data only
+        workspace.labourManagement.attendance.push({
+          date,
+          records: [{
+            labourId: senderId,
+            status: gpsRecord.status || 'Present',
+            hours: gpsRecord.hours || 0,
+            latitude: gpsRecord.latitude,
+            longitude: gpsRecord.longitude
+          }],
+          markedBy: senderId
+        });
+      }
     } else {
-      workspace.labourManagement.attendance.push({
-        date,
-        records,
-        markedBy: senderId
-      });
+      // Contractor — full write access to all records
+      if (existingDateIndex > -1) {
+        workspace.labourManagement.attendance[existingDateIndex].records = records;
+        workspace.labourManagement.attendance[existingDateIndex].markedBy = senderId;
+      } else {
+        workspace.labourManagement.attendance.push({
+          date,
+          records,
+          markedBy: senderId
+        });
+      }
     }
 
     await workspace.save();
 
+    // Trigger notification immediately for Attendance Submitted
+    try {
+      const senderUser = await User.findById(senderId);
+      const formattedDate = new Date(date).toLocaleDateString();
+      const notificationText = `📋 Attendance Submitted\nLabour attendance for ${formattedDate} has been marked by Contractor ${senderUser.fullName}\n\n[View Attendance]`;
+
+      const io = req.app.get('io');
+
+      // Notify the client
+      const notification = new Notification({
+        recipientId: workspace.client,
+        senderId: senderId,
+        text: notificationText
+      });
+      await notification.save();
+
+      if (io) {
+        io.to(workspace.client.toString()).emit('new_notification', {
+          _id: notification._id,
+          recipientId: workspace.client,
+          senderId: {
+            _id: senderUser._id,
+            fullName: senderUser.fullName,
+            avatarUrl: senderUser.avatarUrl,
+            role: senderUser.role
+          },
+          text: notification.text,
+          isRead: false,
+          createdAt: notification.createdAt
+        });
+      }
+
+      // Notify each individual labourer
+      if (records && records.length > 0) {
+        for (const record of records) {
+          const lId = record.labourId;
+          if (lId) {
+            const labourNotifText = `📋 Attendance Recorded\nYour attendance for ${formattedDate} has been marked as ${record.status} (${record.hours} hours) by Contractor ${senderUser.fullName}\n\n[View Attendance]`;
+            const labourNotif = new Notification({
+              recipientId: lId,
+              senderId: senderId,
+              text: labourNotifText
+            });
+            await labourNotif.save();
+
+            if (io) {
+              io.to(lId.toString()).emit('new_notification', {
+                _id: labourNotif._id,
+                recipientId: lId,
+                senderId: {
+                  _id: senderUser._id,
+                  fullName: senderUser.fullName,
+                  avatarUrl: senderUser.avatarUrl,
+                  role: senderUser.role
+                },
+                text: labourNotif.text,
+                isRead: false,
+                createdAt: labourNotif.createdAt
+              });
+            }
+          }
+        }
+      }
+    } catch (notifErr) {
+      console.error('Error triggering attendance submitted notification:', notifErr);
+    }
+
     const updated = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
-      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
 
     res.status(200).json({ message: 'Attendance recorded successfully', workspace: updated });
   } catch (error) {
@@ -1115,18 +3252,1182 @@ app.post('/api/project-workspaces/:id/labour/payment', async (req, res) => {
 
     await workspace.save();
 
+    // Trigger notification immediately for Payment Received
+    try {
+      const senderUser = await User.findById(senderId);
+      const notificationText = `💰 Payment Received\nReceived ₹${amount.toLocaleString('en-IN')} (${type}) for ${workspace.title}\n\n[View Details]`;
+
+      const notification = new Notification({
+        recipientId: labourId,
+        senderId: senderId,
+        text: notificationText
+      });
+      await notification.save();
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(labourId.toString()).emit('new_notification', {
+          _id: notification._id,
+          recipientId: labourId,
+          senderId: {
+            _id: senderUser._id,
+            fullName: senderUser.fullName,
+            avatarUrl: senderUser.avatarUrl,
+            role: senderUser.role
+          },
+          text: notification.text,
+          isRead: false,
+          createdAt: notification.createdAt
+        });
+      }
+    } catch (notifErr) {
+      console.error('Error triggering payment received notification:', notifErr);
+    }
+
     const updated = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city')
-      .populate('professional', 'fullName email phoneNumber role city')
-      .populate('contractor', 'fullName email phoneNumber role city')
-      .populate('architect', 'fullName email phoneNumber role city')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability')
-      .populate({ path: 'messages.sender', select: 'fullName email role' });
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
 
     res.status(200).json({ message: 'Payment recorded successfully', workspace: updated });
   } catch (error) {
     console.error('Error recording payment:', error);
     res.status(500).json({ message: 'Error recording payment: ' + error.message });
+  }
+});
+
+// 17b. Record Client Payment
+app.post('/api/project-workspaces/:id/client/payment', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount, senderId } = req.body;
+
+    if (!amount || !senderId) {
+      return res.status(400).json({ message: 'amount and senderId are required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+    if (!workspace.labourManagement) {
+      workspace.labourManagement = { attendance: [], payments: [] };
+    }
+
+    const recipientId = workspace.contractor || workspace.professional;
+
+    workspace.labourManagement.payments.push({
+      date: new Date(),
+      labourId: recipientId,
+      amount: Number(amount),
+      type: 'Payment',
+      recordedBy: senderId
+    });
+
+    await workspace.save();
+
+    // Trigger notification immediately for Payment Received
+    try {
+      const senderUser = await User.findById(senderId);
+      const notificationText = `💰 Payment Received\nReceived ₹${Number(amount).toLocaleString('en-IN')} from Client ${senderUser.fullName} for ${workspace.title}`;
+
+      const notification = new Notification({
+        recipientId: recipientId,
+        senderId: senderId,
+        text: notificationText
+      });
+      await notification.save();
+
+      const io = req.app.get('io');
+      if (io && recipientId) {
+        io.to(recipientId.toString()).emit('new_notification', {
+          _id: notification._id,
+          recipientId: recipientId,
+          senderId: {
+            _id: senderUser._id,
+            fullName: senderUser.fullName,
+            avatarUrl: senderUser.avatarUrl,
+            role: senderUser.role
+          },
+          text: notification.text,
+          isRead: false,
+          createdAt: notification.createdAt
+        });
+      }
+    } catch (notifErr) {
+      console.error('Error triggering payment received notification:', notifErr);
+    }
+
+    const updated = await ProjectWorkspace.findById(id)
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
+      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
+      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
+      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
+
+    emitWorkspaceUpdate(req, id, updated);
+    res.status(200).json({ message: 'Payment recorded successfully', workspace: updated });
+  } catch (error) {
+    console.error('Error recording client payment:', error);
+    res.status(500).json({ message: 'Error recording client payment: ' + error.message });
+  }
+});
+
+// ==========================================
+// Follow / Unfollow & Notification Endpoints
+// ==========================================
+
+// 1. Follow a user
+app.post('/api/follow/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params; // Target user to follow
+    const { followerId } = req.body; // Logged-in user who follows
+
+    if (!followerId) {
+      return res.status(400).json({ message: 'followerId is required' });
+    }
+
+    if (followerId === userId) {
+      return res.status(400).json({ message: 'You cannot follow yourself' });
+    }
+
+    // Check if target user and follower exist
+    const targetUser = await User.findById(userId);
+    const followerUser = await User.findById(followerId);
+    if (!targetUser || !followerUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if follow record already exists
+    const existingFollow = await Follow.findOne({ followerId, followingId: userId });
+    if (existingFollow) {
+      return res.status(400).json({ message: 'You are already following this user' });
+    }
+
+    // Create follow record
+    const follow = new Follow({ followerId, followingId: userId });
+    await follow.save();
+
+    // Update counts
+    targetUser.followersCount = (targetUser.followersCount || 0) + 1;
+    await targetUser.save();
+
+    followerUser.followingCount = (followerUser.followingCount || 0) + 1;
+    await followerUser.save();
+
+    // Create follow notification
+    const notificationText = `${followerUser.fullName} started following you.`;
+    const notification = new Notification({
+      recipientId: userId,
+      senderId: followerId,
+      text: notificationText
+    });
+    await notification.save();
+
+    // Real-time update via Socket.io if the recipient is connected
+    const io = req.app.get('io');
+    if (io) {
+      io.to(userId.toString()).emit('new_notification', {
+        _id: notification._id,
+        recipientId: userId,
+        senderId: {
+          _id: followerUser._id,
+          fullName: followerUser.fullName,
+          avatarUrl: followerUser.avatarUrl,
+          role: followerUser.role
+        },
+        text: notificationText,
+        isRead: false,
+        createdAt: notification.createdAt
+      });
+      
+      // Also broadcast follower count updates if relevant
+      io.emit('user_stats_updated', {
+        userId: userId,
+        followersCount: targetUser.followersCount
+      });
+      io.emit('user_stats_updated', {
+        userId: followerId,
+        followingCount: followerUser.followingCount
+      });
+    }
+
+    res.status(200).json({
+      message: 'Followed successfully',
+      isFollowing: true,
+      followersCount: targetUser.followersCount,
+      followingCount: followerUser.followingCount
+    });
+  } catch (error) {
+    console.error('Error following user:', error);
+    res.status(500).json({ message: 'Error following user: ' + error.message });
+  }
+});
+
+// 2. Unfollow a user
+app.delete('/api/unfollow/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { followerId } = req.body;
+
+    if (!followerId) {
+      return res.status(400).json({ message: 'followerId is required in the body' });
+    }
+
+    const followRecord = await Follow.findOneAndDelete({ followerId, followingId: userId });
+    if (!followRecord) {
+      return res.status(400).json({ message: 'You are not following this user' });
+    }
+
+    const targetUser = await User.findById(userId);
+    const followerUser = await User.findById(followerId);
+
+    if (targetUser) {
+      targetUser.followersCount = Math.max(0, (targetUser.followersCount || 0) - 1);
+      await targetUser.save();
+    }
+    if (followerUser) {
+      followerUser.followingCount = Math.max(0, (followerUser.followingCount || 0) - 1);
+      await followerUser.save();
+    }
+
+    // Real-time update via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('user_stats_updated', {
+        userId: userId,
+        followersCount: targetUser ? targetUser.followersCount : 0
+      });
+      io.emit('user_stats_updated', {
+        userId: followerId,
+        followingCount: followerUser ? followerUser.followingCount : 0
+      });
+    }
+
+    res.status(200).json({
+      message: 'Unfollowed successfully',
+      isFollowing: false,
+      followersCount: targetUser ? targetUser.followersCount : 0,
+      followingCount: followerUser ? followerUser.followingCount : 0
+    });
+  } catch (error) {
+    console.error('Error unfollowing user:', error);
+    res.status(500).json({ message: 'Error unfollowing user: ' + error.message });
+  }
+});
+
+// 3. Get follow status
+app.get('/api/follow/status/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { followerId } = req.query;
+
+    if (!followerId) {
+      return res.status(400).json({ message: 'followerId query parameter is required' });
+    }
+
+    const exists = await Follow.exists({ followerId, followingId: userId });
+    res.status(200).json({ isFollowing: !!exists });
+  } catch (error) {
+    res.status(500).json({ message: 'Error checking follow status: ' + error.message });
+  }
+});
+
+// 4. Get followers of a user
+app.get('/api/followers/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const follows = await Follow.find({ followingId: userId })
+      .populate('followerId', 'fullName email role city avatarUrl shortDesc location rating reviews availability skillType experience');
+    
+    const followers = follows.map(f => f.followerId).filter(Boolean);
+    res.status(200).json({ success: true, followers });
+  } catch (error) {
+    res.status(500).json({ message: 'Error getting followers: ' + error.message });
+  }
+});
+
+// 5. Get list of users a user is following
+app.get('/api/following/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const follows = await Follow.find({ followerId: userId })
+      .populate('followingId', 'fullName email role city avatarUrl shortDesc location rating reviews availability skillType experience');
+    
+    const following = follows.map(f => f.followingId).filter(Boolean);
+    res.status(200).json({ success: true, following });
+  } catch (error) {
+    res.status(500).json({ message: 'Error getting following list: ' + error.message });
+  }
+});
+
+// 6. Get user notifications
+app.get('/api/notifications/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    let notifications = await Notification.find({ recipientId: userId })
+      .sort({ createdAt: -1 })
+      .populate('senderId', 'fullName avatarUrl role');
+
+    // Auto-seed if user has no notifications yet
+    if (notifications.length === 0) {
+      const User = require('./models/User');
+      const u = await User.findById(userId);
+      if (u) {
+        const notifs = [];
+        const now = Date.now();
+        if (u.role === 'Architect') {
+          notifs.push({ recipientId: u._id, text: `🏗 Invitation to bid received for project "Modern Residential Villa"`, isRead: false, createdAt: new Date(now - 1000 * 60 * 30) });
+          notifs.push({ recipientId: u._id, text: `💰 Milestone 1 payment of ₹25,000 released successfully`, isRead: false, createdAt: new Date(now - 1000 * 60 * 60 * 4) });
+          notifs.push({ recipientId: u._id, text: `✅ Your portfolio was viewed by 3 clients today`, isRead: true, createdAt: new Date(now - 1000 * 60 * 60 * 24) });
+        } else if (u.role === 'Contractor') {
+          notifs.push({ recipientId: u._id, text: `📩 New project request for "Commercial Building Renovation" near Mumbai`, isRead: false, createdAt: new Date(now - 1000 * 60 * 20) });
+          notifs.push({ recipientId: u._id, text: `💰 Payment of ₹50,000 received from client Suresh Mehta`, isRead: false, createdAt: new Date(now - 1000 * 60 * 60 * 3) });
+          notifs.push({ recipientId: u._id, text: `👥 Labour team attendance marked for today`, isRead: true, createdAt: new Date(now - 1000 * 60 * 60 * 8) });
+        } else if (u.role === 'Labour') {
+          notifs.push({ recipientId: u._id, text: `✅ Attendance marked present by Contractor Suraj Sharma`, isRead: false, createdAt: new Date(now - 1000 * 60 * 45) });
+          notifs.push({ recipientId: u._id, text: `💵 Daily wage of ₹800 credited to your wallet`, isRead: false, createdAt: new Date(now - 1000 * 60 * 60 * 6) });
+          notifs.push({ recipientId: u._id, text: `🔔 New work opportunity available near ${u.city || 'your area'}`, isRead: true, createdAt: new Date(now - 1000 * 60 * 60 * 12) });
+        } else {
+          // Client
+          notifs.push({ recipientId: u._id, text: `📋 Quotation updated by Contractor for your project "Duplex Renovation"`, isRead: false, createdAt: new Date(now - 1000 * 60 * 15) });
+          notifs.push({ recipientId: u._id, text: `✍️ Contract agreement signed and finalized successfully`, isRead: false, createdAt: new Date(now - 1000 * 60 * 60 * 5) });
+          notifs.push({ recipientId: u._id, text: `🏠 3 architects matched for your project in ${u.city || 'your area'}`, isRead: true, createdAt: new Date(now - 1000 * 60 * 60 * 24) });
+        }
+        notifs.push({ recipientId: u._id, text: `🎉 Welcome to Allver! Start building, connecting, and growing.`, isRead: true, createdAt: new Date(now - 1000 * 60 * 60 * 48) });
+        await Notification.insertMany(notifs);
+        notifications = await Notification.find({ recipientId: userId }).sort({ createdAt: -1 });
+      }
+    }
+
+    res.status(200).json({ success: true, notifications });
+  } catch (error) {
+    res.status(500).json({ message: 'Error getting notifications: ' + error.message });
+  }
+});
+
+// 7. Get unread notifications count
+app.get('/api/notifications/unread-count/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const count = await Notification.countDocuments({ recipientId: userId, isRead: false });
+    res.status(200).json({ success: true, unreadCount: count });
+  } catch (error) {
+    res.status(500).json({ message: 'Error getting unread count: ' + error.message });
+  }
+});
+
+// 8. Mark all notifications as read for a user
+app.post('/api/notifications/read/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    await Notification.updateMany({ recipientId: userId, isRead: false }, { $set: { isRead: true } });
+    res.status(200).json({ success: true, message: 'All notifications marked as read' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error marking notifications as read: ' + error.message });
+  }
+});
+
+// ============================
+// DIRECT MESSAGE (DM) CHAT SYSTEM
+// ============================
+const Conversation = require('./models/Conversation');
+
+// Upload file for chat (images, documents)
+app.post('/api/chat/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file provided' });
+    }
+
+    console.log('Chat upload received:', {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+    });
+
+    const mimeType = req.file.mimetype || 'application/octet-stream';
+    const fileType = mimeType.startsWith('image/') ? 'image' : 'file';
+
+    // Local save fallback function
+    const saveLocal = () => {
+      try {
+        const ext = path.extname(req.file.originalname) || '.jpg';
+        const filename = `${crypto.randomBytes(16).toString('hex')}${ext}`;
+        const filePath = path.join(uploadsDir, filename);
+        fs.writeFileSync(filePath, req.file.buffer);
+        const host = req.get('host') || `localhost:${PORT}`;
+        const fileUrl = `${req.protocol}://${host}/uploads/${filename}`;
+        return res.status(200).json({
+          url: fileUrl,
+          name: req.file.originalname || `file_${Date.now()}`,
+          type: fileType,
+          size: req.file.size,
+        });
+      } catch (err) {
+        console.error('Local chat upload fallback error:', err);
+        return res.status(500).json({ message: 'Upload failed locally: ' + err.message });
+      }
+    };
+
+    const isCloudinaryConfigured = 
+      process.env.CLOUDINARY_CLOUD_NAME && 
+      process.env.CLOUDINARY_CLOUD_NAME !== 'Root' &&
+      process.env.CLOUDINARY_API_KEY && 
+      process.env.CLOUDINARY_API_SECRET;
+
+    if (!isCloudinaryConfigured) {
+      console.log('Cloudinary not configured for chat upload, saving locally...');
+      return saveLocal();
+    }
+
+    // Try Cloudinary upload
+    try {
+      const uploadResult = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder: 'allver-chat',
+            resource_type: 'auto',
+          },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        );
+        stream.end(req.file.buffer);
+      });
+
+      const result = uploadResult;
+      res.status(200).json({
+        url: result.secure_url,
+        name: req.file.originalname || `file_${Date.now()}`,
+        type: fileType,
+        size: req.file.size,
+      });
+    } catch (cloudErr) {
+      console.error('Cloudinary chat upload failed, falling back to local:', cloudErr.message);
+      return saveLocal();
+    }
+  } catch (error) {
+    console.error('Chat upload error:', error);
+    res.status(500).json({ message: 'Upload failed: ' + error.message });
+  }
+});
+
+// 1. Create or find existing conversation between 2 users
+app.post('/api/conversations', async (req, res) => {
+  try {
+    const { senderId, receiverId } = req.body;
+    
+    if (!senderId || !receiverId) {
+      return res.status(400).json({ message: 'senderId and receiverId are required' });
+    }
+
+    if (senderId === receiverId) {
+      return res.status(400).json({ message: 'Cannot create conversation with yourself' });
+    }
+
+    // Validate MongoDB ObjectId format
+    const isValidId = (id) => /^[0-9a-fA-F]{24}$/.test(id);
+    if (!isValidId(senderId) || !isValidId(receiverId)) {
+      return res.status(400).json({ message: 'Invalid user ID format. Only registered users can message.' });
+    }
+
+    // Check if conversation already exists between these 2 users
+    let conversation = await Conversation.findOne({
+      participants: { $all: [senderId, receiverId], $size: 2 }
+    }).populate('participants', 'fullName avatarUrl role city');
+
+    if (conversation) {
+      return res.status(200).json({ conversation, isNew: false });
+    }
+
+    // Create new conversation
+    conversation = new Conversation({
+      participants: [senderId, receiverId],
+      messages: [],
+      unreadCount: { [senderId]: 0, [receiverId]: 0 }
+    });
+
+    await conversation.save();
+    
+    // Populate participants before sending response
+    conversation = await Conversation.findById(conversation._id)
+      .populate('participants', 'fullName avatarUrl role city');
+
+    res.status(201).json({ conversation, isNew: true });
+  } catch (error) {
+    console.error('Error creating conversation:', error);
+    res.status(500).json({ message: 'Error creating conversation: ' + error.message });
+  }
+});
+
+// 2. Get all online users
+app.get('/api/users/online', (req, res) => {
+  res.status(200).json({ onlineUserIds: Array.from(onlineUsers) });
+});
+
+// Get total unread message count across all conversations for a user
+app.get('/api/conversations/unread-total/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const conversations = await Conversation.find({ participants: userId }).select('unreadCount');
+    let total = 0;
+    conversations.forEach(convo => {
+      total += convo.unreadCount.get(userId) || 0;
+    });
+    res.status(200).json({ success: true, totalUnread: total });
+  } catch (error) {
+    console.error('Error fetching total unread count:', error);
+    res.status(500).json({ success: false, totalUnread: 0 });
+  }
+});
+
+// 2. Get all conversations for a user (inbox) — MUST be before /:conversationId routes
+app.get('/api/conversations/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const conversations = await Conversation.find({
+      participants: userId
+    })
+    .populate('participants', 'fullName avatarUrl role city')
+    .populate('lastMessage.sender', 'fullName')
+    .sort({ updatedAt: -1 });
+
+    // Format response with unread counts
+    const formatted = conversations.map(convo => {
+      const otherParticipant = convo.participants.find(
+        p => p._id.toString() !== userId
+      );
+      return {
+        _id: convo._id,
+        otherUser: otherParticipant,
+        lastMessage: convo.lastMessage,
+        unreadCount: convo.unreadCount.get(userId) || 0,
+        updatedAt: convo.updatedAt,
+        messageCount: convo.messages.length,
+        isOnline: otherParticipant ? onlineUsers.has(otherParticipant._id.toString()) : false
+      };
+    });
+
+    res.status(200).json({ conversations: formatted });
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    res.status(500).json({ message: 'Error fetching conversations: ' + error.message });
+  }
+});
+
+// 3. Get messages for a conversation
+app.get('/api/conversations/:conversationId/messages', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { userId } = req.query;
+
+    const conversation = await Conversation.findById(conversationId)
+      .populate('messages.sender', 'fullName avatarUrl role')
+      .populate('participants', 'fullName avatarUrl role city');
+
+    if (!conversation) {
+      return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    // Mark messages as read for this user
+    if (userId) {
+      try {
+        conversation.unreadCount.set(userId, 0);
+        
+        // Mark all messages as read by this user
+        conversation.messages.forEach(msg => {
+          if (!msg.readBy.includes(userId)) {
+            msg.readBy.push(userId);
+          }
+        });
+        
+        await conversation.save();
+      } catch (saveErr) {
+        console.error('Error saving read status:', saveErr);
+        // Don't fail the whole request if read-marking fails
+      }
+    }
+
+    // Clean up messages: strip empty attachment objects from legacy data
+    const cleanMessages = conversation.messages.map(msg => {
+      const msgObj = msg.toObject ? msg.toObject() : msg;
+      // Remove empty attachment objects that have no url
+      if (msgObj.attachment && !msgObj.attachment.url) {
+        msgObj.attachment = null;
+      }
+      return msgObj;
+    });
+
+    res.status(200).json({ 
+      messages: cleanMessages,
+      participants: conversation.participants 
+    });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).json({ message: 'Error fetching messages: ' + error.message });
+  }
+});
+
+// 3. Send a message in a conversation (REST fallback + socket broadcast)
+app.post('/api/conversations/:conversationId/messages', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { senderId, text, attachment } = req.body;
+
+    if (!senderId || (!text && !attachment)) {
+      return res.status(400).json({ message: 'senderId and text (or attachment) are required' });
+    }
+
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+      return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    // Create the new message — only include attachment if it has a valid URL
+    const newMessage = {
+      sender: senderId,
+      text: text || '',
+      attachment: (attachment && attachment.url) ? {
+        name: attachment.name || '',
+        url: attachment.url,
+        type: attachment.type || 'file',
+        duration: attachment.duration || 0
+      } : null,
+      readBy: [senderId],
+      createdAt: new Date()
+    };
+
+    conversation.messages.push(newMessage);
+    
+    // Update last message preview
+    const attachmentPreview = newMessage.attachment 
+      ? (newMessage.attachment.type === 'image' ? '📷 Photo' : newMessage.attachment.type === 'voice' ? '🎤 Voice message' : '📎 File') 
+      : '';
+    conversation.lastMessage = {
+      text: text || attachmentPreview,
+      sender: senderId,
+      createdAt: new Date()
+    };
+
+    // Increment unread count for other participants
+    conversation.participants.forEach(pId => {
+      const participantId = pId.toString();
+      if (participantId !== senderId) {
+        const current = conversation.unreadCount.get(participantId) || 0;
+        conversation.unreadCount.set(participantId, current + 1);
+      }
+    });
+
+    conversation.updatedAt = new Date();
+    await conversation.save();
+
+    // Trigger notification immediately for New Chat Message (DM)
+    try {
+      const senderUser = await User.findById(senderId);
+      const textPreview = text || (attachment && attachment.name ? `sent a file: ${attachment.name}` : 'sent an attachment');
+      const notificationText = `💬 New Message\n${senderUser.fullName}: ${textPreview}\n\n[View Chat]`;
+
+      conversation.participants.forEach(async (pId) => {
+        const receiverId = pId.toString();
+        if (receiverId !== senderId) {
+          const notification = new Notification({
+            recipientId: receiverId,
+            senderId: senderId,
+            text: notificationText
+          });
+          await notification.save();
+
+          const io = req.app.get('io');
+          if (io) {
+            io.to(receiverId).emit('new_notification', {
+              _id: notification._id,
+              recipientId: receiverId,
+              senderId: {
+                _id: senderUser._id,
+                fullName: senderUser.fullName,
+                avatarUrl: senderUser.avatarUrl,
+                role: senderUser.role
+              },
+              text: notification.text,
+              isRead: false,
+              createdAt: notification.createdAt
+            });
+          }
+        }
+      });
+    } catch (notifErr) {
+      console.error('Error triggering new message notifications:', notifErr);
+    }
+
+    // Get the saved message with its MongoDB _id
+    const savedMessage = conversation.messages[conversation.messages.length - 1];
+
+    // Populate sender info
+    const populatedConvo = await Conversation.findById(conversationId)
+      .populate('messages.sender', 'fullName avatarUrl role');
+    
+    const populatedMessage = populatedConvo.messages.id(savedMessage._id);
+
+    // Broadcast via Socket.io for real-time delivery
+    const ioInstance = req.app.get('io');
+    ioInstance.to(conversationId).emit('receive_message', {
+      workspaceId: conversationId,
+      message: populatedMessage,
+      senderId: senderId
+    });
+
+    // Also send a notification event to the receiver
+    conversation.participants.forEach(pId => {
+      const participantId = pId.toString();
+      if (participantId !== senderId) {
+        ioInstance.emit('new_dm_notification', {
+          conversationId,
+          receiverId: participantId,
+          message: populatedMessage
+        });
+      }
+    });
+
+    res.status(201).json({ message: populatedMessage });
+  } catch (error) {
+    console.error('Error sending message:', error);
+    res.status(500).json({ message: 'Error sending message: ' + error.message });
+  }
+});
+
+
+// 5. Mark conversation as read
+app.post('/api/conversations/:conversationId/read', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { userId } = req.body;
+
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+      return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    conversation.unreadCount.set(userId, 0);
+    
+    // Mark all unread messages as read
+    conversation.messages.forEach(msg => {
+      if (!msg.readBy.includes(userId)) {
+        msg.readBy.push(userId);
+      }
+    });
+
+    await conversation.save();
+    res.status(200).json({ success: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error marking as read: ' + error.message });
+  }
+});
+
+// Schedule a Site Visit
+app.post('/api/project-workspaces/:id/site-visits', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { date, senderId } = req.body;
+
+    if (!date || !senderId) {
+      return res.status(400).json({ message: 'Date and senderId are required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(id);
+    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
+
+    const senderUser = await User.findById(senderId);
+    workspace.messages.push({
+      sender: senderId,
+      text: `📅 Site visit scheduled for ${new Date(date).toLocaleDateString()} by ${senderUser.fullName}`,
+      createdAt: new Date()
+    });
+    await workspace.save();
+
+    const members = new Set();
+    if (workspace.client && workspace.client.toString() !== senderId) members.add(workspace.client.toString());
+    if (workspace.professional && workspace.professional.toString() !== senderId) members.add(workspace.professional.toString());
+    if (workspace.contractor && workspace.contractor.toString() !== senderId) members.add(workspace.contractor.toString());
+    if (workspace.architect && workspace.architect.toString() !== senderId) members.add(workspace.architect.toString());
+    if (workspace.labourTeam) {
+      workspace.labourTeam.forEach(l => {
+        if (l.toString() !== senderId) members.add(l.toString());
+      });
+    }
+
+    for (const recipientId of members) {
+      const notification = new Notification({
+        recipientId,
+        senderId,
+        text: `📅 Site Visit Scheduled\nSite visit scheduled for ${workspace.title} on ${new Date(date).toLocaleDateString()}\n\n[View Schedule]`
+      });
+      await notification.save();
+
+      const ioInstance = req.app.get('io');
+      if (ioInstance) {
+        ioInstance.to(recipientId).emit('new_notification', {
+          _id: notification._id,
+          recipientId,
+          senderId: {
+            _id: senderUser._id,
+            fullName: senderUser.fullName,
+            avatarUrl: senderUser.avatarUrl,
+            role: senderUser.role
+          },
+          text: notification.text,
+          isRead: false,
+          createdAt: notification.createdAt
+        });
+      }
+    }
+
+    res.status(201).json({ message: 'Site visit scheduled successfully' });
+  } catch (error) {
+    console.error('Error scheduling site visit:', error);
+    res.status(500).json({ message: 'Error scheduling site visit: ' + error.message });
+  }
+});
+
+// Test trigger endpoint to trigger notifications immediately
+app.post('/api/notifications/test-trigger', async (req, res) => {
+  try {
+    const { type, recipientId, senderId, title, location, amount, documentName, visitDate } = req.body;
+    
+    if (!recipientId || !senderId) {
+      return res.status(400).json({ message: 'recipientId and senderId are required' });
+    }
+
+    const senderUser = await User.findById(senderId);
+    if (!senderUser) {
+      return res.status(404).json({ message: 'Sender user not found' });
+    }
+
+    let text = '';
+    switch (type) {
+      case 'New Project Posted':
+        text = `🏗 New Project\n${title || '2BHK House Design'} posted near ${location || 'Mumbai'}\n\n[View Project]`;
+        break;
+      case 'New Chat Message':
+        text = `💬 New Message\n${senderUser.fullName}: ${title || 'Hey, how is the progress?'}\n\n[View Chat]`;
+        break;
+      case 'Proposal Accepted':
+        text = `✅ Proposal Accepted\n${senderUser.fullName} accepted your proposal for ${title || 'Luxury Villa Construction'}\n\n[View Project]`;
+        break;
+      case 'Payment Received':
+        text = `💰 Payment Received\nReceived ₹${amount || '50,000'} from ${senderUser.fullName} for ${title || 'Office Renovation'}\n\n[View Details]`;
+        break;
+      case 'Project Invitation':
+        text = `📩 Project Invitation\n${senderUser.fullName} invited you to the project: ${title || 'Luxury Villa'}\n\n[View Invitation]`;
+        break;
+      case 'Document Shared':
+        text = `📁 Document Shared\n${senderUser.fullName} shared "${documentName || 'Layout_Plan.pdf'}" in ${title || 'Luxury Villa'}\n\n[View Document]`;
+        break;
+      case 'Site Visit Scheduled':
+        text = `📅 Site Visit Scheduled\nSite visit scheduled for ${title || 'Luxury Villa'} on ${visitDate || '18 May'}\n\n[View Schedule]`;
+        break;
+      case 'Contractor Applied':
+        text = `👷 Contractor Applied\nContractor ${senderUser.fullName} applied to your project: ${title || 'Luxury Villa Construction'}\n\n[View Application]`;
+        break;
+      case 'Architect Submitted Design':
+        text = `📐 Architect Submitted Design\nArchitect ${senderUser.fullName} submitted a new blueprint design: ${title || 'ModernScandinavian.dwg'}\n\n[View Design]`;
+        break;
+      case 'Labour Joined Project':
+        text = `👷 Labour Joined Project\nLabourer ${senderUser.fullName} has joined the project: ${title || 'Luxury Villa'}\n\n[View Project]`;
+        break;
+      case 'Attendance Submitted':
+        text = `📋 Attendance Submitted\nLabour attendance for ${visitDate || 'today'} has been marked by Contractor ${senderUser.fullName}\n\n[View Attendance]`;
+        break;
+      case 'Project Milestone Completed':
+        text = `✅ ${title || 'Foundation Work Completed'}\n\n${senderUser.role || 'Contractor'} ${senderUser.fullName} uploaded progress photos\n\n[View Progress]`;
+        break;
+      default:
+        return res.status(400).json({ message: 'Invalid notification type' });
+    }
+
+    const notification = new Notification({
+      recipientId,
+      senderId,
+      text
+    });
+    await notification.save();
+
+    // Emit via socket
+    const io = req.app.get('io');
+    if (io) {
+      io.to(recipientId.toString()).emit('new_notification', {
+        _id: notification._id,
+        recipientId,
+        senderId: {
+          _id: senderUser._id,
+          fullName: senderUser.fullName,
+          avatarUrl: senderUser.avatarUrl,
+          role: senderUser.role
+        },
+        text: notification.text,
+        isRead: false,
+        createdAt: notification.createdAt
+      });
+    }
+
+    res.status(201).json({ success: true, notification });
+  } catch (error) {
+    console.error('Error triggering test notification:', error);
+    res.status(500).json({ message: 'Error triggering test notification: ' + error.message });
+  }
+});
+
+app.get('/render-logo', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #0f172a;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 512px;
+        height: 512px;
+      }
+      svg {
+        width: 440px;
+      }
+    </style>
+    </head>
+    <body>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 36" fill="none">
+          <defs>
+              <linearGradient id="silver" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#c8cad0"/>
+                  <stop offset="15%" stop-color="#a0a3aa"/>
+                  <stop offset="30%" stop-color="#bbbec5"/>
+                  <stop offset="50%" stop-color="#d0d3d8"/>
+                  <stop offset="65%" stop-color="#9a9da4"/>
+                  <stop offset="80%" stop-color="#808590"/>
+                  <stop offset="100%" stop-color="#606468"/>
+              </linearGradient>
+              <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#ddb44e"/>
+                  <stop offset="20%" stop-color="#c49a3d"/>
+                  <stop offset="40%" stop-color="#e8c55a"/>
+                  <stop offset="60%" stop-color="#d4a840"/>
+                  <stop offset="80%" stop-color="#b8922e"/>
+                  <stop offset="100%" stop-color="#9a7828"/>
+              </linearGradient>
+              <filter id="ts" x="-3%" y="-10%" width="108%" height="130%">
+                  <feDropShadow dx="0" dy="0.8" stdDeviation="0.6" flood-color="#0a0a1a" flood-opacity="0.25"/>
+              </filter>
+          </defs>
+          <g filter="url(#ts)">
+              <path d="M0,34 L5,34 L18,4 L20,0 L22,4 L35,34 L40,34 L23,0 L17,0 Z M8,34 L20,6 L32,34 L27,34 L20,16 L13,34 Z" fill="url(#silver)" fill-rule="evenodd"/>
+              <path d="M50,0 L55,0 L55,29.5 L74,29.5 L74,34 L50,34 Z" fill="url(#silver)"/>
+              <path d="M84,0 L89,0 L89,29.5 L108,29.5 L108,34 L84,34 Z" fill="url(#silver)"/>
+              <path d="M118,0 L123,0 L138,28 L153,0 L158,0 L140.5,34 L135.5,34 Z" fill="url(#silver)"/>
+              <path d="M168,0 L202,0 L202,4.5 L173,4.5 L173,14.5 L198,14.5 L198,19 L173,19 L173,29.5 L202,29.5 L202,34 L168,34 Z" fill="url(#gold)"/>
+              <path d="M212,0 L238,0 Q250,0 250,11 Q250,18.5 241,20.5 L254,34 L248,34 L236,21.5 L217,21.5 L217,34 L212,34 Z M217,4.5 L217,17 L236,17 Q245,17 245,11 Q245,4.5 236,4.5 Z" fill="url(#silver)" fill-rule="evenodd"/>
+          </g>
+      </svg>
+    </body>
+    </html>
+  `);
+});
+
+app.get('/render-logo-transparent', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: transparent;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 512px;
+        height: 512px;
+      }
+      svg {
+        width: 440px;
+      }
+    </style>
+    </head>
+    <body>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 36" fill="none">
+          <defs>
+              <linearGradient id="silver" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#c8cad0"/>
+                  <stop offset="15%" stop-color="#a0a3aa"/>
+                  <stop offset="30%" stop-color="#bbbec5"/>
+                  <stop offset="50%" stop-color="#d0d3d8"/>
+                  <stop offset="65%" stop-color="#9a9da4"/>
+                  <stop offset="80%" stop-color="#808590"/>
+                  <stop offset="100%" stop-color="#606468"/>
+              </linearGradient>
+              <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#ddb44e"/>
+                  <stop offset="20%" stop-color="#c49a3d"/>
+                  <stop offset="40%" stop-color="#e8c55a"/>
+                  <stop offset="60%" stop-color="#d4a840"/>
+                  <stop offset="80%" stop-color="#b8922e"/>
+                  <stop offset="100%" stop-color="#9a7828"/>
+              </linearGradient>
+              <filter id="ts" x="-3%" y="-10%" width="108%" height="130%">
+                  <feDropShadow dx="0" dy="0.8" stdDeviation="0.6" flood-color="#0a0a1a" flood-opacity="0.25"/>
+              </filter>
+          </defs>
+          <g filter="url(#ts)">
+              <path d="M0,34 L5,34 L18,4 L20,0 L22,4 L35,34 L40,34 L23,0 L17,0 Z M8,34 L20,6 L32,34 L27,34 L20,16 L13,34 Z" fill="url(#silver)" fill-rule="evenodd"/>
+              <path d="M50,0 L55,0 L55,29.5 L74,29.5 L74,34 L50,34 Z" fill="url(#silver)"/>
+              <path d="M84,0 L89,0 L89,29.5 L108,29.5 L108,34 L84,34 Z" fill="url(#silver)"/>
+              <path d="M118,0 L123,0 L138,28 L153,0 L158,0 L140.5,34 L135.5,34 Z" fill="url(#silver)"/>
+              <path d="M168,0 L202,0 L202,4.5 L173,4.5 L173,14.5 L198,14.5 L198,19 L173,19 L173,29.5 L202,29.5 L202,34 L168,34 Z" fill="url(#gold)"/>
+              <path d="M212,0 L238,0 Q250,0 250,11 Q250,18.5 241,20.5 L254,34 L248,34 L236,21.5 L217,21.5 L217,34 L212,34 Z M217,4.5 L217,17 L236,17 Q245,17 245,11 Q245,4.5 236,4.5 Z" fill="url(#silver)" fill-rule="evenodd"/>
+          </g>
+      </svg>
+    </body>
+    </html>
+  `);
+});
+
+
+app.get('/api/temp-db-dump', async (req, res) => {
+  try {
+    // Run seed on-demand
+    let tempSeedResult = '';
+    const renRequest = await ContractRequest.findOne({ title: '5Bhk home renovation' });
+    if (renRequest) {
+      if (renRequest.status === 'Pending') {
+        renRequest.status = 'Accepted';
+        renRequest.professional = new mongoose.Types.ObjectId('6a2790f42548c9ceb580f1c5'); // Ankit contractor
+        await renRequest.save();
+        tempSeedResult = 'Updated contract request to Accepted and assigned Ankit.';
+      } else {
+        tempSeedResult = `Contract request found with status: ${renRequest.status}.`;
+      }
+
+      const wsExists = await ProjectWorkspace.findOne({ contractRequest: renRequest._id });
+      if (!wsExists) {
+        const newWs = new ProjectWorkspace({
+          contractRequest: renRequest._id,
+          client: renRequest.client,
+          professional: renRequest.professional || new mongoose.Types.ObjectId('6a2790f42548c9ceb580f1c5'),
+          contractor: renRequest.professional || new mongoose.Types.ObjectId('6a2790f42548c9ceb580f1c5'),
+          architect: null,
+          labourTeam: [],
+          title: renRequest.title,
+          projectType: renRequest.projectType || 'Residential',
+          status: 'Active',
+          quotation: {
+            totalCost: 2000000,
+            status: 'Accepted',
+            items: []
+          },
+          updates: [] // Starts fresh from scratch!
+        });
+        await newWs.save();
+        tempSeedResult += ' ProjectWorkspace created successfully.';
+      } else {
+        tempSeedResult += ' Workspace already existed.';
+      }
+    } else {
+      tempSeedResult = 'Contract request "5Bhk home renovation" not found.';
+    }
+
+    const users = await User.find({}, 'fullName email role');
+    const reqs = await ContractRequest.find({});
+    const bids = await ProjectBid.find({})
+      .populate('professional', 'fullName email role');
+    const workspaces = await ProjectWorkspace.find({})
+      .populate('client', 'fullName email role avatarUrl')
+      .populate('professional', 'fullName email role avatarUrl')
+      .populate('contractor', 'fullName email role avatarUrl')
+      .populate('architect', 'fullName email role avatarUrl');
+    res.status(200).json({ users, contractRequests: reqs, bids, workspaces, seedResult: tempSeedResult });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/test-highlights', async (req, res) => {
+  try {
+    const rahul = await User.findOne({ email: 'rahulrai@gmail.com' });
+    let updateResult = null;
+    let logged = [];
+    if (rahul) {
+      const updatedHighlights = rahul.portfolioHighlights.map(h => {
+        const item = h.toObject ? h.toObject() : h;
+        logged.push(`Checking item: ${item.title}, mediaUrls: ${JSON.stringify(item.mediaUrls)}`);
+        if (!item.mediaUrls || item.mediaUrls.length === 0) {
+          if (item.title === 'Work done') {
+            item.mediaUrls = ['https://assets.mixkit.co/videos/preview/mixkit-construction-site-with-crane-in-action-40228-large.mp4'];
+            logged.push(`Set Work done mediaUrls`);
+          } else if (item.title === 'Interior design') {
+            item.mediaUrls = ['https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=600&q=80'];
+            logged.push(`Set Interior design mediaUrls`);
+          } else if (item.title === 'Home renovation') {
+            item.mediaUrls = ['https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=600&q=80'];
+            logged.push(`Set Home renovation mediaUrls`);
+          }
+        }
+        return item;
+      });
+      updateResult = await User.updateOne({ email: 'rahulrai@gmail.com' }, { $set: { portfolioHighlights: updatedHighlights } });
+    }
+
+    const users = await User.find({ role: 'Labour' }, 'fullName email portfolioHighlights');
+    res.status(200).json({ users, updateResult, logged });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/test-notifications', async (req, res) => {
+  try {
+    const rahul = await User.findOne({ email: 'rahulrai@gmail.com' });
+    if (!rahul) return res.status(404).json({ message: 'Labour Rahul Rai not found' });
+
+    const contractor = await User.findOne({ role: 'Contractor' });
+    if (!contractor) return res.status(404).json({ message: 'No Contractor found' });
+
+    await Notification.deleteMany({ recipientId: rahul._id });
+
+    const notifs = [
+      {
+        recipientId: rahul._id,
+        senderId: contractor._id,
+        text: `📋 Attendance Recorded\nYour attendance for today has been marked as Present (8.0 hours) by Contractor ${contractor.fullName}\n\n[View Attendance]`,
+        createdAt: new Date()
+      },
+      {
+        recipientId: rahul._id,
+        senderId: contractor._id,
+        text: `💰 Payment Received\nReceived ₹5,000 (Advance) for Project Sector 62 Thane\n\n[View Details]`,
+        createdAt: new Date(Date.now() - 1000 * 60 * 30)
+      },
+      {
+        recipientId: rahul._id,
+        senderId: contractor._id,
+        text: `📋 Attendance Recorded\nYour attendance for yesterday has been marked as Overtime (10.0 hours) by Contractor ${contractor.fullName}\n\n[View Attendance]`,
+        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24)
+      }
+    ];
+
+    const created = await Notification.create(notifs);
+
+    res.status(200).json({ success: true, message: 'Test notifications created successfully', created });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

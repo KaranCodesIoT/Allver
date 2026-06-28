@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+
   phoneNumber: { type: String, default: '' },
   password: { type: String, required: true },
   role: { type: String, enum: ['Architect', 'Contractor', 'Labour', 'Client'], required: true },
@@ -43,8 +44,32 @@ const userSchema = new mongoose.Schema({
   location: { type: String },
   rating: { type: Number },
   reviews: { type: Number },
-  projects: { type: Number },
+  projects: { type: Number, default: 0 },
+  savedDesigns: { type: [mongoose.Schema.Types.ObjectId], ref: 'Post', default: [] },
+  followersCount: { type: Number, default: 0 },
+  followingCount: { type: Number, default: 0 },
   
+  // Featured ranking fields
+  isVerified: { type: Boolean, default: false },
+  lastActive: { type: Date, default: Date.now },
+  profileCompletion: { type: Number, default: 0 }, // 0-100
+  
+  team: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+
+  // Portfolio Highlights (primarily for Labour users)
+  portfolioHighlights: [{
+    title: { type: String },
+    projectType: { type: String },
+    location: { type: String },
+    budget: { type: String },
+    timeline: { type: String },
+    requirements: [{ type: String }],
+    description: { type: String },
+    mediaUrls: [{ type: String }],
+    status: { type: String, default: 'Posted' },
+    createdAt: { type: Date, default: Date.now }
+  }],
+
   createdAt: { type: Date, default: Date.now }
 });
 

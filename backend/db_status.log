@@ -1,0 +1,396 @@
+
+=== DB STATUS AT 2026-06-28T10:55:15.035Z ===
+--- USERS ---
+[
+  {
+    "_id": "6a26367bde02723fc9209c0b",
+    "fullName": "Karan Chaubey",
+    "role": "Client"
+  },
+  {
+    "_id": "6a263c8cde02723fc9209c0c",
+    "fullName": "suraj sharma",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a263fa0de02723fc9209c0d",
+    "fullName": "Rohit shrivastav",
+    "role": "Architect"
+  },
+  {
+    "_id": "6a264793037183a8e18e6c2a",
+    "fullName": "Karan Chaubey",
+    "email": "karanchaubey80@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a265cc6791177507e814ee6",
+    "fullName": "Viraj shah",
+    "email": "viraj@gmail.com",
+    "role": "Client"
+  },
+  {
+    "_id": "6a266bbf6f5f6f4e3b3da1c9",
+    "fullName": "OM client",
+    "email": "om@gmail.com",
+    "role": "Client"
+  },
+  {
+    "_id": "6a26e8c10293cf105b252bd7",
+    "fullName": "akash chauhan",
+    "email": "akash@gmail.com",
+    "role": "Labour"
+  },
+  {
+    "_id": "6a2790f42548c9ceb580f1c5",
+    "fullName": "Ankit contractor",
+    "email": "ankit@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a27ad2cd82c726b5ae1afc0",
+    "fullName": "sushil client",
+    "email": "sushil@gmail.com",
+    "role": "Client"
+  },
+  {
+    "_id": "6a27d23e5f240b60acdc0d76",
+    "fullName": "Akash Chauhan",
+    "email": "akash8@gmail.com",
+    "role": "Labour"
+  },
+  {
+    "_id": "6a2a4d66b85564d69ca3450f",
+    "fullName": "karan chaubey",
+    "email": "karan@gmail.com",
+    "role": "Architect"
+  },
+  {
+    "_id": "6a2a4df7b85564d69ca34549",
+    "fullName": "Karan Chaturvedi ",
+    "email": "karan20@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a2ab19bb85564d69ca34830",
+    "fullName": "ROHIT CHAUDHARI ",
+    "email": "rohit20@gmail.com",
+    "role": "Architect"
+  },
+  {
+    "_id": "6a2ad4910ffd3613d4ecf531",
+    "fullName": "Rahul contractor ",
+    "email": "rahul@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a2ad5010ffd3613d4ecf532",
+    "fullName": "Rahul contractor ",
+    "email": "rahul20@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a2af05c0ffd3613d4ecf533",
+    "fullName": "Sunil Mishra ",
+    "email": "sunil@gmail.com",
+    "role": "Client"
+  },
+  {
+    "_id": "6a2b75f1af4cd338570bbdef",
+    "fullName": "Sushil Maurya",
+    "email": "sushilmourya9930@gmail.com",
+    "role": "Architect"
+  },
+  {
+    "_id": "6a2b7890af4cd338570bbdf0",
+    "fullName": "Sanjay Maurya",
+    "email": "sushilmaurya9930@gmail.com",
+    "role": "Architect"
+  },
+  {
+    "_id": "6a2b78bd28ac3c5177671f5f",
+    "fullName": "Ritesh Dubey",
+    "email": "ritesh@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a2b790828ac3c5177671f60",
+    "fullName": "Ritesh Gupta ",
+    "email": "ritesh20@gmail.com",
+    "role": "Client"
+  },
+  {
+    "_id": "6a2b9b1a8b04d40d8b4e1040",
+    "fullName": "Ramu kumar",
+    "email": "ramu@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a2ba6c7aa301541457615c8",
+    "fullName": "Sanjay Maurya",
+    "email": "sanjaymaurya123@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a2ba8e3aa301541457615ec",
+    "fullName": "Sanjay Maurya",
+    "email": "sanjaymourya9930@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a2e49ce63ef9e203ce901a4",
+    "fullName": "Shivam Sharma ",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a2e4a8f62efc040aec1fc66",
+    "fullName": "shiva verma",
+    "email": "shiva@gmail.com",
+    "role": "Client"
+  },
+  {
+    "_id": "6a2e4b0c62efc040aec1fc67",
+    "fullName": "Shiva verma",
+    "email": "shiva20@gmail.com",
+    "role": "Architect"
+  },
+  {
+    "_id": "6a2e5a124509ce797db7656e",
+    "fullName": "Siya",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a2e5d43a5153ac89431368b",
+    "fullName": "Ayush",
+    "email": "ayush@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a2e606ca5153ac89431368c",
+    "fullName": "Gangaram maurya ",
+    "email": "gangarammaurya9930@gmail.com",
+    "role": "Client"
+  },
+  {
+    "_id": "6a2e67c5a5153ac89431368d",
+    "fullName": "Sanjay Kumar ",
+    "email": "sanjay@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a2e9eb8ae5053e8c9265b97",
+    "fullName": "Client",
+    "email": "client@gmail.com",
+    "role": "Client"
+  },
+  {
+    "_id": "6a30e909c903a4570d4bd3cf",
+    "fullName": "Suraj contractor ",
+    "email": "suraj.contract@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a3cc5bdfd4ff2e1cf777c5f",
+    "fullName": "Ashu Yadav",
+    "email": "ashu@gmail.com",
+    "role": "Client"
+  },
+  {
+    "_id": "6a3e967fb06079f451bdf905",
+    "fullName": "Kunal Dwivedi",
+    "email": "kunal@gmail.com",
+    "role": "Labour"
+  },
+  {
+    "_id": "6a3eab0f250ec2d6f4b77d6f",
+    "fullName": "Rahul rai",
+    "email": "rahulrai@gmail.com",
+    "role": "Labour"
+  },
+  {
+    "_id": "6a3f450971da69c63daf2b7d",
+    "fullName": "Amit Kumar",
+    "email": "amit@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a3f450971da69c63daf2b7e",
+    "fullName": "Sandeep Yadav",
+    "email": "sandeep@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a3f450971da69c63daf2b7f",
+    "fullName": "Vikrant Singh",
+    "email": "vikrant@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a3f450971da69c63daf2b80",
+    "fullName": "Mohit Patel",
+    "email": "mohit@gmail.com",
+    "role": "Contractor"
+  },
+  {
+    "_id": "6a3f450a71da69c63daf2b81",
+    "fullName": "Arjun Mehta",
+    "email": "arjun@gmail.com",
+    "role": "Architect"
+  },
+  {
+    "_id": "6a3f450a71da69c63daf2b82",
+    "fullName": "Neha Gupta",
+    "email": "neha@gmail.com",
+    "role": "Architect"
+  },
+  {
+    "_id": "6a3f450a71da69c63daf2b84",
+    "fullName": "Rakesh Chauhan",
+    "email": "rakesh@gmail.com",
+    "role": "Labour"
+  },
+  {
+    "_id": "6a3f450a71da69c63daf2b85",
+    "fullName": "Deepak Kumar",
+    "email": "deepak@gmail.com",
+    "role": "Labour"
+  },
+  {
+    "_id": "6a3f450a71da69c63daf2b86",
+    "fullName": "Pawan Singh",
+    "email": "pawan@gmail.com",
+    "role": "Labour"
+  },
+  {
+    "_id": "6a3f450a71da69c63daf2b87",
+    "fullName": "Santosh Patel",
+    "email": "santosh@gmail.com",
+    "role": "Labour"
+  },
+  {
+    "_id": "6a3f450a71da69c63daf2b88",
+    "fullName": "Rohit Agarwal",
+    "email": "rohit@gmail.com",
+    "role": "Client"
+  },
+  {
+    "_id": "6a3f450a71da69c63daf2b89",
+    "fullName": "Vivek Tiwari",
+    "email": "vivek@gmail.com",
+    "role": "Client"
+  },
+  {
+    "_id": "6a3f450a71da69c63daf2b8a",
+    "fullName": "Nitin Verma",
+    "email": "nitin@gmail.com",
+    "role": "Client"
+  }
+]
+
+--- POSTS ---
+[
+  {
+    "quotation": {
+      "civilStructure": "",
+      "electricalPlumbing": "",
+      "flooringTiling": "",
+      "modularWoodwork": ""
+    },
+    "_id": "6a2e74af91e9f868e01a07d9",
+    "title": "Premium Design look",
+    "description": "Modern and minimal 2bhk apartment design etc.\n",
+    "type": "design",
+    "mediaUrls": [
+      "http://192.168.209.188:5000/uploads/168569e36877531605ac849e874f05ab.jpeg"
+    ],
+    "creator": {
+      "_id": "6a2e4b0c62efc040aec1fc67",
+      "fullName": "Shiva verma",
+      "role": "Architect"
+    },
+    "likes": 3,
+    "comments": 2,
+    "createdAt": "2026-06-14T09:30:23.566Z",
+    "__v": 10,
+    "commentsList": [
+      {
+        "user": "6a2e4b0c62efc040aec1fc67",
+        "userName": "Shiva verma",
+        "userAvatar": "",
+        "text": "I liked it. Contact me once you free",
+        "createdAt": "2026-06-14T10:13:58.584Z",
+        "_id": "6a2e7ee61facadf222f12d4c"
+      },
+      {
+        "user": "6a2b9b1a8b04d40d8b4e1040",
+        "userName": "Ramu kumar",
+        "userAvatar": "",
+        "text": "Wow awesome 😎",
+        "createdAt": "2026-06-14T10:16:05.670Z",
+        "_id": "6a2e7f651facadf222f12d53"
+      }
+    ],
+    "dislikedBy": [],
+    "likedBy": [
+      "6a2e4b0c62efc040aec1fc67",
+      "6a2b9b1a8b04d40d8b4e1040",
+      "6a2ab19bb85564d69ca34830"
+    ]
+  },
+  {
+    "quotation": {
+      "civilStructure": "5 lakh",
+      "flooringTiling": "2lakh",
+      "electricalPlumbing": "1lakh",
+      "modularWoodwork": "4lakh"
+    },
+    "_id": "6a40f33021c3ad39e2ec68c6",
+    "title": "Modern Scandinavian Living room",
+    "description": "Available new design in affordable price ",
+    "type": "design",
+    "mediaUrls": [
+      "http://10.155.74.241:5000/uploads/4eeae35a6eadd94234f37df02f43c7bd.webp",
+      "http://10.155.74.241:5000/uploads/12d7cf8f0350c4965a623f05d72ab35d.jpg"
+    ],
+    "creator": {
+      "_id": "6a2ab19bb85564d69ca34830",
+      "fullName": "ROHIT CHAUDHARI ",
+      "role": "Architect"
+    },
+    "likes": 0,
+    "comments": 0,
+    "likedBy": [],
+    "dislikedBy": [],
+    "commentsList": [],
+    "createdAt": "2026-06-28T10:10:56.183Z",
+    "__v": 2
+  },
+  {
+    "quotation": {
+      "civilStructure": "",
+      "flooringTiling": "",
+      "electricalPlumbing": "",
+      "modularWoodwork": ""
+    },
+    "_id": "6a40fcfdcfd0383e4b4c964a",
+    "title": "",
+    "description": "Modern Scandinavian Living room Design ",
+    "type": "media",
+    "mediaUrls": [
+      "http://10.155.74.241:5000/uploads/2df0626227519c9e149c66ab6102c1da.mp4"
+    ],
+    "creator": {
+      "_id": "6a2ab19bb85564d69ca34830",
+      "fullName": "ROHIT CHAUDHARI ",
+      "role": "Architect"
+    },
+    "likes": 0,
+    "comments": 0,
+    "likedBy": [],
+    "dislikedBy": [],
+    "commentsList": [],
+    "createdAt": "2026-06-28T10:52:45.537Z",
+    "__v": 0
+  }
+]
+  

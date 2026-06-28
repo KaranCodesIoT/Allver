@@ -11,7 +11,7 @@ const projectWorkspaceSchema = new mongoose.Schema({
   projectType: { type: String, required: true },
   status: { 
     type: String, 
-    enum: ['Discussion', 'Active', 'Completed'], 
+    enum: ['Discussion', 'Active', 'Waiting for Client Approval', 'Rework Required', 'Completed', 'Cancelled'], 
     default: 'Discussion' 
   },
   quotation: {
@@ -47,6 +47,7 @@ const projectWorkspaceSchema = new mongoose.Schema({
     description: { type: String, default: '' },
     category: { type: String, default: 'General' },
     img: { type: String },
+    video: { type: String },
     postedBy: {
       senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       senderName: { type: String },
@@ -67,8 +68,10 @@ const projectWorkspaceSchema = new mongoose.Schema({
       date: { type: String, required: true },
       records: [{
         labourId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-        status: { type: String, enum: ['Present', 'Half Day', 'Absent'] },
-        hours: { type: Number, default: 0 }
+        status: { type: String, enum: ['Present', 'Half Day', 'Absent', 'Overtime'] },
+        hours: { type: Number, default: 0 },
+        latitude: { type: Number },
+        longitude: { type: Number }
       }],
       markedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
     }],
@@ -78,8 +81,16 @@ const projectWorkspaceSchema = new mongoose.Schema({
       amount: { type: Number, required: true },
       type: { type: String, enum: ['Payment', 'Advance'], required: true },
       recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
-    }]
+    }],
   },
+  ratings: [{
+    from: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    to: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    rating: { type: Number, required: true },
+    reviewText: { type: String, default: '' },
+    criteria: { type: Map, of: Number },
+    createdAt: { type: Date, default: Date.now }
+  }],
   createdAt: { type: Date, default: Date.now }
 });
 
