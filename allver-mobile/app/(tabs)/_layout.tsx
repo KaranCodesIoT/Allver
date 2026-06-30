@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Platform, View, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,7 +12,7 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-const CustomPostButton = ({ onPress, accessibilityState, style }: any) => {
+const CustomPostButton = ({ onPress, accessibilityState, style, label }: any) => {
   const isFocused = accessibilityState?.selected;
   return (
     <TouchableOpacity
@@ -55,7 +55,7 @@ const CustomPostButton = ({ onPress, accessibilityState, style }: any) => {
         position: 'absolute',
         bottom: 2, // Horizontally align with default tab labels
       }}>
-        Post Project
+        {label || 'Post Project'}
       </Text>
     </TouchableOpacity>
   );
@@ -64,6 +64,23 @@ const CustomPostButton = ({ onPress, accessibilityState, style }: any) => {
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   
+  const [userRole, setUserRole] = useState<string>('');
+
+  useEffect(() => {
+    let user = (global as any).currentUser;
+    if (!user && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      const stored = localStorage.getItem('currentUser');
+      if (stored) {
+        try { user = JSON.parse(stored); } catch (e) {}
+      }
+    }
+    if (user?.role) {
+      setUserRole(user.role);
+    }
+  }, []);
+
+  const postLabel = userRole === 'Labour' ? 'Add Work' : 'Post Project';
+
   // Calculate dynamic bottom padding and height based on system safe area bottom insets
   const bottomPadding = insets.bottom > 0 ? insets.bottom : 8;
   const tabHeight = 56 + bottomPadding;
@@ -107,8 +124,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="post-project"
         options={{
-          title: 'Post Project',
-          tabBarButton: (props) => <CustomPostButton {...props} />,
+          title: postLabel,
+          tabBarButton: (props) => <CustomPostButton {...props} label={postLabel} />,
         }}
       />
       <Tabs.Screen

@@ -4,7 +4,7 @@
     "slug": "allver-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/app-icon.png",
+    "icon": "./assets/android-icon-foreground.png",
     "scheme": "allvermobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,7 +14,7 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0F172A",
-        "foregroundImage": "./assets/images/app-icon.png",
+        "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
@@ -27,7 +27,7 @@
       ]
     },
     "notification": {
-      "icon": "./assets/images/notification-icon.png",
+      "icon": "./assets/android-icon-foreground.png",
       "color": "#0F172A"
     },
     "web": {

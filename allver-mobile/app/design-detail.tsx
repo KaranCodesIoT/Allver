@@ -4,7 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { BACKEND_URL } from '../constants/Config';
+import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
+import { Video, ResizeMode } from 'expo-av';
 
 const { width } = Dimensions.get('window');
 
@@ -26,30 +27,31 @@ export default function DesignDetailScreen() {
 
   // Load params
   const designId = (params.id as string) || '1';
-  const title = (params.title as string) || 'Modern 2BHK Apartment';
-  const location = (params.location as string) || 'Mumbai, Maharashtra';
-  const mainImage = (params.image as string) || 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80';
+  const initialTitle = (params.title as string) || 'Modern 2BHK Apartment';
+  const initialLocation = (params.location as string) || 'Mumbai, Maharashtra';
+  const initialMainImage = (params.image as string) || 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80';
   const likes = (params.likes as string) || '128';
   const comments = (params.comments as string) || '24';
   const rating = (params.rating as string) || '4.8';
 
   // Architect Params
-  const authorId = (params.authorId as string) || '60c72b2f9b1d8a2a4c8b0001';
-  const authorName = (params.authorName as string) || 'Ar. Neha Sharma';
-  const authorAvatar = (params.authorAvatar as string) || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80';
-  const authorCover = (params.authorCover as string) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80';
-  const authorFirm = (params.authorFirm as string) || 'Design Space Architects';
-  const authorExperience = (params.authorExperience as string) || '8+ Years';
+  const initialAuthorId = (params.authorId as string) || '60c72b2f9b1d8a2a4c8b0001';
+  const initialAuthorName = (params.authorName as string) || 'Ar. Neha Sharma';
+  const initialAuthorAvatar = (params.authorAvatar as string) || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80';
+  const initialAuthorCover = (params.authorCover as string) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80';
+  const initialAuthorFirm = (params.authorFirm as string) || 'Design Space Architects';
+  const initialAuthorExperience = (params.authorExperience as string) || '8+ Years';
   const authorProjects = (params.authorProjects as string) || '0';
   const authorFollowers = (params.authorFollowers as string) || '256';
   const authorPhone = (params.authorPhone as string) || '+91 98765 43210';
   const authorReviews = (params.authorReviews as string) || '124';
+  const authorRole = (params.authorRole as string) || 'Architect';
 
-  const imagesList = params.imagesList 
+  const initialImagesList = params.imagesList 
     ? (params.imagesList as string).split(',')
-    : [mainImage];
+    : [initialMainImage];
 
-  const description = (params.description as string) || 'A modern and minimal 2BHK apartment design with a perfect blend of comfort, functionality and premium aesthetics. Warm wood tones, soft natural light, and space-optimized custom layouts make this home feel open and truly beautiful. Perfect choice for urban families looking for upscale styling.';
+  const initialDescription = (params.description as string) || 'A modern and minimal 2BHK apartment design with a perfect blend of comfort, functionality and premium aesthetics. Warm wood tones, soft natural light, and space-optimized custom layouts make this home feel open and truly beautiful. Perfect choice for urban families looking for upscale styling.';
 
   // Parse quotation params
   const initialQuotation = params.quotation 
@@ -58,6 +60,19 @@ export default function DesignDetailScreen() {
 
   // States
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  const [title, setTitle] = useState(initialTitle);
+  const [location, setLocation] = useState(initialLocation);
+  const [mainImage, setMainImage] = useState(initialMainImage);
+  const [imagesList, setImagesList] = useState<string[]>(initialImagesList);
+  const [description, setDescription] = useState(initialDescription);
+
+  const [authorId, setAuthorId] = useState(initialAuthorId);
+  const [authorName, setAuthorName] = useState(initialAuthorName);
+  const [authorAvatar, setAuthorAvatar] = useState(initialAuthorAvatar);
+  const [authorCover, setAuthorCover] = useState(initialAuthorCover);
+  const [authorFirm, setAuthorFirm] = useState(initialAuthorFirm);
+  const [authorExperience, setAuthorExperience] = useState(initialAuthorExperience);
 
   useEffect(() => {
     let user = (global as any).currentUser;
@@ -76,6 +91,23 @@ export default function DesignDetailScreen() {
   const [hasSaved, setHasSaved] = useState(false);
   const [authorFollowersVal, setAuthorFollowersVal] = useState<number>(parseInt(authorFollowers, 10) || 0);
   const [showUnfollowModal, setShowUnfollowModal] = useState(false);
+  const [similarDesigns, setSimilarDesigns] = useState<any[]>([]);
+  const [realContractors, setRealContractors] = useState<any[]>([]);
+  const [fullscreenMedia, setFullscreenMedia] = useState<{ type: 'image' | 'video', url: string } | null>(null);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const scrollViewRef = React.useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (fullscreenMedia && fullscreenMedia.type === 'image') {
+      const idx = imagesList.indexOf(fullscreenMedia.url);
+      if (idx >= 0) {
+        setActiveImageIndex(idx);
+        setTimeout(() => {
+          scrollViewRef.current?.scrollTo({ x: idx * width, animated: false });
+        }, 100);
+      }
+    }
+  }, [fullscreenMedia]);
 
   useEffect(() => {
     if (currentUser?._id && authorId) {
@@ -176,6 +208,11 @@ export default function DesignDetailScreen() {
   const [electricalCost, setElectricalCost] = useState(initialQuotation?.electricalPlumbing || '');
   const [modularCost, setModularCost] = useState(initialQuotation?.modularWoodwork || '');
 
+  useEffect(() => {
+    setLocalTitle(title);
+    setLocalDescription(description);
+  }, [title, description]);
+
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -210,6 +247,27 @@ export default function DesignDetailScreen() {
             setCommentsCount(p.comments || 0);
             setCommentsList(p.commentsList || []);
             
+            if (p.title) setTitle(p.title);
+            if (p.location) setLocation(p.location);
+            if (p.description) setDescription(p.description);
+            if (p.mediaUrls && p.mediaUrls.length > 0) {
+              setMainImage(p.mediaUrls[0]);
+              setImagesList(p.mediaUrls);
+            }
+            if (p.creator) {
+              setAuthorId(p.creator._id || p.creator);
+              setAuthorName(p.creator.fullName || p.creator.name || 'Architect');
+              setAuthorAvatar(p.creator.avatarUrl || p.creator.avatar || '');
+              setAuthorFirm(p.creator.firmName || 'Independent');
+              setAuthorExperience(p.creator.experience || '5+ Years');
+            }
+            if (p.quotation) {
+              setCivilCost(p.quotation.civilStructure || '');
+              setFlooringCost(p.quotation.flooringTiling || '');
+              setElectricalCost(p.quotation.electricalPlumbing || '');
+              setModularCost(p.quotation.modularWoodwork || '');
+            }
+
             // Check if current user liked
             if (currentUser) {
               setHasLiked(p.likedBy ? p.likedBy.includes(currentUser._id) : false);
@@ -235,6 +293,37 @@ export default function DesignDetailScreen() {
       fetchPostAndUserState();
     }
   }, [designId, currentUser]);
+
+  useEffect(() => {
+    const fetchSimilarDesigns = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/posts/design`);
+        if (res.ok) {
+          const data = await res.json();
+          // Filter out current design
+          const filtered = data.designs.filter((d: any) => d._id !== designId);
+          setSimilarDesigns(filtered.slice(0, 5));
+        }
+      } catch (err) {
+        console.error('Error fetching similar designs:', err);
+      }
+    };
+
+    const fetchRealContractors = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/professionals/Contractor`);
+        if (res.ok) {
+          const data = await res.json();
+          setRealContractors(data.professionals || []);
+        }
+      } catch (err) {
+        console.error('Error fetching real contractors:', err);
+      }
+    };
+
+    fetchSimilarDesigns();
+    fetchRealContractors();
+  }, [designId]);
 
   const handleLike = async () => {
     if (!currentUser) {
@@ -358,6 +447,52 @@ export default function DesignDetailScreen() {
     }
   };
 
+  const handleDeleteDesign = () => {
+    Alert.alert(
+      'Delete Design',
+      'Are you sure you want to permanently delete this design project? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive', 
+          onPress: executeDeleteDesign 
+        }
+      ]
+    );
+  };
+
+  const executeDeleteDesign = async () => {
+    setIsSaving(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/posts/${designId}`, {
+        method: 'DELETE',
+      });
+      if (response.ok) {
+        Alert.alert('Success', 'Design deleted successfully.', [
+          { 
+            text: 'OK', 
+            onPress: () => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(tabs)');
+              }
+            } 
+          }
+        ]);
+      } else {
+        const data = await response.json();
+        Alert.alert('Error', data.message || 'Failed to delete design.');
+      }
+    } catch (err: any) {
+      console.error('Delete design error:', err);
+      Alert.alert('Error', 'Network error. Failed to delete design.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleViewProfile = () => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       (document.activeElement as HTMLElement)?.blur();
@@ -398,7 +533,16 @@ export default function DesignDetailScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Top Header Row */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity 
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)');
+            }
+          }} 
+          style={styles.backBtn}
+        >
           <Feather name="arrow-left" size={22} color={COLORS.textDark} />
         </TouchableOpacity>
         
@@ -458,9 +602,15 @@ export default function DesignDetailScreen() {
           <TouchableOpacity onPress={handleViewProfile}>
             <Image source={{ uri: authorAvatar }} style={styles.designerAvatar} contentFit="cover" />
           </TouchableOpacity>
-          <View style={styles.designerInfo}>
+          <View style={[styles.designerInfo, { marginRight: 8 }]}>
             <View style={styles.designerNameRow}>
-              <Text style={styles.designerName} onPress={handleViewProfile}>By {authorName}</Text>
+              <Text 
+                style={[styles.designerName, { flexShrink: 1 }]} 
+                numberOfLines={1} 
+                onPress={handleViewProfile}
+              >
+                By {authorName}
+              </Text>
               <View style={styles.verifiedBadge}>
                 <Feather name="check" size={8} color={COLORS.white} />
               </View>
@@ -470,19 +620,61 @@ export default function DesignDetailScreen() {
               <Text style={styles.ratingText}>{rating} <Text style={styles.reviewsText}>({authorReviews} reviews)</Text></Text>
             </View>
           </View>
-          <View style={styles.designerActions}>
-            <TouchableOpacity 
-              style={[styles.miniBtn, !isFollowing ? styles.miniBtnFollowActive : styles.miniBtnFollowingActive]}
-              onPress={handleFollowPress}
-            >
-              <Text style={[styles.miniBtnText, !isFollowing ? { color: COLORS.white } : { color: COLORS.textDark }]}>
-                {isFollowing ? 'Following \u2713' : 'Follow'}
-              </Text>
-            </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+            {!isOwner && (
+              <TouchableOpacity 
+                style={{
+                  borderRadius: 20,
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  backgroundColor: isFollowing ? '#F3F4F6' : '#E6F4EA',
+                  borderWidth: isFollowing ? 1 : 0,
+                  borderColor: '#E5E7EB',
+                }}
+                onPress={handleFollowPress}
+                activeOpacity={0.8}
+              >
+                <Text style={{ 
+                  fontSize: 11, 
+                  fontWeight: '700', 
+                  color: isFollowing ? '#374151' : '#137333'
+                }}>
+                  {isFollowing ? 'In Network' : 'Add to Network'}
+                </Text>
+              </TouchableOpacity>
+            )}
 
-            <TouchableOpacity style={[styles.miniBtn, styles.miniBtnGreen]} onPress={handleWhatsApp}>
-              <Feather name="message-circle" size={12} color={COLORS.white} style={{ marginRight: 2 }} />
-              <Text style={[styles.miniBtnText, { color: COLORS.white }]}>Contact</Text>
+            <TouchableOpacity 
+              style={{
+                borderRadius: 20,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                flexDirection: 'row',
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: '#E0F2FE',
+              }} 
+              activeOpacity={0.8}
+              onPress={() => {
+                if (!currentUser) {
+                  Alert.alert('Login Required', 'Please log in to send messages.');
+                  return;
+                }
+                router.push({
+                  pathname: '/chat-room',
+                  params: {
+                    receiverId: authorId,
+                    name: authorName,
+                    role: authorRole || 'Architect',
+                    avatar: authorAvatar || '',
+                  }
+                });
+              }}
+            >
+              <Feather name="message-square" size={12} color="#0369A1" style={{ marginRight: 4 }} />
+              <Text style={{ fontSize: 11, fontWeight: '700', color: '#0369A1' }}>Message</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -517,42 +709,68 @@ export default function DesignDetailScreen() {
         {activeTab === 'photos' && (
           <View style={styles.photosGrid}>
             {imagesList.length === 1 ? (
-              <View style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}>
+              <TouchableOpacity 
+                activeOpacity={0.9} 
+                onPress={() => setFullscreenMedia({ type: 'image', url: imagesList[0] })}
+                style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}
+              >
                 <Image source={{ uri: imagesList[0] }} style={styles.mainPhoto} contentFit="cover" />
                 <View style={styles.mediaCountBadge}>
                   <Text style={styles.mediaCountText}>1/1</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ) : imagesList.length === 2 ? (
               <View style={{ flex: 1, flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}>
+                <TouchableOpacity 
+                  activeOpacity={0.9} 
+                  onPress={() => setFullscreenMedia({ type: 'image', url: imagesList[0] })}
+                  style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}
+                >
                   <Image source={{ uri: imagesList[0] }} style={styles.mainPhoto} contentFit="cover" />
                   <View style={styles.mediaCountBadge}>
                     <Text style={styles.mediaCountText}>1/2</Text>
                   </View>
-                </View>
-                <View style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  activeOpacity={0.9} 
+                  onPress={() => setFullscreenMedia({ type: 'image', url: imagesList[1] })}
+                  style={{ flex: 1, borderRadius: 12, overflow: 'hidden' }}
+                >
                   <Image source={{ uri: imagesList[1] }} style={styles.mainPhoto} contentFit="cover" />
                   <View style={styles.mediaCountBadge}>
                     <Text style={styles.mediaCountText}>2/2</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               </View>
             ) : (
               <>
-                <View style={styles.mainPhotoCol}>
+                <TouchableOpacity 
+                  activeOpacity={0.9} 
+                  onPress={() => setFullscreenMedia({ type: 'image', url: imagesList[0] })}
+                  style={styles.mainPhotoCol}
+                >
                   <Image source={{ uri: imagesList[0] }} style={styles.mainPhoto} contentFit="cover" />
                   <View style={styles.mediaCountBadge}>
                     <Text style={styles.mediaCountText}>1/{imagesList.length}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
                 <View style={styles.sidePhotoCol}>
-                  <Image 
-                    source={{ uri: imagesList[1] }} 
-                    style={styles.sidePhotoTop} 
-                    contentFit="cover" 
-                  />
-                  <View style={styles.sidePhotoBottomContainer}>
+                  <TouchableOpacity 
+                    activeOpacity={0.9} 
+                    onPress={() => setFullscreenMedia({ type: 'image', url: imagesList[1] })}
+                    style={{ flex: 1, borderRadius: 8, overflow: 'hidden', marginBottom: 10 }}
+                  >
+                    <Image 
+                      source={{ uri: imagesList[1] }} 
+                      style={styles.sidePhotoTop} 
+                      contentFit="cover" 
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    activeOpacity={0.9} 
+                    onPress={() => setFullscreenMedia({ type: 'image', url: imagesList[2] })}
+                    style={styles.sidePhotoBottomContainer}
+                  >
                     <Image 
                       source={{ uri: imagesList[2] }} 
                       style={styles.sidePhotoBottom} 
@@ -563,7 +781,7 @@ export default function DesignDetailScreen() {
                         <Text style={styles.morePhotosText}>+{imagesList.length - 3} More</Text>
                       </View>
                     )}
-                  </View>
+                  </TouchableOpacity>
                 </View>
               </>
             )}
@@ -571,12 +789,19 @@ export default function DesignDetailScreen() {
         )}
 
         {activeTab === 'videos' && (
-          <View style={styles.videosTabContent}>
+          <TouchableOpacity 
+            style={styles.videosTabContent}
+            activeOpacity={0.9}
+            onPress={() => {
+              const videoUrl = imagesList.find(url => url.toLowerCase().endsWith('.mp4') || url.toLowerCase().endsWith('.mov') || url.includes('/video/') || url.includes('video') || url.includes('.webm') || url.includes('mp4')) || imagesList[0];
+              setFullscreenMedia({ type: 'video', url: videoUrl });
+            }}
+          >
             <Image source={{ uri: mainImage }} style={styles.videoPlayerMock} contentFit="cover" />
             <View style={styles.videoPlayIconBg}>
               <Feather name="play" size={32} color={COLORS.white} />
             </View>
-          </View>
+          </TouchableOpacity>
         )}
 
         {activeTab === 'quotation' && (
@@ -759,9 +984,9 @@ export default function DesignDetailScreen() {
         </View>
 
         {isEditing && (
-          <View style={{ paddingHorizontal: 20, marginTop: 20 }}>
+          <View style={{ paddingHorizontal: 20, marginTop: 20, flexDirection: 'row', gap: 12 }}>
             <TouchableOpacity 
-              style={[styles.saveChangesBtn, isSaving && { opacity: 0.8 }]} 
+              style={[styles.saveChangesBtn, { flex: 1, marginBottom: 0 }, isSaving && { opacity: 0.8 }]} 
               onPress={handleSaveChanges}
               disabled={isSaving}
             >
@@ -773,6 +998,23 @@ export default function DesignDetailScreen() {
                   <Text style={styles.saveChangesBtnText}>Save Changes</Text>
                 </>
               )}
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={{
+                flex: 1,
+                height: 44,
+                backgroundColor: '#EF4444',
+                borderRadius: 8,
+                flexDirection: 'row',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }} 
+              onPress={handleDeleteDesign}
+              disabled={isSaving}
+            >
+              <Feather name="trash-2" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+              <Text style={{ color: COLORS.white, fontSize: 13, fontWeight: '700' }}>Delete Design</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -880,29 +1122,78 @@ export default function DesignDetailScreen() {
         <View style={styles.sectionWrap}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeaderTitle}>Similar Designs</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/design')}>
               <Text style={styles.viewAllText}>View All {'->'}</Text>
             </TouchableOpacity>
           </View>
           
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselWrapper}>
-            {[
-              { title: 'Minimal 2BHK Apartment', loc: 'Pune, Maharashtra', rating: '4.6', image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=250&q=80' },
-              { title: 'Modern Living Room', loc: 'Mumbai, Maharashtra', rating: '4.7', image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=250&q=80' },
-              { title: 'Modular Kitchen Design', loc: 'Bengaluru, Karnataka', rating: '4.5', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=250&q=80' },
-            ].map((item, idx) => (
-              <View key={idx} style={styles.carouselCard}>
-                <Image source={{ uri: item.image }} style={styles.carouselImg} contentFit="cover" />
-                <View style={styles.carouselCardBody}>
-                  <Text style={styles.carouselCardTitle} numberOfLines={1}>{item.title}</Text>
-                  <Text style={styles.carouselCardLoc}>{item.loc}</Text>
-                  <View style={styles.carouselRatingRow}>
-                    <Feather name="star" size={10} color={COLORS.gold} style={{ fill: COLORS.gold }} />
-                    <Text style={styles.carouselRatingText}>{item.rating}</Text>
+            {similarDesigns.length > 0 ? (
+              similarDesigns.map((item) => (
+                <TouchableOpacity 
+                  key={item._id} 
+                  style={styles.carouselCard}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/design-detail',
+                      params: {
+                        id: item._id,
+                        title: item.title || 'Modern Design',
+                        location: item.creator?.city || 'Mumbai',
+                        image: item.mediaUrls?.[0] || '',
+                        likes: (item.likes || 0).toString(),
+                        comments: (item.comments || 0).toString(),
+                        rating: (item.creator?.rating || 4.5).toString(),
+                        authorId: item.creator?._id || '',
+                        authorName: item.creator?.fullName || 'Architect',
+                        authorRole: item.creator?.role || 'Architect',
+                        authorAvatar: item.creator?.avatarUrl || '',
+                        authorCover: item.creator?.coverImage || '',
+                        authorFirm: item.creator?.firmName || 'Design Space Architects',
+                        authorExperience: item.creator?.experience || '8+ Years',
+                        authorProjects: item.creator?.projects?.toString() || '0',
+                        authorFollowers: item.creator?.followersCount?.toString() || '0',
+                        authorPhone: item.creator?.phone || '+91 98765 43210',
+                        authorReviews: '124',
+                        imagesList: (item.mediaUrls || []).join(','),
+                        description: item.description || '',
+                        quotation: JSON.stringify(item.quotation || { civilStructure: '', flooringTiling: '', electricalPlumbing: '', modularWoodwork: '' }),
+                        isSaved: 'false'
+                      }
+                    });
+                  }}
+                >
+                  <Image source={{ uri: resolveAvatarUrl(item.mediaUrls?.[0]) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=250&q=80' }} style={styles.carouselImg} contentFit="cover" />
+                  <View style={styles.carouselCardBody}>
+                    <Text style={styles.carouselCardTitle} numberOfLines={1}>{item.title || 'Modern Design'}</Text>
+                    <Text style={styles.carouselCardLoc}>{item.creator?.city || 'Mumbai'}</Text>
+                    <View style={styles.carouselRatingRow}>
+                      <Feather name="star" size={10} color={COLORS.gold} style={{ fill: COLORS.gold }} />
+                      <Text style={styles.carouselRatingText}>{item.creator?.rating || '4.5'}</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))
+            ) : (
+              [
+                { title: 'Minimal 2BHK Apartment', loc: 'Pune, Maharashtra', rating: '4.6', image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=250&q=80' },
+                { title: 'Modern Living Room', loc: 'Mumbai, Maharashtra', rating: '4.7', image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=250&q=80' },
+                { title: 'Modular Kitchen Design', loc: 'Bengaluru, Karnataka', rating: '4.5', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=250&q=80' },
+              ].map((item, idx) => (
+                <View key={idx} style={styles.carouselCard}>
+                  <Image source={{ uri: item.image }} style={styles.carouselImg} contentFit="cover" />
+                  <View style={styles.carouselCardBody}>
+                    <Text style={styles.carouselCardTitle} numberOfLines={1}>{item.title}</Text>
+                    <Text style={styles.carouselCardLoc}>{item.loc}</Text>
+                    <View style={styles.carouselRatingRow}>
+                      <Feather name="star" size={10} color={COLORS.gold} style={{ fill: COLORS.gold }} />
+                      <Text style={styles.carouselRatingText}>{item.rating}</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-            ))}
+              ))
+            )}
           </ScrollView>
         </View>
 
@@ -910,30 +1201,88 @@ export default function DesignDetailScreen() {
         <View style={[styles.sectionWrap, { marginTop: 10 }]}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeaderTitle}>Contractors Who Can Build This Design</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/contractors')}>
               <Text style={styles.viewAllText}>View All {'->'}</Text>
             </TouchableOpacity>
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselWrapper}>
-            {[
-              { name: 'BuildWell Construction', rate: '4.6 (98)', price: 'Starts at ₹8.5 L', avatar: 'https://i.pravatar.cc/100?img=12' },
-              { name: 'HomeCraft Builders', rate: '4.5 (76)', price: 'Starts at ₹8.8 L', avatar: 'https://i.pravatar.cc/100?img=13' },
-              { name: 'StructureLine Construc.', rate: '4.7 (120)', price: 'Starts at ₹8.2 L', avatar: 'https://i.pravatar.cc/100?img=14' }
-            ].map((item, idx) => (
-              <View key={idx} style={styles.contractorCard}>
-                <Image source={{ uri: item.avatar }} style={styles.contractorAvatar} contentFit="cover" />
-                <Text style={styles.contractorName} numberOfLines={1}>{item.name}</Text>
-                <View style={styles.contractorRating}>
-                  <Feather name="star" size={10} color={COLORS.gold} style={{ fill: COLORS.gold }} />
-                  <Text style={styles.contractorRatingText}>{item.rate}</Text>
-                </View>
-                <Text style={styles.contractorPrice}>{item.price}</Text>
-                <TouchableOpacity style={styles.hireBtn}>
-                  <Text style={styles.hireBtnText}>Hire Now</Text>
+            {realContractors.length > 0 ? (
+              realContractors.slice(0, 5).map((item) => (
+                <TouchableOpacity 
+                  key={item._id} 
+                  style={styles.contractorCard}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/contractor-detail',
+                      params: {
+                        contractorId: item._id,
+                        name: item.fullName,
+                        firmName: item.firmName || 'Independent',
+                        rating: item.rating?.toString() || '4.5',
+                        city: item.city || 'Mumbai',
+                        avatar: item.avatarUrl || '',
+                        experience: item.experience || '5 Years',
+                        projectsCount: item.projects?.length?.toString() || '0',
+                        phone: item.phoneNumber || ''
+                      }
+                    });
+                  }}
+                >
+                  <Image source={{ uri: resolveAvatarUrl(item.avatarUrl) || 'https://i.pravatar.cc/100?img=12' }} style={styles.contractorAvatar} contentFit="cover" />
+                  <Text style={styles.contractorName} numberOfLines={1}>{item.fullName}</Text>
+                  <View style={styles.contractorRating}>
+                    <Feather name="star" size={10} color={COLORS.gold} style={{ fill: COLORS.gold }} />
+                    <Text style={styles.contractorRatingText}>{item.rating?.toString() || '4.5'} ({item.reviewsCount || 8})</Text>
+                  </View>
+                  <Text style={styles.contractorPrice}>Starts at ₹{item.minProjectValue || '6.5 L'}</Text>
+                  <TouchableOpacity 
+                    style={styles.hireBtn}
+                    onPress={() => {
+                      if (!currentUser) {
+                        Alert.alert('Login Required', 'Please log in to hire a contractor.');
+                        return;
+                      }
+                      router.push({
+                        pathname: '/chat-room',
+                        params: {
+                          receiverId: item._id,
+                          name: item.fullName,
+                          role: item.role || 'Contractor',
+                          avatar: item.avatarUrl || '',
+                          designId: designId,
+                          designTitle: title,
+                          designImage: imagesList[0] || mainImage,
+                          designLocation: location
+                        }
+                      });
+                    }}
+                  >
+                    <Text style={styles.hireBtnText}>Hire Now</Text>
+                  </TouchableOpacity>
                 </TouchableOpacity>
-              </View>
-            ))}
+              ))
+            ) : (
+              [
+                { name: 'BuildWell Construction', rate: '4.6 (98)', price: 'Starts at ₹8.5 L', avatar: 'https://i.pravatar.cc/100?img=12' },
+                { name: 'HomeCraft Builders', rate: '4.5 (76)', price: 'Starts at ₹8.8 L', avatar: 'https://i.pravatar.cc/100?img=13' },
+                { name: 'StructureLine Construc.', rate: '4.7 (120)', price: 'Starts at ₹8.2 L', avatar: 'https://i.pravatar.cc/100?img=14' }
+              ].map((item, idx) => (
+                <View key={idx} style={styles.contractorCard}>
+                  <Image source={{ uri: item.avatar }} style={styles.contractorAvatar} contentFit="cover" />
+                  <Text style={styles.contractorName} numberOfLines={1}>{item.name}</Text>
+                  <View style={styles.contractorRating}>
+                    <Feather name="star" size={10} color={COLORS.gold} style={{ fill: COLORS.gold }} />
+                    <Text style={styles.contractorRatingText}>{item.rate}</Text>
+                  </View>
+                  <Text style={styles.contractorPrice}>{item.price}</Text>
+                  <TouchableOpacity style={styles.hireBtn}>
+                    <Text style={styles.hireBtnText}>Hire Now</Text>
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
           </ScrollView>
         </View>
 
@@ -946,9 +1295,26 @@ export default function DesignDetailScreen() {
           <Text style={styles.similarBtnText}>Get Similar Design</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.contactDesignerBtn} onPress={handleWhatsApp}>
-          <Feather name="message-circle" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
-          <Text style={styles.contactDesignerBtnText}>Contact Designer</Text>
+        <TouchableOpacity 
+          style={styles.contactDesignerBtn} 
+          onPress={() => {
+            if (!currentUser) {
+              Alert.alert('Login Required', 'Please log in to send messages.');
+              return;
+            }
+            router.push({
+              pathname: '/chat-room',
+              params: {
+                receiverId: authorId,
+                name: authorName,
+                role: authorRole || 'Architect',
+                avatar: authorAvatar || '',
+              }
+            });
+          }}
+        >
+          <Feather name="message-square" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
+          <Text style={styles.contactDesignerBtnText}>Message Designer</Text>
         </TouchableOpacity>
       </View>
 
@@ -962,7 +1328,7 @@ export default function DesignDetailScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <Image source={{ uri: authorAvatar }} style={styles.modalAvatar} />
-            <Text style={styles.modalTitle}>Unfollow {authorName}?</Text>
+            <Text style={styles.modalTitle}>Remove {authorName} from Network?</Text>
             <Text style={styles.modalSubtitle}>You will stop seeing their updates in your feed.</Text>
             
             <View style={styles.modalBtnRow}>
@@ -977,10 +1343,100 @@ export default function DesignDetailScreen() {
                 style={styles.modalConfirmBtn} 
                 onPress={executeUnfollow}
               >
-                <Text style={styles.modalConfirmBtnText}>Unfollow</Text>
+                <Text style={styles.modalConfirmBtnText}>Remove</Text>
               </TouchableOpacity>
             </View>
           </View>
+        </View>
+      </Modal>
+
+      {/* ================= FULLSCREEN MEDIA VIEWER MODAL ================= */}
+      <Modal
+        visible={!!fullscreenMedia}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setFullscreenMedia(null)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.95)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          position: 'relative'
+        }}>
+          {/* Close Button */}
+          <TouchableOpacity 
+            style={{
+              position: 'absolute',
+              top: Platform.OS === 'ios' ? 60 : 40,
+              right: 20,
+              zIndex: 10,
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              justifyContent: 'center',
+              alignItems: 'center'
+            }}
+            onPress={() => setFullscreenMedia(null)}
+          >
+            <Feather name="x" size={24} color={COLORS.white} />
+          </TouchableOpacity>
+
+          {fullscreenMedia?.type === 'video' ? (
+            <Video
+              source={{ uri: fullscreenMedia.url }}
+              style={{
+                width: width,
+                height: width * 1.3,
+                maxHeight: '80%'
+              }}
+              resizeMode={ResizeMode.CONTAIN}
+              shouldPlay={true}
+              useNativeControls={true}
+              isLooping={true}
+            />
+          ) : (
+            <View style={{ width: width, height: '80%', justifyContent: 'center' }}>
+              <ScrollView
+                ref={scrollViewRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onMomentumScrollEnd={(e) => {
+                  const idx = Math.round(e.nativeEvent.contentOffset.x / width);
+                  setActiveImageIndex(idx);
+                }}
+                style={{ flex: 1 }}
+              >
+                {imagesList.map((imgUrl, idx) => (
+                  <View key={idx} style={{ width: width, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+                    <Image
+                      source={{ uri: imgUrl }}
+                      style={{
+                        width: width,
+                        height: '100%',
+                      }}
+                      contentFit="contain"
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+              
+              {/* Pagination Dots/Text indicator */}
+              <View style={{
+                position: 'absolute',
+                bottom: -40,
+                left: 0,
+                right: 0,
+                alignItems: 'center'
+              }}>
+                <Text style={{ color: COLORS.white, fontSize: 14, fontWeight: '700' }}>
+                  {activeImageIndex + 1} / {imagesList.length}
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
       </Modal>
     </SafeAreaView>

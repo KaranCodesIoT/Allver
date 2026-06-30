@@ -62,8 +62,9 @@ export default function SignupScreen() {
       const response = await fetch(`${BACKEND_URL}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName, email, phoneNumber, password, role, city }),
+        body: JSON.stringify({ fullName, email: email.trim().toLowerCase(), phoneNumber, password, role, city }),
       });
+
       const data = await response.json();
 
       if (response.ok) {
@@ -340,11 +341,11 @@ const styles = StyleSheet.create({
 
   primaryBtn: {
     backgroundColor: COLORS.green,
-    borderRadius: 16,
+    borderRadius: 25,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
+    height: 50,
     paddingHorizontal: 20,
     marginTop: 28,
     ...Platform.select({
@@ -352,8 +353,8 @@ const styles = StyleSheet.create({
       android: { elevation: 6 },
     }),
   },
-  primaryBtnText: { color: COLORS.white, fontSize: 16, fontWeight: '700', flex: 1, textAlign: 'center', marginLeft: 32 },
-  arrowCircle: { width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.white, justifyContent: 'center', alignItems: 'center' },
+  primaryBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700', flex: 1, textAlign: 'center', marginLeft: 28 },
+  arrowCircle: { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.white, justifyContent: 'center', alignItems: 'center' },
 
   footerRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 24, marginBottom: 10 },
   footerText: { color: COLORS.textMuted, fontSize: 14 },

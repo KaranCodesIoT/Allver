@@ -3,8 +3,8 @@ import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimens
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import { BACKEND_URL } from '../constants/Config';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import NotificationBell from '../components/NotificationBell';
 
 const { width } = Dimensions.get('window');
@@ -22,7 +22,8 @@ const COLORS = {
 
 export default function LaboursScreen() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
+  const params = useLocalSearchParams();
+  const [searchQuery, setSearchQuery] = useState((params.searchQuery as string) || '');
   const [locationQuery, setLocationQuery] = useState('');
   const [availabilityFilter, setAvailabilityFilter] = useState('');
   const [labours, setLabours] = useState<any[]>([]);
@@ -72,9 +73,10 @@ export default function LaboursScreen() {
     router.push({
       pathname: '/labour-detail',
       params: {
+        id: labour._id || labour.id || '',
         name: labour.fullName,
         role: labour.skillType || 'Labour',
-        avatar: labour.avatarUrl || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=200&auto=format&fit=crop',
+        avatar: resolveAvatarUrl(labour.avatarUrl) || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=200&auto=format&fit=crop',
         experience: (labour.experience || '0') + ' Years Experience',
         location: labour.city || '',
         rating: (labour.rating || 0).toString(),
@@ -153,7 +155,7 @@ export default function LaboursScreen() {
         ) : (
           <ScrollView bounces={true} contentContainerStyle={styles.scrollContent}>
             {filteredLabours.map((item) => {
-              const avatar = item.avatarUrl || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=200&auto=format&fit=crop';
+              const avatar = resolveAvatarUrl(item.avatarUrl) || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=200&auto=format&fit=crop';
               const isAvailable = (item.availability || '').toLowerCase() === 'available';
               return (
                 <View key={item._id} style={styles.labourCard}>

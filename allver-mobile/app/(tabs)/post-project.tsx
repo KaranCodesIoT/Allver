@@ -42,6 +42,17 @@ const REQUIREMENT_OPTIONS = [
   'Civil Work'
 ];
 
+const WORK_TYPE_OPTIONS = [
+  'Mason',
+  'Electrician',
+  'Plumber',
+  'Painter',
+  'Carpenter',
+  'Welder',
+  'Tile Fitter',
+  'Helper'
+];
+
 export default function PostProjectScreen() {
   const router = useRouter();
   
@@ -71,8 +82,17 @@ export default function PostProjectScreen() {
   const [electricalPlumbing, setElectricalPlumbing] = useState('');
   const [modularWoodwork, setModularWoodwork] = useState('');
 
+  // Labour "Add Work" form states
+  const [workTitle, setWorkTitle] = useState('');
+  const [workType, setWorkType] = useState('');
+  const [workLocation, setWorkLocation] = useState('');
+  const [workMedia, setWorkMedia] = useState<string[]>([]);
+  const [workDescription, setWorkDescription] = useState('');
+  const [workDuration, setWorkDuration] = useState('');
+  const [isUploadingWork, setIsUploadingWork] = useState(false);
+
   const [success, setSuccess] = useState(false);
-  const [successType, setSuccessType] = useState<'client' | 'architect_media' | 'architect_design'>('client');
+  const [successType, setSuccessType] = useState<'client' | 'architect_media' | 'architect_design' | 'labour_work'>('client');
 
   useEffect(() => {
     let user = (global as any).currentUser;
@@ -94,7 +114,9 @@ export default function PostProjectScreen() {
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: selectedType === 'videos' ? ['videos'] : ['images'],
+      mediaTypes: selectedType === 'design' 
+        ? ['images', 'videos'] 
+        : (selectedType === 'videos' ? ['videos'] : ['images']),
       allowsMultipleSelection: true,
       quality: 0.8,
     });
@@ -106,12 +128,29 @@ export default function PostProjectScreen() {
         for (const asset of result.assets) {
           const formData = new FormData();
           const uri = asset.uri;
-          const name = uri.split('/').pop() || 'upload.jpg';
-          const match = /\.(\w+)$/.exec(name);
-          const fileType = match ? `image/${match[1]}` : `image`;
+          let name = asset.fileName || uri.split('/').pop() || 'upload.jpg';
+          name = name.split('?')[0].split('#')[0];
+
+          const isVideo = asset.type === 'video' || (asset.mimeType && asset.mimeType.startsWith('video/')) || uri.toLowerCase().endsWith('.mp4') || uri.toLowerCase().endsWith('.mov') || uri.toLowerCase().endsWith('.avi');
+
+          let fileType = asset.mimeType;
+          if (isVideo) {
+            if (!fileType) fileType = 'video/mp4';
+            if (!name.toLowerCase().endsWith('.mp4') && !name.toLowerCase().endsWith('.mov') && !name.toLowerCase().endsWith('.m4v') && !name.toLowerCase().endsWith('.3gp') && !name.toLowerCase().endsWith('.avi')) {
+              name = name + '.mp4';
+            }
+          } else {
+            if (!fileType) {
+              const match = /\.(\w+)$/.exec(name);
+              const ext = match ? match[1].toLowerCase() : 'jpg';
+              fileType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+            }
+          }
           
+          const cleanUri = Platform.OS === 'ios' ? uri : decodeURIComponent(uri);
+
           formData.append('image', {
-            uri,
+            uri: uri,
             name,
             type: fileType
           } as any);
@@ -119,9 +158,6 @@ export default function PostProjectScreen() {
           const res = await fetch(`${BACKEND_URL}/api/upload`, {
             method: 'POST',
             body: formData,
-            headers: {
-              'Content-Type': 'multipart/form-data',
-            },
           });
 
           if (res.ok) {
@@ -135,23 +171,180 @@ export default function PostProjectScreen() {
         if (urls.length > 0) {
           setSelectedMedia(prev => [...prev, ...urls]);
         } else {
-          // Mock upload fallback if server is unreachable
-          const mockUrls = result.assets.map(asset => asset.uri);
-          setSelectedMedia(prev => [...prev, ...mockUrls]);
+          Alert.alert('Upload Failed', 'Failed to upload media to the server.');
         }
       } catch (err) {
         console.error('Upload error:', err);
-        // Fallback to local URIs for testing
-        const mockUrls = result.assets.map(asset => asset.uri);
-        setSelectedMedia(prev => [...prev, ...mockUrls]);
+        Alert.alert('Upload Error', 'An error occurred while uploading media.');
       } finally {
         setIsUploading(false);
       }
     }
   };
 
+  // Labour media picker (images + videos, max 10)
+  const handleSelectWorkMedia = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Please grant library permissions to upload media.');
+      return;
+    }
+
+    if (workMedia.length >= 10) {
+      Alert.alert('Limit Reached', 'You can upload a maximum of 10 photos/videos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images', 'videos'],
+      allowsMultipleSelection: true,
+      quality: 0.8,
+      selectionLimit: 10 - workMedia.length,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setIsUploadingWork(true);
+      try {
+        const urls: string[] = [];
+        for (const asset of result.assets) {
+          const formData = new FormData();
+          const uri = asset.uri;
+          let name = asset.fileName || uri.split('/').pop() || 'upload.jpg';
+          name = name.split('?')[0].split('#')[0];
+
+          let fileType = asset.mimeType;
+          const isVideo = asset.type === 'video' || fileType?.startsWith('video/');
+          if (isVideo) {
+            if (!fileType) fileType = 'video/mp4';
+            if (!name.toLowerCase().endsWith('.mp4') && !name.toLowerCase().endsWith('.mov') && !name.toLowerCase().endsWith('.m4v') && !name.toLowerCase().endsWith('.3gp') && !name.toLowerCase().endsWith('.avi')) {
+              name = name + '.mp4';
+            }
+          } else {
+            if (!fileType) {
+              const match = /\.(\w+)$/.exec(name);
+              const ext = match ? match[1].toLowerCase() : 'jpg';
+              fileType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+            }
+          }
+
+          const cleanUri = Platform.OS === 'ios' ? uri : decodeURIComponent(uri);
+          formData.append('image', { uri: uri, name, type: fileType } as any);
+
+          const res = await fetch(`${BACKEND_URL}/api/upload`, {
+            method: 'POST',
+            body: formData,
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.url) urls.push(data.url);
+          }
+        }
+        if (urls.length > 0) {
+          setWorkMedia(prev => [...prev, ...urls].slice(0, 10));
+        } else {
+          Alert.alert('Upload Failed', 'Failed to upload media to the server.');
+        }
+      } catch (err) {
+        console.error('Labour media upload error:', err);
+        Alert.alert('Upload Error', 'An error occurred while uploading media.');
+      } finally {
+        setIsUploadingWork(false);
+      }
+    }
+  };
+
+  const removeWorkMediaItem = (index: number) => {
+    setWorkMedia(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Submit flow for Labour "Add Work"
+  const handleLabourSubmit = async () => {
+    if (!workTitle.trim()) {
+      Alert.alert('Required', 'Please enter a work title.');
+      return;
+    }
+    if (!workType) {
+      Alert.alert('Required', 'Please select a work type.');
+      return;
+    }
+    if (!workLocation.trim()) {
+      Alert.alert('Required', 'Please enter the work location.');
+      return;
+    }
+    if (workMedia.length === 0) {
+      Alert.alert('Required', 'Please upload at least 1 photo or video of your work.');
+      return;
+    }
+
+    setIsPublishing(true);
+    try {
+      // Save to portfolio highlights
+      const response = await fetch(`${BACKEND_URL}/api/professional/${currentUser._id}/portfolio-highlights`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: workTitle.trim(),
+          projectType: workType,
+          location: workLocation.trim(),
+          budget: '',
+          timeline: workDuration.trim(),
+          requirements: [workType],
+          description: workDescription.trim(),
+          mediaUrls: workMedia,
+        }),
+      });
+
+      if (response.ok) {
+        setSuccessType('labour_work');
+        setSuccess(true);
+
+        // Clear form
+        setWorkTitle('');
+        setWorkType('');
+        setWorkLocation('');
+        setWorkMedia([]);
+        setWorkDescription('');
+        setWorkDuration('');
+
+        setTimeout(() => {
+          setSuccess(false);
+          router.push('/(tabs)/profile');
+        }, 2000);
+      } else {
+        const errorData = await response.json();
+        Alert.alert('Failed', errorData.message || 'Could not save work. Try again.');
+      }
+    } catch (err) {
+      console.error('Labour submit error:', err);
+      // Offline fallback
+      setSuccessType('labour_work');
+      setSuccess(true);
+      setWorkTitle('');
+      setWorkType('');
+      setWorkLocation('');
+      setWorkMedia([]);
+      setWorkDescription('');
+      setWorkDuration('');
+      setTimeout(() => {
+        setSuccess(false);
+        router.push('/(tabs)/profile');
+      }, 2000);
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
   // Submit flow for client project
   const handleClientSubmit = async () => {
+    if (currentUser?.role === 'Client') {
+      Alert.alert(
+        'Access Restricted',
+        'Clients are not authorized to publish projects on Allver. Only Contractors and Architects can post projects/designs.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     if (!title.trim() || !location.trim() || !budget.trim() || !clientDescription.trim()) {
       Alert.alert('Required Fields', 'Please fill out all fields before publishing.');
       return;
@@ -164,6 +357,8 @@ export default function PostProjectScreen() {
     else if (category === 'Commercial Construction') projectType = 'Commercial';
     else if (category === 'Interior Design') projectType = 'Interior';
     else if (category === 'Renovation') projectType = 'Renovation';
+
+    const isLabour = currentUser?.role === 'Labour';
 
     try {
       const response = await fetch(`${BACKEND_URL}/api/contract-requests`, {
@@ -182,6 +377,28 @@ export default function PostProjectScreen() {
       });
 
       if (response.ok) {
+        // If the user is a Labour, also save to their portfolio highlights
+        if (isLabour && currentUser?._id) {
+          try {
+            await fetch(`${BACKEND_URL}/api/professional/${currentUser._id}/portfolio-highlights`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: title.trim(),
+                projectType,
+                location: location.trim(),
+                budget: budget.trim(),
+                timeline: timeline.trim(),
+                requirements,
+                description: clientDescription.trim()
+              }),
+            });
+          } catch (portfolioErr) {
+            console.error('Error saving to portfolio highlights:', portfolioErr);
+            // Don't block the main flow if portfolio save fails
+          }
+        }
+
         setSuccessType('client');
         setSuccess(true);
         
@@ -326,14 +543,16 @@ export default function PostProjectScreen() {
             <Feather name="check" size={40} color={COLORS.white} />
           </View>
           <Text style={styles.successTitle}>
-            {successType === 'client' ? 'Project Posted!' : 'Published Successfully!'}
+            {successType === 'labour_work' ? 'Work Added!' : successType === 'client' ? 'Project Posted!' : 'Published Successfully!'}
           </Text>
           <Text style={styles.successMessage}>
-            {successType === 'client' 
-              ? 'Your project has been successfully published. Contractors and architects will contact you shortly.'
-              : successType === 'architect_design'
-                ? 'Your blueprint design has been published to the Design catalog.'
-                : 'Your post has been successfully published to the Discover feed.'}
+            {successType === 'labour_work'
+              ? 'Your work has been saved to your Portfolio Highlights! Clients and contractors can now see it on your profile.'
+              : successType === 'client' 
+                ? 'Your project has been successfully published. Contractors and architects will contact you shortly.'
+                : successType === 'architect_design'
+                  ? 'Your blueprint design has been published to the Design catalog.'
+                  : 'Your post has been successfully published to the Discover feed.'}
           </Text>
         </View>
       </SafeAreaView>
@@ -341,31 +560,34 @@ export default function PostProjectScreen() {
   }
 
   const isArchitect = currentUser?.role === 'Architect';
+  const isContractor = currentUser?.role === 'Contractor';
+  const isLabour = currentUser?.role === 'Labour';
+  const isCreator = isArchitect || isContractor;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header Bar */}
       <View style={styles.header}>
-        {isArchitect && selectedType ? (
+        {isCreator && selectedType ? (
           <TouchableOpacity onPress={() => { setSelectedType(null); setSelectedMedia([]); }} style={styles.backBtn}>
             <Feather name="arrow-left" size={20} color={COLORS.textDark} />
           </TouchableOpacity>
         ) : null}
         <Text style={styles.headerTitle}>
-          {isArchitect ? 'Architect Studio' : 'Post Project'}
+          {isArchitect ? 'Architect Studio' : isContractor ? 'Post Project' : (currentUser?.role === 'Labour' ? 'Add Work' : 'Post Project')}
         </Text>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
-        {/* ================= ARCHITECT FLOW ================= */}
-        {isArchitect ? (
+        {/* ================= ARCHITECT / CONTRACTOR FLOW ================= */}
+        {isCreator ? (
           <View style={styles.architectContainer}>
             {selectedType === null ? (
               // Option Selection Screen
               <View style={styles.selectionView}>
-                <Text style={styles.studioTitle}>Create New Content</Text>
-                <Text style={styles.studioSubtitle}>Select the content type to publish to the network</Text>
+                <Text style={styles.studioTitle}>{isContractor ? 'Post Your Work' : 'Create New Content'}</Text>
+                <Text style={styles.studioSubtitle}>{isContractor ? 'Select content type to showcase on Discover' : 'Select the content type to publish to the network'}</Text>
 
                 {/* Option 1: Images */}
                 <TouchableOpacity 
@@ -378,7 +600,7 @@ export default function PostProjectScreen() {
                   </View>
                   <View style={styles.optionInfo}>
                     <Text style={styles.optionTitle}>Upload Images</Text>
-                    <Text style={styles.optionSub}>Share site progress photos to your feed</Text>
+                    <Text style={styles.optionSub}>{isContractor ? 'Share project photos & site progress' : 'Share site progress photos to your feed'}</Text>
                   </View>
                   <Feather name="chevron-right" size={18} color={COLORS.textMuted} />
                 </TouchableOpacity>
@@ -394,12 +616,13 @@ export default function PostProjectScreen() {
                   </View>
                   <View style={styles.optionInfo}>
                     <Text style={styles.optionTitle}>Upload Videos</Text>
-                    <Text style={styles.optionSub}>Share site walkthrough clips to your feed</Text>
+                    <Text style={styles.optionSub}>{isContractor ? 'Share project walkthrough & progress videos' : 'Share site walkthrough clips to your feed'}</Text>
                   </View>
                   <Feather name="chevron-right" size={18} color={COLORS.textMuted} />
                 </TouchableOpacity>
 
-                {/* Option 3: Design */}
+                {/* Option 3: Design (Architect only) */}
+                {isArchitect && (
                 <TouchableOpacity 
                   style={styles.optionCard} 
                   activeOpacity={0.8}
@@ -414,6 +637,7 @@ export default function PostProjectScreen() {
                   </View>
                   <Feather name="chevron-right" size={18} color={COLORS.textMuted} />
                 </TouchableOpacity>
+                )}
               </View>
             ) : (
               // Selected Content Upload Screen
@@ -466,14 +690,23 @@ export default function PostProjectScreen() {
                   <View style={styles.previewContainer}>
                     <Text style={styles.previewTitle}>Selected File Preview</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.previewScroll}>
-                      {selectedMedia.map((uri, index) => (
-                        <View key={index} style={styles.previewImageWrap}>
-                          <Image source={{ uri }} style={styles.previewImage} contentFit="cover" />
-                          <TouchableOpacity style={styles.removeMediaBtn} onPress={() => removeMediaItem(index)}>
-                            <Feather name="x" size={12} color={COLORS.white} />
-                          </TouchableOpacity>
-                        </View>
-                      ))}
+                      {selectedMedia.map((uri, index) => {
+                        const isVideo = uri.toLowerCase().endsWith('.mp4') || uri.toLowerCase().endsWith('.mov') || uri.toLowerCase().endsWith('.avi');
+                        return (
+                          <View key={index} style={styles.previewImageWrap}>
+                            {isVideo ? (
+                              <View style={[styles.previewImage, { backgroundColor: '#334155', justifyContent: 'center', alignItems: 'center' }]}>
+                                <Feather name="video" size={24} color={COLORS.white} />
+                              </View>
+                            ) : (
+                              <Image source={{ uri }} style={styles.previewImage} contentFit="cover" />
+                            )}
+                            <TouchableOpacity style={styles.removeMediaBtn} onPress={() => removeMediaItem(index)}>
+                              <Feather name="x" size={12} color={COLORS.white} />
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      })}
                     </ScrollView>
                   </View>
                 )}
@@ -575,6 +808,160 @@ export default function PostProjectScreen() {
                 </View>
               </View>
             )}
+          </View>
+        ) : isLabour ? (
+          // ================= LABOUR "ADD WORK" FLOW =================
+          <View style={styles.clientContainer}>
+            {/* Banner Block */}
+            <View style={styles.bannerContainer}>
+              <View style={styles.bannerIconBox}>
+                <Feather name="tool" size={18} color={COLORS.green} />
+              </View>
+              <Text style={styles.bannerText}>
+                Showcase your completed work to attract more clients. Add photos, describe the project, and build your portfolio.
+              </Text>
+            </View>
+
+            <View style={styles.formContainer}>
+              {/* Work Title */}
+              <Text style={styles.label}>Work Title</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g. House Painting, Tile Installation, Plumbing Work"
+                placeholderTextColor={COLORS.textMuted}
+                value={workTitle}
+                onChangeText={setWorkTitle}
+              />
+
+              {/* Work Type */}
+              <Text style={styles.label}>Work Type</Text>
+              <View style={styles.categoriesRow}>
+                {WORK_TYPE_OPTIONS.map((type) => {
+                  const isSelected = workType === type;
+                  return (
+                    <TouchableOpacity
+                      key={type}
+                      style={[
+                        styles.categoryChip,
+                        isSelected && styles.categoryChipSelected
+                      ]}
+                      onPress={() => setWorkType(type)}
+                    >
+                      <Text style={[
+                        styles.categoryChipText,
+                        isSelected && styles.categoryChipTextSelected
+                      ]}>
+                        {type}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Location */}
+              <Text style={styles.label}>Location</Text>
+              <View style={styles.inputWrapper}>
+                <Feather name="map-pin" size={16} color={COLORS.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.inputWithIcon}
+                  placeholder="e.g. Mumbai, Maharashtra"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={workLocation}
+                  onChangeText={setWorkLocation}
+                />
+              </View>
+
+              {/* Photos/Videos */}
+              <Text style={styles.label}>Photos / Videos</Text>
+              <Text style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, marginTop: -4 }}>
+                Upload 1–10 images or videos of your work
+              </Text>
+              <TouchableOpacity
+                style={styles.mediaSelectorBtn}
+                onPress={handleSelectWorkMedia}
+                activeOpacity={0.7}
+                disabled={isUploadingWork}
+              >
+                {isUploadingWork ? (
+                  <ActivityIndicator size="small" color={COLORS.green} />
+                ) : (
+                  <>
+                    <Feather name="plus-circle" size={20} color={COLORS.green} style={{ marginRight: 8 }} />
+                    <Text style={styles.mediaSelectorBtnText}>
+                      {workMedia.length > 0 ? `Add More (${workMedia.length}/10)` : 'Select from Device'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* Media Preview */}
+              {workMedia.length > 0 && (
+                <View style={styles.previewContainer}>
+                  <Text style={styles.previewTitle}>Selected Files ({workMedia.length})</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.previewScroll}>
+                    {workMedia.map((uri, index) => {
+                       const isVideo = uri.toLowerCase().endsWith('.mp4') || uri.toLowerCase().endsWith('.mov') || uri.toLowerCase().endsWith('.avi');
+                       return (
+                         <View key={index} style={styles.previewImageWrap}>
+                           {isVideo ? (
+                             <View style={[styles.previewImage, { backgroundColor: '#334155', justifyContent: 'center', alignItems: 'center' }]}>
+                               <Feather name="video" size={24} color={COLORS.white} />
+                             </View>
+                           ) : (
+                             <Image source={{ uri }} style={styles.previewImage} contentFit="cover" />
+                           )}
+                           <TouchableOpacity style={styles.removeMediaBtn} onPress={() => removeWorkMediaItem(index)}>
+                             <Feather name="x" size={12} color={COLORS.white} />
+                           </TouchableOpacity>
+                         </View>
+                       );
+                     })}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Description (optional) */}
+              <Text style={styles.label}>Description <Text style={{ fontWeight: '400', color: COLORS.textMuted }}>(optional)</Text></Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder='e.g. "Completed 2BHK painting work in 15 days."'
+                placeholderTextColor={COLORS.textMuted}
+                multiline={true}
+                numberOfLines={3}
+                value={workDescription}
+                onChangeText={setWorkDescription}
+              />
+
+              {/* Duration (optional) */}
+              <Text style={styles.label}>Duration <Text style={{ fontWeight: '400', color: COLORS.textMuted }}>(optional)</Text></Text>
+              <View style={styles.inputWrapper}>
+                <Feather name="clock" size={16} color={COLORS.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.inputWithIcon}
+                  placeholder="e.g. 15 Days or 1 Month"
+                  placeholderTextColor={COLORS.textMuted}
+                  value={workDuration}
+                  onChangeText={setWorkDuration}
+                />
+              </View>
+
+              {/* Submit Button */}
+              <TouchableOpacity
+                style={[styles.submitBtn, isPublishing && { opacity: 0.8 }]}
+                onPress={handleLabourSubmit}
+                activeOpacity={0.9}
+                disabled={isPublishing}
+              >
+                {isPublishing ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <>
+                    <Feather name="check-circle" size={18} color={COLORS.white} style={{ marginRight: 6 }} />
+                    <Text style={styles.submitBtnText}>Add to Portfolio</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         ) : (
           // ================= CLIENT FLOW (DEFAULT) =================

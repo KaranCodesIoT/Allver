@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { BACKEND_URL } from '../constants/Config';
+import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 
 const COLORS = {
   green: '#1BC47D', // Green accent
@@ -74,17 +74,17 @@ export default function FollowersListScreen() {
     if (user.role === 'Architect') {
       router.push({
         pathname: '/architect-detail',
-        params: { id: user._id, name: user.fullName, avatar: user.avatarUrl, location: user.city }
+        params: { id: user._id, name: user.fullName, avatar: resolveAvatarUrl(user.avatarUrl), location: user.city }
       });
     } else if (user.role === 'Contractor') {
       router.push({
         pathname: '/contractor-detail',
-        params: { id: user._id, name: user.fullName, avatar: user.avatarUrl, location: user.city }
+        params: { id: user._id, name: user.fullName, avatar: resolveAvatarUrl(user.avatarUrl), location: user.city }
       });
     } else if (user.role === 'Labour') {
       router.push({
         pathname: '/labour-detail',
-        params: { id: user._id, name: user.fullName, role: user.role, avatar: user.avatarUrl, location: user.city }
+        params: { id: user._id, name: user.fullName, role: user.role, avatar: resolveAvatarUrl(user.avatarUrl), location: user.city }
       });
     } else {
       // Fallback or generic detail if any
@@ -95,9 +95,14 @@ export default function FollowersListScreen() {
     }
   };
 
+  const formatTitleName = (name: string) => {
+    if (name.toLowerCase() === 'my') return 'My';
+    return `${name}'s`;
+  };
+
   const headerTitle = type === 'followers' 
-    ? `${userName}'s Followers` 
-    : `${userName} is Following`;
+    ? `${formatTitleName(userName)} Networks` 
+    : `${formatTitleName(userName)} Network Connections`;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -125,8 +130,8 @@ export default function FollowersListScreen() {
           <Text style={styles.emptyTitle}>No profiles found</Text>
           <Text style={styles.emptySubtitle}>
             {type === 'followers' 
-              ? "This user doesn't have any followers yet."
-              : "This user isn't following anyone yet."
+              ? "This user doesn't have anyone in their network yet."
+              : "This user hasn't added anyone to their network yet."
             }
           </Text>
         </ScrollView>
@@ -147,7 +152,7 @@ export default function FollowersListScreen() {
                 activeOpacity={0.7}
               >
                 <Image
-                  source={{ uri: user.avatarUrl || fallbackAvatar }}
+                  source={{ uri: resolveAvatarUrl(user.avatarUrl) || fallbackAvatar }}
                   style={styles.avatar}
                   contentFit="cover"
                 />

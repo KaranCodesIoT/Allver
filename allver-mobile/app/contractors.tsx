@@ -3,8 +3,8 @@ import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimens
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import { BACKEND_URL } from '../constants/Config';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import NotificationBell from '../components/NotificationBell';
 
 const { width } = Dimensions.get('window');
@@ -97,7 +97,8 @@ const CONTRACTORS_DATA = [
 
 export default function ContractorsScreen() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
+  const params = useLocalSearchParams();
+  const [searchQuery, setSearchQuery] = useState((params.searchQuery as string) || '');
   const [locationQuery, setLocationQuery] = useState('');
   const [ratingQuery, setRatingQuery] = useState('');
   const [contractors, setContractors] = useState<any[]>([]);
@@ -123,7 +124,9 @@ export default function ContractorsScreen() {
   // Filter contractors
   const filteredContractors = contractors.filter((item) => {
     const name = item.fullName || '';
-    const specs = item.specialization || '';
+    const specs = Array.isArray(item.specialization) 
+      ? item.specialization.join(', ') 
+      : (item.specialization || '');
     const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           specs.toLowerCase().includes(searchQuery.toLowerCase());
     
@@ -155,15 +158,17 @@ export default function ContractorsScreen() {
       params: {
         id: contractor._id,
         name: contractor.fullName,
-        avatar: contractor.avatarUrl || 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=200&auto=format&fit=crop',
-        coverImage: contractor.cover || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop',
+        avatar: resolveAvatarUrl(contractor.avatarUrl) || 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=200&auto=format&fit=crop',
+        coverImage: resolveAvatarUrl(contractor.cover) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop',
         rating: (contractor.rating || 4.5).toString(),
         reviews: (contractor.reviews || 0).toString(),
         location: contractor.city,
         experience: contractor.experience || 'Entry Level',
-        specialization: contractor.specialization || 'General Contractor',
+        specialization: Array.isArray(contractor.specialization) 
+          ? contractor.specialization.join(', ') 
+          : (contractor.specialization || 'General Contractor'),
         projects: (contractor.projects || 0).toString(),
-        followers: '200',
+        followers: (contractor.followersCount || 0).toString(),
         firmName: contractor.firmName || 'Independent Contractor',
         phone: contractor.phoneNumber || '',
         workerCount: contractor.teamSize ? `${contractor.teamSize} Workers` : '10 Workers',
@@ -243,9 +248,11 @@ export default function ContractorsScreen() {
         ) : (
           <ScrollView bounces={true} contentContainerStyle={styles.scrollContent}>
             {filteredContractors.map((item) => {
-              const avatar = item.avatarUrl || 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=200&auto=format&fit=crop';
-              const specialization = item.specialization || 'General Contractor';
-              const followers = 200;
+              const avatar = resolveAvatarUrl(item.avatarUrl) || 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=200&auto=format&fit=crop';
+              const specialization = Array.isArray(item.specialization) 
+                ? item.specialization.join(', ') 
+                : (item.specialization || 'General Contractor');
+              const followers = item.followersCount || 0;
               return (
                 <View key={item._id} style={styles.contractorCard}>
                   <View style={styles.cardTopRow}>
@@ -289,7 +296,7 @@ export default function ContractorsScreen() {
                     </View>
                     <View style={styles.statItem}>
                       <FontAwesome5 name="users" size={12} color={COLORS.textMuted} style={styles.statIcon} />
-                      <Text style={styles.statText}>{followers} Followers</Text>
+                      <Text style={styles.statText}>{followers} Networks</Text>
                     </View>
                   </View>
                 </View>
@@ -311,7 +318,7 @@ export default function ContractorsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  scrollContent: { paddingHorizontal: 0, paddingBottom: 0, paddingTop: 15 },
 
   /* HEADER */
   headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: COLORS.border },
@@ -336,7 +343,7 @@ const styles = StyleSheet.create({
   ratingPillTextActive: { color: COLORS.green, fontWeight: '700' },
 
   /* CONTRACTOR CARDS */
-  contractorCard: { backgroundColor: COLORS.white, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, padding: 15, marginBottom: 15, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
+  contractorCard: { backgroundColor: COLORS.white, borderRadius: 0, borderTopWidth: 1, borderBottomWidth: 1, borderLeftWidth: 0, borderRightWidth: 0, borderColor: COLORS.border, padding: 15, marginBottom: 15, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
   cardTopRow: { flexDirection: 'row', position: 'relative' },
   avatarImage: { width: 75, height: 75, borderRadius: 37.5 },
   cardDetailsCol: { flex: 1, marginLeft: 15, paddingRight: 90 },

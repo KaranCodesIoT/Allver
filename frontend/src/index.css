@@ -4448,6 +4448,23 @@ body {
   border: 1px solid #bfdbfe;
 }
 
+.tpr-status-badge.cancelled {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+
+.tab-project-row.cancelled {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.tab-project-row.cancelled:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.08);
+}
+
 .tpr-location-year {
   display: flex;
   align-items: center;
@@ -5543,6 +5560,12 @@ body {
   background: rgba(59, 130, 246, 0.2);
   color: #60a5fa;
   border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.pdb-status.cancelled {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
 }
 
 .pdb-content h1 {
@@ -10416,9 +10439,11 @@ body {
 .cp-project-status { display: flex; align-items: center; gap: 4px; font-size: 0.75rem; font-weight: 600; margin-bottom: 8px; }
 .cp-project-status.ongoing { color: #10b981; }
 .cp-project-status.completed { color: #3b82f6; }
+.cp-project-status.cancelled { color: #ef4444; }
 .cp-project-status .dot { width: 6px; height: 6px; border-radius: 50%; }
 .cp-project-status.ongoing .dot { background: #10b981; }
 .cp-project-status.completed .dot { background: #3b82f6; }
+.cp-project-status.cancelled .dot { background: #ef4444; }
 .cp-progress-bar-container { display: flex; align-items: center; gap: 8px; }
 .cp-progress-bar { flex: 1; height: 4px; background: #e2e8f0; border-radius: 2px; overflow: hidden; }
 .cp-progress-fill { height: 100%; background: #10b981; }

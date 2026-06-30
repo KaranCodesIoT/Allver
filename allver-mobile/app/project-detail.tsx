@@ -157,6 +157,96 @@ export default function ProjectDetailScreen() {
     }
   };
 
+  const handleAcceptInvitation = async (requestId: string) => {
+    Alert.alert(
+      'Accept Hire Request',
+      'Are you sure you want to accept this hire request and start the project workspace?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Accept', 
+          onPress: async () => {
+            try {
+              const res = await fetch(`${BACKEND_URL}/api/contract-requests/${requestId}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  status: 'Accepted',
+                  professional: currentUser._id
+                })
+              });
+              if (res.ok) {
+                const data = await res.json();
+                Alert.alert(
+                  'Success!',
+                  'You have accepted the project. A workspace has been created.',
+                  [
+                    {
+                      text: 'Go to Workspace',
+                      onPress: () => {
+                        if (data.workspace && data.workspace._id) {
+                          router.push({
+                            pathname: '/project-progress',
+                            params: { workspaceId: data.workspace._id }
+                          });
+                        } else {
+                          router.push('/(tabs)');
+                        }
+                      }
+                    },
+                    { text: 'OK', onPress: () => router.push('/(tabs)') }
+                  ]
+                );
+              } else {
+                const err = await res.json();
+                Alert.alert('Error', err.message || 'Failed to accept invitation.');
+              }
+            } catch (err) {
+              console.error(err);
+              Alert.alert('Error', 'Network error.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleRejectInvitation = async (requestId: string) => {
+    Alert.alert(
+      'Reject Hire Request',
+      'Are you sure you want to reject this hire request?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Reject', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await fetch(`${BACKEND_URL}/api/contract-requests/${requestId}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  status: 'Rejected',
+                  professional: currentUser._id
+                })
+              });
+              if (res.ok) {
+                Alert.alert('Rejected', 'You have rejected the hire request.', [
+                  { text: 'OK', onPress: () => router.push('/(tabs)') }
+                ]);
+              } else {
+                Alert.alert('Error', 'Failed to reject invitation.');
+              }
+            } catch (err) {
+              console.error(err);
+              Alert.alert('Error', 'Network error.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -178,7 +268,7 @@ export default function ProjectDetailScreen() {
     );
   }
 
-  const isProfessional = currentUser && ['Architect', 'Contractor', 'Labour'].includes(currentUser.role);
+  const isProfessional = currentUser && ['Architect', 'Contractor'].includes(currentUser.role);
   const clientName = project.client?.fullName || 'Client';
   const clientAvatar = project.client?.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(clientName)}&background=7C3AED&color=fff`;
 
@@ -259,16 +349,35 @@ export default function ProjectDetailScreen() {
           </View>
         </View>
 
-        {/* Apply Button */}
+        {/* Apply / Accept / Reject Buttons */}
         {isProfessional && (
-          hasApplied ? (
-            <View style={[styles.applyBtn, { backgroundColor: '#9CA3AF' }]}>
+          project && project.professional && (project.professional._id || project.professional) === currentUser?._id && project.status === 'Pending' ? (
+            <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 20, marginTop: 10, marginBottom: 20 }}>
+              <TouchableOpacity 
+                style={[styles.applyBtn, { flex: 1, backgroundColor: COLORS.green, marginHorizontal: 0 }]} 
+                activeOpacity={0.9}
+                onPress={() => handleAcceptInvitation(project._id)}
+              >
+                <Feather name="check" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
+                <Text style={styles.applyBtnText}>Accept Hire</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.applyBtn, { flex: 1, backgroundColor: '#EF4444', marginHorizontal: 0 }]} 
+                activeOpacity={0.9}
+                onPress={() => handleRejectInvitation(project._id)}
+              >
+                <Feather name="x" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
+                <Text style={styles.applyBtnText}>Reject</Text>
+              </TouchableOpacity>
+            </View>
+          ) : hasApplied ? (
+            <View style={[styles.applyBtn, { backgroundColor: '#9CA3AF', marginHorizontal: 20, marginTop: 10 }]}>
               <Feather name="check-circle" size={18} color={COLORS.white} style={{ marginRight: 8 }} />
               <Text style={styles.applyBtnText}>Already Applied</Text>
             </View>
           ) : (
             <TouchableOpacity 
-              style={styles.applyBtn} 
+              style={[styles.applyBtn, { marginHorizontal: 20, marginTop: 10 }]} 
               activeOpacity={0.9}
               onPress={() => setApplyModalVisible(true)}
             >

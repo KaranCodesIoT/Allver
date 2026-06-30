@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, FlatList, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
 
@@ -20,12 +21,45 @@ const COLORS = {
   blue: '#3B82F6'
 };
 
+const EXPERIENCE_OPTIONS = [
+  'Less than 1 year',
+  '1-3 years',
+  '4-6 years',
+  '7-10 years',
+  '10+ years'
+];
+
+const SPECIALIZATION_OPTIONS = [
+  'Residential',
+  'Interior Design',
+  'Commercial',
+  'Landscape Design',
+  'Urban Planning',
+  'Sustainable Design'
+];
+
+const SERVICE_AREA_OPTIONS = [
+  'Mumbai',
+  'Pune',
+  'Navi Mumbai',
+  'Thane',
+  'Bangalore',
+  'Delhi',
+  'Hyderabad'
+];
+
 export default function ArchitectProfileScreen() {
   const router = useRouter();
   
-  // State for mock inputs
+  // State for inputs
   const [firmName, setFirmName] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
+  const [experience, setExperience] = useState('');
+  const [portfolioImages, setPortfolioImages] = useState<string[]>([]);
+  const [specialization, setSpecialization] = useState<string[]>(['Residential', 'Interior Design', 'Commercial']);
+  const [serviceArea, setServiceArea] = useState<string[]>(['Mumbai', 'Pune', 'Navi Mumbai']);
+  const [activeModal, setActiveModal] = useState<'experience' | 'specialization' | 'serviceArea' | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [saving, setSaving] = useState(false);
 
@@ -42,6 +76,162 @@ export default function ArchitectProfileScreen() {
     }
   }, []);
 
+  const handleToggleMultiSelect = (item: string, list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>) => {
+    if (list.includes(item)) {
+      setList(list.filter(x => x !== item));
+    } else {
+      setList([...list, item]);
+    }
+  };
+
+  const handleSelectPortfolioImages = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Please grant library permissions to upload media.');
+      return;
+    }
+
+    if (portfolioImages.length >= 10) {
+      Alert.alert('Limit Reached', 'You can upload a maximum of 10 photos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setIsUploading(true);
+      try {
+        const urls: string[] = [];
+        for (const asset of result.assets) {
+          if (portfolioImages.length + urls.length >= 10) {
+            Alert.alert('Limit Reached', 'Some images were skipped. Maximum 10 photos allowed.');
+            break;
+          }
+
+          const formData = new FormData();
+          const uri = asset.uri;
+          let name = asset.fileName || uri.split('/').pop() || 'upload.jpg';
+          name = name.split('?')[0].split('#')[0];
+
+          let fileType = asset.mimeType;
+          if (!fileType) {
+            const match = /\.(\w+)$/.exec(name);
+            const ext = match ? match[1].toLowerCase() : 'jpg';
+            fileType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+          }
+
+          formData.append('image', {
+            uri: uri,
+            name,
+            type: fileType
+          } as any);
+
+          const res = await fetch(`${BACKEND_URL}/api/upload`, {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            if (data.url) {
+              urls.push(data.url);
+            }
+          }
+        }
+        
+        if (urls.length > 0) {
+          setPortfolioImages(prev => [...prev, ...urls]);
+        } else {
+          Alert.alert('Upload Failed', 'Failed to upload media to the server.');
+        }
+      } catch (err) {
+        console.error('Upload error:', err);
+        Alert.alert('Upload Error', 'An error occurred while uploading media.');
+      } finally {
+        setIsUploading(false);
+      }
+    }
+  };
+
+  const removePortfolioImage = (index: number) => {
+    setPortfolioImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const renderModalContent = () => {
+    if (!activeModal) return null;
+
+    let title = '';
+    let data: string[] = [];
+    let isMulti = false;
+    let selectedItems: string[] = [];
+    let onSelect: (val: string) => void = () => {};
+
+    if (activeModal === 'experience') {
+      title = 'Select Years of Experience';
+      data = EXPERIENCE_OPTIONS;
+      onSelect = (val) => {
+        setExperience(val);
+        setActiveModal(null);
+      };
+    } else if (activeModal === 'specialization') {
+      title = 'Select Specialization';
+      data = SPECIALIZATION_OPTIONS;
+      isMulti = true;
+      selectedItems = specialization;
+      onSelect = (val) => handleToggleMultiSelect(val, specialization, setSpecialization);
+    } else if (activeModal === 'serviceArea') {
+      title = 'Select Service Area';
+      data = SERVICE_AREA_OPTIONS;
+      isMulti = true;
+      selectedItems = serviceArea;
+      onSelect = (val) => handleToggleMultiSelect(val, serviceArea, setServiceArea);
+    }
+
+    return (
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{title}</Text>
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <Feather name="x" size={20} color={COLORS.textDark} />
+            </TouchableOpacity>
+          </View>
+
+          <FlatList
+            data={data}
+            keyExtractor={(item) => item}
+            style={{ maxHeight: 300 }}
+            renderItem={({ item }) => {
+              const isSelected = isMulti ? selectedItems.includes(item) : experience === item;
+              return (
+                <TouchableOpacity 
+                  style={[styles.modalOption, isSelected && { backgroundColor: COLORS.greenLight }]} 
+                  onPress={() => onSelect(item)}
+                >
+                  <Text style={[styles.modalOptionText, isSelected && { color: COLORS.green, fontWeight: '700' }]}>{item}</Text>
+                  {isSelected && <Feather name="check" size={18} color={COLORS.green} />}
+                </TouchableOpacity>
+              );
+            }}
+          />
+
+          {isMulti && (
+            <TouchableOpacity 
+              style={styles.modalDoneBtn} 
+              onPress={() => setActiveModal(null)}
+            >
+              <Text style={styles.modalDoneBtnText}>Done</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    );
+  };
+
   const handleSave = async (isSkip = false) => {
     if (!currentUser) {
       router.push('/(tabs)');
@@ -52,10 +242,14 @@ export default function ArchitectProfileScreen() {
     const payload = isSkip ? {
       experience: 'Less than 1 year',
       specialization: ['Residential'],
+      serviceArea: ['Mumbai'],
+      portfolioImages: [],
     } : {
       firmName: firmName || 'Architect Office',
-      experience: '1-3 years',
-      specialization: ['Residential', 'Interior Design'],
+      experience: experience || '1-3 years',
+      specialization: specialization.length > 0 ? specialization : ['Residential'],
+      serviceArea: serviceArea.length > 0 ? serviceArea : ['Mumbai'],
+      portfolioImages: portfolioImages,
       whatsappNumber: whatsapp || '',
       phone: currentUser.phoneNumber || '',
     };
@@ -179,8 +373,10 @@ export default function ArchitectProfileScreen() {
               </View>
               <View style={styles.inputCol}>
                 <Text style={styles.inputLabel}>Experience <Text style={styles.optionalText}>(in years)</Text> <Text style={styles.asterisk}>*</Text></Text>
-                <TouchableOpacity style={styles.dropdownBox}>
-                  <Text style={styles.dropdownText}>Select your experience</Text>
+                <TouchableOpacity style={styles.dropdownBox} onPress={() => setActiveModal('experience')}>
+                  <Text style={[styles.dropdownText, !experience && { color: COLORS.textMuted }]}>
+                    {experience || 'Select experience'}
+                  </Text>
                   <Feather name="chevron-down" size={20} color={COLORS.textDark} />
                 </TouchableOpacity>
               </View>
@@ -194,25 +390,29 @@ export default function ArchitectProfileScreen() {
               <View style={styles.inputCol}>
                 <Text style={styles.inputLabel}>Portfolio Images <Text style={styles.asterisk}>*</Text></Text>
                 
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imagesScroll}>
-                  {[
-                    'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?q=80&w=300&auto=format&fit=crop',
-                    'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?q=80&w=300&auto=format&fit=crop',
-                    'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?q=80&w=300&auto=format&fit=crop'
-                  ].map((uri, idx) => (
-                    <View key={idx} style={styles.portfolioImageWrapper}>
-                      <Image source={{ uri }} style={styles.portfolioImage} contentFit="cover" />
-                      <TouchableOpacity style={styles.removeImageBtn}>
-                        <Feather name="x" size={12} color={COLORS.textDark} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </ScrollView>
+                {portfolioImages.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imagesScroll}>
+                    {portfolioImages.map((uri, idx) => (
+                      <View key={idx} style={styles.portfolioImageWrapper}>
+                        <Image source={{ uri }} style={styles.portfolioImage} contentFit="cover" />
+                        <TouchableOpacity style={styles.removeImageBtn} onPress={() => removePortfolioImage(idx)}>
+                          <Feather name="x" size={12} color={COLORS.textDark} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+                )}
 
-                <TouchableOpacity style={styles.addImagesBtn}>
-                  <Feather name="plus" size={16} color={COLORS.blue} />
-                  <Text style={styles.addImagesText}>Add More Images</Text>
-                  <Text style={styles.addImagesSub}>Upload project photos (Max 10 images)</Text>
+                <TouchableOpacity style={styles.addImagesBtn} onPress={handleSelectPortfolioImages} disabled={isUploading}>
+                  {isUploading ? (
+                    <ActivityIndicator size="small" color={COLORS.blue} />
+                  ) : (
+                    <>
+                      <Feather name="plus" size={16} color={COLORS.blue} />
+                      <Text style={styles.addImagesText}>Add More Images</Text>
+                      <Text style={styles.addImagesSub}>Upload project photos (Max 10 images)</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -224,15 +424,23 @@ export default function ArchitectProfileScreen() {
               </View>
               <View style={styles.inputCol}>
                 <Text style={styles.inputLabel}>Specialization <Text style={styles.asterisk}>*</Text></Text>
-                <View style={styles.chipsBox}>
-                  {['Residential', 'Interior Design', 'Commercial'].map((chip, idx) => (
+                <TouchableOpacity style={styles.chipsBox} onPress={() => setActiveModal('specialization')}>
+                  {specialization.map((chip, idx) => (
                     <View key={idx} style={styles.chipItem}>
                       <Text style={styles.chipText}>{chip}</Text>
-                      <Feather name="x" size={14} color={COLORS.textDark} style={styles.chipIcon} />
+                      <TouchableOpacity onPress={(e) => {
+                        e.stopPropagation();
+                        setSpecialization(specialization.filter(s => s !== chip));
+                      }}>
+                        <Feather name="x" size={14} color={COLORS.textDark} style={styles.chipIcon} />
+                      </TouchableOpacity>
                     </View>
                   ))}
+                  {specialization.length === 0 && (
+                    <Text style={styles.dropdownTextPlaceholder}>Select specialization</Text>
+                  )}
                   <Feather name="chevron-down" size={20} color={COLORS.textDark} style={styles.chipsDropdownIcon} />
-                </View>
+                </TouchableOpacity>
                 <Text style={styles.helperText}>Select all that apply</Text>
               </View>
             </View>
@@ -244,15 +452,23 @@ export default function ArchitectProfileScreen() {
               </View>
               <View style={styles.inputCol}>
                 <Text style={styles.inputLabel}>Service Area <Text style={styles.optionalText}>(Cities / Areas)</Text> <Text style={styles.asterisk}>*</Text></Text>
-                <View style={styles.chipsBox}>
-                  {['Mumbai', 'Pune', 'Navi Mumbai'].map((chip, idx) => (
+                <TouchableOpacity style={styles.chipsBox} onPress={() => setActiveModal('serviceArea')}>
+                  {serviceArea.map((chip, idx) => (
                     <View key={idx} style={styles.chipItem}>
                       <Text style={styles.chipText}>{chip}</Text>
-                      <Feather name="x" size={14} color={COLORS.textDark} style={styles.chipIcon} />
+                      <TouchableOpacity onPress={(e) => {
+                        e.stopPropagation();
+                        setServiceArea(serviceArea.filter(s => s !== chip));
+                      }}>
+                        <Feather name="x" size={14} color={COLORS.textDark} style={styles.chipIcon} />
+                      </TouchableOpacity>
                     </View>
                   ))}
+                  {serviceArea.length === 0 && (
+                    <Text style={styles.dropdownTextPlaceholder}>Select service areas</Text>
+                  )}
                   <Feather name="chevron-down" size={20} color={COLORS.textDark} style={styles.chipsDropdownIcon} />
-                </View>
+                </TouchableOpacity>
                 <Text style={styles.helperText}>Add the cities / areas where you provide services</Text>
               </View>
             </View>
@@ -309,6 +525,15 @@ export default function ArchitectProfileScreen() {
 
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={activeModal !== null}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setActiveModal(null)}
+      >
+        {renderModalContent()}
+      </Modal>
     </SafeAreaView>
   );
 }

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity,
   KeyboardAvoidingView, ScrollView, Platform, Alert,
-  Dimensions, Image,
+  Dimensions, Image, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -57,6 +57,10 @@ export default function LoginScreen() {
 
   const [isEmailFocused, setIsEmailFocused] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -69,7 +73,8 @@ export default function LoginScreen() {
       const response = await fetch(`${BACKEND_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+
       });
 
       const data = await response.json();
@@ -125,7 +130,7 @@ export default function LoginScreen() {
             {/* Top header section covering full width/height above card */}
             <View style={styles.topHeaderSection}>
               <Image
-                source={require('@/assets/images/ALLVER IMGS.jpeg')}
+                source={require('../assets/images/ALLVER IMGS.jpeg')}
                 style={styles.topBgImage}
                 resizeMode="cover"
               />
@@ -143,6 +148,11 @@ export default function LoginScreen() {
                 >
                   <Feather name="arrow-left" size={20} color="#1E2426" />
                 </TouchableOpacity>
+
+                <View style={styles.welcomeTextContainer}>
+                  <Text style={styles.welcomeText}>Welcome</Text>
+                  <Text style={styles.sloganText}>Build.Connect.Grow</Text>
+                </View>
               </View>
             </View>
 
@@ -195,7 +205,7 @@ export default function LoginScreen() {
               </View>
 
               {/* Forgot Password */}
-              <TouchableOpacity style={styles.forgotBtn}>
+              <TouchableOpacity style={styles.forgotBtn} onPress={() => setResetModalVisible(true)}>
                 <Text style={styles.forgotText}>Forgot Password?</Text>
               </TouchableOpacity>
 
@@ -226,6 +236,138 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </Link>
             </View>
+
+            {/* ================= RESET PASSWORD MODAL ================= */}
+            <Modal
+              visible={resetModalVisible}
+              transparent={true}
+              animationType="slide"
+              onRequestClose={() => setResetModalVisible(false)}
+            >
+              <View style={{
+                flex: 1,
+                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}>
+                <View style={{
+                  width: '85%',
+                  backgroundColor: COLORS.white,
+                  borderRadius: 16,
+                  padding: 24,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 10,
+                  elevation: 5,
+                }}>
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>
+                    Reset Password
+                  </Text>
+                  <Text style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 16 }}>
+                    Enter your registered email and your new password.
+                  </Text>
+
+                  <TextInput
+                    style={{
+                      borderWidth: 1,
+                      borderColor: COLORS.border,
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      fontSize: 14,
+                      color: COLORS.textDark,
+                      backgroundColor: '#F9FAFB',
+                      marginBottom: 12,
+                    }}
+                    placeholder="Enter your email"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={resetEmail}
+                    onChangeText={setResetEmail}
+                  />
+
+                  <TextInput
+                    style={{
+                      borderWidth: 1,
+                      borderColor: COLORS.border,
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      fontSize: 14,
+                      color: COLORS.textDark,
+                      backgroundColor: '#F9FAFB',
+                      marginBottom: 20,
+                    }}
+                    placeholder="Enter new password"
+                    placeholderTextColor="#9CA3AF"
+                    secureTextEntry={true}
+                    value={resetNewPassword}
+                    onChangeText={setResetNewPassword}
+                  />
+
+                  <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'flex-end' }}>
+                    <TouchableOpacity
+                      style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 10,
+                        borderRadius: 8,
+                        backgroundColor: '#F3F4F6',
+                      }}
+                      disabled={isResetting}
+                      onPress={() => setResetModalVisible(false)}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textMuted }}>
+                        Cancel
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 10,
+                        borderRadius: 8,
+                        backgroundColor: COLORS.teal,
+                      }}
+                      disabled={isResetting}
+                      onPress={async () => {
+                        if (!resetEmail.trim() || !resetNewPassword.trim()) {
+                          Alert.alert('Error', 'Please fill in both email and new password fields.');
+                          return;
+                        }
+                        setIsResetting(true);
+                        try {
+                          const res = await fetch(`${BACKEND_URL}/api/reset-password`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: resetEmail.trim().toLowerCase(), newPassword: resetNewPassword.trim() })
+                          });
+                          const data = await res.json();
+                          if (res.ok) {
+                            Alert.alert('Success', 'Password reset successfully! You can now log in.');
+                            setResetModalVisible(false);
+                            setResetEmail('');
+                            setResetNewPassword('');
+                          } else {
+                            Alert.alert('Error', data.message || 'Failed to reset password.');
+                          }
+                        } catch (err) {
+                          console.error('Password reset error:', err);
+                          Alert.alert('Error', 'Network error. Failed to reset password.');
+                        } finally {
+                          setIsResetting(false);
+                        }
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.white }}>
+                        {isResetting ? 'Saving...' : 'Reset'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </Modal>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -415,5 +557,23 @@ const styles = StyleSheet.create({
     color: '#1BC47D', // Cyan/green link color to stand out on dark background
     fontSize: 14,
     fontWeight: '700',
+  },
+  welcomeTextContainer: {
+    marginTop: 'auto',
+    paddingTop: 24,
+    marginBottom: 8,
+  },
+  welcomeText: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  sloganText: {
+    color: '#DFD5C6', // Metallic gold shade
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 2,
+    letterSpacing: 1,
   },
 });

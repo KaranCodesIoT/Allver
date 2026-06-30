@@ -1,25 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TextInput, TouchableOpacity, Dimensions, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { BACKEND_URL } from '../../constants/Config';
 import NotificationBell from '../../components/NotificationBell';
 
-const getParticipantDetails = (workspace: any, currentUserId: string) => {
+const getParticipantDetails = (workspace: any, currentUserId: string, onlineUserIds: string[] = []) => {
   const isClient = workspace.client?._id === currentUserId || workspace.client === currentUserId;
   const partner = isClient ? workspace.professional : workspace.client;
+  const partnerId = partner?._id || partner;
+  const isOnline = partnerId ? onlineUserIds.includes(partnerId.toString()) : false;
   
+  const lastMessage = workspace.messages && workspace.messages.length > 0 ? workspace.messages[workspace.messages.length - 1] : null;
+  const timestamp = lastMessage ? new Date(lastMessage.createdAt).getTime() : new Date(workspace.updatedAt || workspace.createdAt || 0).getTime();
+
   return {
     id: workspace._id,
+    receiverId: partnerId ? partnerId.toString() : '',
     name: partner?.fullName || 'User',
     role: partner?.role || 'Professional',
     project: workspace.title,
-    message: workspace.messages?.length > 0 ? workspace.messages[workspace.messages.length - 1].text : 'No messages yet',
-    time: workspace.messages?.length > 0 ? new Date(workspace.messages[workspace.messages.length - 1].createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+    message: lastMessage ? lastMessage.text : 'No messages yet',
+    time: lastMessage ? new Date(lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+    timestamp,
     unreadCount: 0,
-    online: true,
+    online: isOnline,
     avatar: partner?.profileImage || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
     type: partner?.role === 'Client' ? 'Projects' : 'Professionals',
     isReal: true
@@ -43,114 +51,136 @@ const COLORS = {
   badgeRed: '#EF4444',
 };
 
-const CONVERSATIONS_DATA = [
-  {
-    id: '1',
-    name: 'Rahul Contractor',
-    role: 'Civil Contractor',
-    type: 'Professionals',
-    project: 'Luxury Villa Construction',
-    message: 'Yes, I can start the work from next week.',
-    time: '9:30 AM',
-    unreadCount: 2,
-    online: true,
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=120&auto=format&fit=crop',
-  },
-  {
-    id: '2',
-    name: 'Ar. Rohit Sharma',
-    role: 'Architect',
-    type: 'Professionals',
-    project: 'Office Renovation',
-    message: 'Please share the floor plan and design details.',
-    time: '9:15 AM',
-    unreadCount: 1,
-    online: true,
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=120&auto=format&fit=crop',
-  },
-  {
-    id: '3',
-    name: 'Amit Labour Supplier',
-    role: 'Labour Supplier',
-    type: 'Professionals',
-    project: 'Labour Supply',
-    message: '20 workers will be available tomorrow.',
-    time: '8:45 AM',
-    unreadCount: 0,
-    online: true,
-    avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=120&auto=format&fit=crop',
-  },
-  {
-    id: '4',
-    name: 'Shree Cement Supplier',
-    role: 'Material Supplier',
-    type: 'Projects',
-    project: 'Material Delivery',
-    message: 'Your order of 50 Cement Bags has been delivered.',
-    time: 'Yesterday',
-    unreadCount: 1,
-    online: true,
-    isMaterial: true,
-    avatar: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=120&auto=format&fit=crop', // cement/delivery representation
-  },
-  {
-    id: '5',
-    name: 'Allver Support',
-    role: 'Support Agent',
-    type: 'System',
-    project: 'Support',
-    message: 'Your query regarding payment has been resolved.',
-    time: 'Yesterday',
-    unreadCount: 0,
-    online: false,
-    isSupport: true,
-    avatar: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?q=80&w=120&auto=format&fit=crop',
-  },
-  {
-    id: '6',
-    name: 'Vikram Electrician',
-    role: 'Electrician',
-    type: 'Professionals',
-    project: 'Office Renovation',
-    message: 'Installation work is 80% complete.',
-    time: '2 Days Ago',
-    unreadCount: 0,
-    online: true,
-    avatar: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=120&auto=format&fit=crop',
-  },
-  {
-    id: '7',
-    name: 'Interior Studio',
-    role: 'Interior Designer',
-    type: 'Professionals',
-    project: 'Interior Design',
-    message: "We've sent you the 3D design options.",
-    time: '2 Days Ago',
-    unreadCount: 1,
-    online: true,
-    avatar: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?q=80&w=120&auto=format&fit=crop',
-  },
-  {
-    id: '8',
-    name: 'Allver Notifications',
-    role: 'System Notifications',
-    type: 'System',
-    project: 'System',
-    message: "New update available! Check out what's new.",
-    time: '3 Days Ago',
-    unreadCount: 0,
-    online: false,
-    isNotification: true,
-    avatar: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=120&auto=format&fit=crop',
-  },
-];
+const CONVERSATIONS_DATA: any[] = [];
 
 export default function ChatsScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'All' | 'Projects' | 'Professionals' | 'System' | 'Unread'>('All');
-  const [conversations, setConversations] = useState<any[]>(CONVERSATIONS_DATA);
+  const [conversations, setConversations] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+
+  const loadConversations = useCallback(async (user: any) => {
+    if (!user) return;
+    const userId = user._id;
+
+    // Fetch online users list
+    let onlineUserIds: string[] = [];
+    try {
+      const onlineRes = await fetch(`${BACKEND_URL}/api/users/online`);
+      if (onlineRes.ok) {
+        const onlineData = await onlineRes.json();
+        onlineUserIds = onlineData.onlineUserIds || [];
+      }
+    } catch (e) {
+      console.log('Error fetching online user list:', e);
+    }
+
+    // Fetch real DM conversations
+    const fetchDMConversations = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/conversations/user/${userId}`);
+        if (res.ok) {
+          const data = await res.json();
+          const dmChats = data.conversations
+            .filter((convo: any) => convo.otherUser && convo.otherUser._id)
+            .map((convo: any) => {
+              const timestamp = convo.lastMessage?.createdAt
+                ? new Date(convo.lastMessage.createdAt).getTime()
+                : new Date(convo.updatedAt || convo.createdAt || 0).getTime();
+              return {
+                id: convo._id,
+                name: convo.otherUser?.fullName || 'User',
+                role: convo.otherUser?.role || 'Professional',
+                project: 'Direct Message',
+                message: convo.lastMessage?.text || 'No messages yet',
+                time: convo.lastMessage?.createdAt
+                  ? new Date(convo.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  : '',
+                timestamp,
+                unreadCount: convo.unreadCount || 0,
+                online: convo.isOnline || false,
+                avatar: convo.otherUser?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
+                type: 'Professionals',
+                isDM: true,
+                receiverId: convo.otherUser?._id,
+                conversationId: convo._id,
+              };
+            });
+          return dmChats;
+        }
+      } catch (err) {
+        console.log('Error fetching DM conversations:', err);
+      }
+      return [];
+    };
+
+    // Fetch project workspace chats
+    const fetchWorkspaces = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${userId}`);
+        if (res.ok) {
+          const data = await res.json();
+          return data.workspaces
+            .filter((w: any) => {
+              const isClient = w.client?._id === userId || w.client === userId;
+              const partner = isClient ? w.professional : w.client;
+              return partner && (partner._id || typeof partner === 'string');
+            })
+            .map((w: any) => getParticipantDetails(w, userId, onlineUserIds));
+        }
+      } catch (err) {
+        console.log('Error fetching workspaces:', err);
+      }
+      return [];
+    };
+
+    const [dmChats, workspaceChats] = await Promise.all([fetchDMConversations(), fetchWorkspaces()]);
+    // Merge real chats only, no dummy/mock data
+    const allReal = [...dmChats, ...workspaceChats];
+
+    // Group by receiverId to de-duplicate, summing up unreadCounts and keeping the latest conversation
+    const chatGroups: { [key: string]: any } = {};
+    const fallbackChats: any[] = [];
+    
+    allReal.forEach(chat => {
+      const rId = chat.receiverId;
+      if (!rId) {
+        if (chat.isNotification || chat.isSupport || chat.isMaterial) {
+          fallbackChats.push(chat);
+        }
+        return;
+      }
+      
+      if (!chatGroups[rId]) {
+        chatGroups[rId] = {
+          ...chat,
+          totalUnread: chat.unreadCount || 0,
+        };
+      } else {
+        chatGroups[rId].totalUnread += (chat.unreadCount || 0);
+        if (chat.timestamp > chatGroups[rId].timestamp) {
+          const accumulatedUnread = chatGroups[rId].totalUnread;
+          chatGroups[rId] = {
+            ...chat,
+            totalUnread: accumulatedUnread
+          };
+        }
+      }
+    });
+
+    const uniqueChats = [
+      ...Object.values(chatGroups).map((chat: any) => ({
+        ...chat,
+        unreadCount: chat.totalUnread
+      })),
+      ...fallbackChats
+    ];
+
+    // Sort by timestamp descending (newest first)
+    uniqueChats.sort((a, b) => b.timestamp - a.timestamp);
+    setConversations(uniqueChats);
+  }, []);
 
   useEffect(() => {
     let user = (global as any).currentUser;
@@ -163,65 +193,41 @@ export default function ChatsScreen() {
     
     if (user) {
       setCurrentUser(user);
-      const userId = user._id;
-
-      // Fetch real DM conversations
-      const fetchDMConversations = async () => {
-        try {
-          const res = await fetch(`${BACKEND_URL}/api/conversations/user/${userId}`);
-          if (res.ok) {
-            const data = await res.json();
-            const dmChats = data.conversations.map((convo: any) => ({
-              id: convo._id,
-              name: convo.otherUser?.fullName || 'User',
-              role: convo.otherUser?.role || 'Professional',
-              project: 'Direct Message',
-              message: convo.lastMessage?.text || 'No messages yet',
-              time: convo.lastMessage?.createdAt
-                ? new Date(convo.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                : '',
-              unreadCount: convo.unreadCount || 0,
-              online: false,
-              avatar: convo.otherUser?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
-              type: 'Professionals',
-              isDM: true,
-              receiverId: convo.otherUser?._id,
-              conversationId: convo._id,
-            }));
-            return dmChats;
-          }
-        } catch (err) {
-          console.log('Error fetching DM conversations:', err);
-        }
-        return [];
-      };
-
-      // Fetch project workspace chats
-      const fetchWorkspaces = async () => {
-        try {
-          const res = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${userId}`);
-          if (res.ok) {
-            const data = await res.json();
-            return data.workspaces.map((w: any) => getParticipantDetails(w, userId));
-          }
-        } catch (err) {
-          console.log('Error fetching workspaces:', err);
-        }
-        return [];
-      };
-
-      Promise.all([fetchDMConversations(), fetchWorkspaces()]).then(([dmChats, workspaceChats]) => {
-        // Merge real chats first, then mock data
-        const allReal = [...dmChats, ...workspaceChats];
-        const filteredMock = CONVERSATIONS_DATA.filter(mock =>
-          !allReal.some((real: any) => real.name === mock.name)
-        );
-        setConversations([...allReal, ...filteredMock]);
-      });
+      loadConversations(user);
     }
   }, []);
 
+  // Refresh conversations when the tab comes back into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (currentUser) {
+        loadConversations(currentUser);
+      }
+    }, [currentUser, loadConversations])
+  );
+
+  // Compute total unread count dynamically
+  const totalUnreadCount = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+
   const handleChatPress = (chat: any) => {
+    // Immediately clear unread badge in local state for instant UI feedback
+    if (chat.unreadCount > 0) {
+      setConversations(prev =>
+        prev.map(c =>
+          c.id === chat.id ? { ...c, unreadCount: 0 } : c
+        )
+      );
+
+      // Also call backend to mark conversation as read
+      if (chat.conversationId && currentUser?._id) {
+        fetch(`${BACKEND_URL}/api/conversations/${chat.conversationId}/read`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: currentUser._id }),
+        }).catch(err => console.log('Error marking as read:', err));
+      }
+    }
+
     if (chat.isDM) {
       // Navigate to DM chat with receiverId
       router.push({
@@ -314,7 +320,9 @@ export default function ChatsScreen() {
 
             <TouchableOpacity style={[styles.iconBadgeBtn, styles.activeHeaderBtn]}>
               <Feather name="message-square" size={20} color={COLORS.textDark} />
-              <View style={styles.badgeCircle}><Text style={styles.badgeText}>5</Text></View>
+              {totalUnreadCount > 0 && (
+                <View style={styles.badgeCircle}><Text style={styles.badgeText}>{totalUnreadCount}</Text></View>
+              )}
               <View style={styles.activeHeaderLine} />
             </TouchableOpacity>
 
@@ -323,7 +331,7 @@ export default function ChatsScreen() {
               onPress={() => router.push('/profile')}
             >
               <Image 
-                source={currentUser?.avatarUrl ? { uri: currentUser.avatarUrl } : require('@/assets/images/app-icon.png')} 
+                source={currentUser?.avatarUrl ? { uri: currentUser.avatarUrl } : require('../../assets/android-icon-foreground.png')} 
                 style={styles.avatarImage}
                 contentFit={currentUser?.avatarUrl ? "cover" : "contain"}
               />
@@ -368,9 +376,9 @@ export default function ChatsScreen() {
                 <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
                   {filter}
                 </Text>
-                {filter === 'Unread' && (
+                {filter === 'Unread' && totalUnreadCount > 0 && (
                   <View style={[styles.chipBadge, isSelected && styles.chipBadgeActive]}>
-                    <Text style={[styles.chipBadgeText, isSelected && styles.chipBadgeTextActive]}>5</Text>
+                    <Text style={[styles.chipBadgeText, isSelected && styles.chipBadgeTextActive]}>{totalUnreadCount}</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -423,11 +431,7 @@ export default function ChatsScreen() {
         </View>
 
       </ScrollView>
-
-      {/* Floating Compose Button */}
-      <TouchableOpacity style={styles.composeBtn} activeOpacity={0.8}>
-        <Feather name="edit-2" size={20} color={COLORS.white} />
-      </TouchableOpacity>
+      
     </SafeAreaView>
   );
 }
@@ -705,32 +709,5 @@ const styles = StyleSheet.create({
   emptyText: {
     color: COLORS.textMuted,
     fontSize: 14,
-  },
-
-  /* FLOATING BUTTON */
-  composeBtn: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: COLORS.badgeGold,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 6,
-      },
-      web: {
-        boxShadow: '0 4px 8px rgba(0,0,0,0.15)',
-      }
-    })
   }
 });

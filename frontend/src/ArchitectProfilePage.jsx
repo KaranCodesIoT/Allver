@@ -69,6 +69,8 @@ const ArchitectProfilePage = () => {
   const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [contractRequests, setContractRequests] = useState([]);
   const [realWorkspaces, setRealWorkspaces] = useState([]);
+  const [realTeam, setRealTeam] = useState([]);
+  const [realReviews, setRealReviews] = useState([]);
   
   const [currentUser, setCurrentUser] = useState(null);
   const [showHireModal, setShowHireModal] = useState(false);
@@ -175,6 +177,18 @@ const ArchitectProfilePage = () => {
       .then(res => res.json())
       .then(data => setRealWorkspaces(data.workspaces || []))
       .catch(err => console.error('Error fetching profile workspaces:', err));
+
+    // Fetch real team members
+    fetch(`https://allver.onrender.com/api/professional/${profileId}/team`)
+      .then(res => res.json())
+      .then(data => setRealTeam(data.team || []))
+      .catch(err => console.error('Error fetching profile team:', err));
+
+    // Fetch real reviews
+    fetch(`https://allver.onrender.com/api/user/reviews/${profileId}`)
+      .then(res => res.json())
+      .then(data => setRealReviews(data.reviews || []))
+      .catch(err => console.error('Error fetching profile reviews:', err));
   }, [id]);
 
   const handleHireSubmit = async (e) => {
@@ -705,7 +719,7 @@ const ArchitectProfilePage = () => {
               </button>
               <button className={`pw-tab-btn ${activeTab === 'videos' ? 'active' : ''}`} onClick={() => setActiveTab('videos')}>
                 <Video size={16} />
-                <span>Videos</span>
+                <span>Media</span>
               </button>
               <button className={`pw-tab-btn ${activeTab === 'team' ? 'active' : ''}`} onClick={() => setActiveTab('team')}>
                 <Users2 size={16} />
@@ -725,7 +739,7 @@ const ArchitectProfilePage = () => {
                     {projectsList.map(proj => (
                       <div 
                         key={proj.id} 
-                        className="tab-project-row clickable-row" 
+                        className={`tab-project-row clickable-row ${proj.status === 'Cancelled' ? 'cancelled' : ''}`} 
                         onClick={() => {
                           if (proj.isReal) {
                             navigate('/', { state: { activeTab: 'workspaces', selectedWorkspace: proj.id } });
@@ -765,144 +779,146 @@ const ArchitectProfilePage = () => {
 
               {activeTab === 'videos' && (
                 <div className="tab-pane-fade">
-                  {/* Video Filters */}
-                  <div className="tab-video-filters">
-                    {['All', 'Reels', 'Walkthrough', 'Timelapse'].map(cat => (
-                      <button
-                        key={cat}
-                        className={`video-filter-pill ${videoFilter === cat ? 'active' : ''}`}
-                        onClick={() => setVideoFilter(cat)}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Videos Grid */}
-                  <div className="tab-videos-grid">
-                    {MOCK_VIDEOS
-                      .filter(v => videoFilter === 'All' || v.category === videoFilter)
-                      .map(vid => (
-                        <div key={vid.id} className="tab-video-card">
-                          <div className="tvc-thumb" style={{ backgroundImage: `url(${vid.thumbnail})` }}>
-                            <div className="tvc-play-overlay">
-                              <Play size={20} fill="white" color="white" />
-                            </div>
-                            <span className="tvc-duration">{vid.duration}</span>
-                          </div>
-                          <div className="tvc-info">
-                            <h3>{vid.title}</h3>
-                            <span className="tvc-category">{vid.category}</span>
-                          </div>
+                  {!profile || !profile.portfolioImages || profile.portfolioImages.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b', fontSize: '0.9rem' }}>
+                      No media uploaded yet.
+                    </div>
+                  ) : (
+                    <div className="tab-media-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '15px', padding: '15px' }}>
+                      {profile.portfolioImages.map((img, idx) => (
+                        <div key={idx} className="tab-media-card" style={{ borderRadius: '8px', overflow: 'hidden', height: '150px', border: '1px solid var(--border)' }}>
+                          <img src={img} alt="portfolio" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         </div>
                       ))}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {activeTab === 'team' && (
                 <div className="tab-pane-fade">
                   <div className="tab-team-list">
-                    {MOCK_TEAM.map(member => (
-                      <div key={member.id} className="tab-team-row">
-                        <img src={member.img} alt={member.name} className="ttr-avatar" />
-                        <div className="ttr-info">
-                          <div className="ttr-name-row">
-                            <h3>{member.name}</h3>
-                            <span className="ttr-role-badge">{member.role}</span>
-                          </div>
-                          <p className="ttr-exp">{member.experience}</p>
-                          <p className="ttr-spec">{member.specialization}</p>
-                        </div>
-                        <button 
-                          className="ttr-view-profile-btn" 
-                          onClick={() => {
-                            if (member.role === 'Labour' || member.id === 'team-member') {
-                              navigate('/labour/manage/team-member');
-                            } else {
-                              navigate(`/contractor/${member.id}`);
-                            }
-                          }}
-                        >
-                          <span>Project Dashboard</span>
-                          <ExternalLink size={12} />
-                        </button>
+                    {realTeam.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b', fontSize: '0.9rem' }}>
+                        No team members available.
                       </div>
-                    ))}
+                    ) : (
+                      realTeam.map(member => {
+                        const memberName = member.fullName || member.name;
+                        const memberRole = member.role || member.type || 'Team Member';
+                        const memberAvatar = member.avatarUrl || 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80';
+                        return (
+                          <div key={member._id} className="tab-team-row">
+                            <img src={memberAvatar} alt={memberName} className="ttr-avatar" />
+                            <div className="ttr-info">
+                              <div className="ttr-name-row">
+                                <h3>{memberName}</h3>
+                                <span className="ttr-role-badge">{memberRole}</span>
+                              </div>
+                              <p className="ttr-exp">{member.experience || 'No'} Experience</p>
+                            </div>
+                            <button 
+                              className="ttr-view-profile-btn" 
+                              onClick={() => {
+                                if (member.role === 'Labour') {
+                                  navigate('/labour/manage/team-member');
+                                } else {
+                                  navigate(`/contractor/${member._id}`);
+                                }
+                              }}
+                            >
+                              <span>Project Dashboard</span>
+                              <ExternalLink size={12} />
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               )}
 
               {activeTab === 'reviews' && (
                 <div className="tab-pane-fade">
-                  {/* Ratings Breakdown Summary */}
-                  <div className="tab-reviews-summary-card">
-                    <div className="trsc-score-block">
-                      <h1>{profile.rating || 4.8}</h1>
-                      <div className="trsc-stars-row">
-                        {[1, 2, 3, 4].map(n => <Star key={n} size={15} fill="#f59e0b" color="#f59e0b" />)}
-                        <StarHalf size={15} fill="#f59e0b" color="#f59e0b" />
-                      </div>
-                      <p>({profile.reviews || 124} Reviews)</p>
-                    </div>
-                    <div className="trsc-bars-column">
-                      <div className="trsc-bar-row">
-                        <span>5 ★</span>
-                        <div className="bar-bg"><div className="bar-fill" style={{ width: '82%' }}></div></div>
-                        <span>96</span>
-                      </div>
-                      <div className="trsc-bar-row">
-                        <span>4 ★</span>
-                        <div className="bar-bg"><div className="bar-fill" style={{ width: '15%' }}></div></div>
-                        <span>21</span>
-                      </div>
-                      <div className="trsc-bar-row">
-                        <span>3 ★</span>
-                        <div className="bar-bg"><div className="bar-fill" style={{ width: '3%' }}></div></div>
-                        <span>5</span>
-                      </div>
-                      <div className="trsc-bar-row">
-                        <span>2 ★</span>
-                        <div className="bar-bg"><div className="bar-fill" style={{ width: '0%' }}></div></div>
-                        <span>2</span>
-                      </div>
-                      <div className="trsc-bar-row">
-                        <span>1 ★</span>
-                        <div className="bar-bg"><div className="bar-fill" style={{ width: '0%' }}></div></div>
-                        <span>0</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Individual Reviews List */}
-                  <div className="tab-reviews-list">
-                    {MOCK_REVIEWS.map(rev => (
-                      <div key={rev.id} className="tab-review-card">
-                        <div className="trc-header">
-                          <div className="trc-user-info">
-                            <div className="trc-user-avatar">{rev.name.split(' ').map(n=>n[0]).join('')}</div>
-                            <div>
-                              <h3>{rev.name}</h3>
-                              <div className="trc-rating-stars">
-                                {Array.from({ length: rev.rating }).map((_, i) => (
-                                  <Star key={i} size={12} fill="#f59e0b" color="#f59e0b" />
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                          <span className="trc-date">{rev.date}</span>
+                  {realReviews.length > 0 ? (
+                    <>
+                      {/* Ratings Breakdown Summary */}
+                      <div className="tab-reviews-summary-card">
+                        <div className="trsc-score-block">
+                          {(() => {
+                            const avg = (realReviews.reduce((sum, r) => sum + r.rating, 0) / realReviews.length).toFixed(1);
+                            return (
+                              <>
+                                <h1>{avg}</h1>
+                                <div className="trsc-stars-row">
+                                  {Array.from({ length: Math.floor(avg) }).map((_, i) => (
+                                    <Star key={i} size={15} fill="#f59e0b" color="#f59e0b" />
+                                  ))}
+                                  {avg % 1 >= 0.5 && <StarHalf size={15} fill="#f59e0b" color="#f59e0b" />}
+                                </div>
+                              </>
+                            );
+                          })()}
+                          <p>({realReviews.length} Reviews)</p>
                         </div>
-                        <p className="trc-comment">{rev.comment}</p>
-                        {rev.imgs.length > 0 && (
-                          <div className="trc-images-grid">
-                            {rev.imgs.map((img, i) => (
-                              <img key={i} src={img} alt={`review-img-${i}`} className="trc-thumb" />
-                            ))}
-                          </div>
-                        )}
+                        <div className="trsc-bars-column">
+                          {(() => {
+                            const starCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+                            realReviews.forEach(r => {
+                              const stars = Math.round(r.rating);
+                              if (stars in starCounts) starCounts[stars] += 1;
+                            });
+                            const totalReviewsCount = realReviews.length || 1;
+                            return [5, 4, 3, 2, 1].map(stars => {
+                              const count = starCounts[stars];
+                              const percentage = ((count / totalReviewsCount) * 100).toFixed(0);
+                              return (
+                                <div key={stars} className="trsc-bar-row">
+                                  <span>{stars} ★</span>
+                                  <div className="bar-bg">
+                                    <div className="bar-fill" style={{ width: `${percentage}%` }}></div>
+                                  </div>
+                                  <span>{count}</span>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
                       </div>
-                    ))}
-                  </div>
+
+                      {/* Individual Reviews List */}
+                      <div className="tab-reviews-list">
+                        {realReviews.map(rev => {
+                          const name = rev.from?.fullName || 'Anonymous';
+                          const avatarInitials = name.split(' ').map(n => n[0]).join('');
+                          const date = new Date(rev.createdAt).toLocaleDateString();
+                          return (
+                            <div key={rev._id} className="tab-review-card">
+                              <div className="trc-header">
+                                <div className="trc-user-info">
+                                  <div className="trc-user-avatar">{avatarInitials}</div>
+                                  <div>
+                                    <h3>{name}</h3>
+                                    <div className="trc-rating-stars">
+                                      {Array.from({ length: Math.round(rev.rating) }).map((_, i) => (
+                                        <Star key={i} size={12} fill="#f59e0b" color="#f59e0b" />
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                                <span className="trc-date">{date}</span>
+                              </div>
+                              <p className="trc-comment">{rev.reviewText}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b', fontSize: '0.9rem' }}>
+                      No reviews yet.
+                    </div>
+                  )}
                 </div>
               )}
             </div>

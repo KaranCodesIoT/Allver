@@ -1480,7 +1480,7 @@ const Home = () => {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: '#4b5563' }}>
                           <CheckCircle2 size={16} style={{ color: '#10b981' }} />
-                          <strong>{featuredPros.Architect?.projects || 18} Projects Completed</strong>
+                          <strong>{featuredPros.Architect?.projects || 0} Projects Completed</strong>
                         </div>
                       </div>
 
@@ -1534,7 +1534,7 @@ const Home = () => {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: '#4b5563' }}>
                           <CheckCircle2 size={16} style={{ color: '#3b82f6' }} />
-                          <strong>{featuredPros.Contractor?.projects || 15} Projects Completed</strong>
+                          <strong>{featuredPros.Contractor?.projects || 0} Projects Completed</strong>
                         </div>
                       </div>
 
@@ -1588,7 +1588,7 @@ const Home = () => {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: '#4b5563' }}>
                           <CheckCircle2 size={16} style={{ color: '#f59e0b' }} />
-                          <strong>{featuredPros.Labour?.projects || 30} Projects Completed</strong>
+                          <strong>{featuredPros.Labour?.projects || 0} Projects Completed</strong>
                         </div>
                       </div>
 
@@ -2485,7 +2485,7 @@ const Home = () => {
 
                                     <div className="designer-stats-row">
                                       <span className="designer-stat-item">
-                                        <Briefcase size={12} /> {prof.projects || 120} Projects
+                                        <Briefcase size={12} /> {prof.projects || 0} Projects
                                       </span>
                                       <span className="designer-stat-item">
                                         <Image size={12} /> {prof.experience || '5+ Years'} Exp.
@@ -2833,9 +2833,11 @@ const Home = () => {
                                 flexDirection: 'column',
                                 gap: '0.35rem',
                                 padding: '0.75rem 1rem',
-                                border: 'none',
+                                border: ws.status === 'Cancelled' ? '1px solid #fca5a5' : 'none',
                                 borderRadius: '0.5rem',
-                                background: isSelected ? '#eff6ff' : 'transparent',
+                                background: isSelected 
+                                  ? (ws.status === 'Cancelled' ? '#fef2f2' : '#eff6ff') 
+                                  : (ws.status === 'Cancelled' ? '#fff5f5' : 'transparent'),
                                 color: '#1e293b',
                                 textAlign: 'left',
                                 cursor: 'pointer',
@@ -2843,18 +2845,31 @@ const Home = () => {
                                 width: '100%',
                                 boxSizing: 'border-box'
                               }}
-                              onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = '#f8fafc'; }}
-                              onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                              onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = ws.status === 'Cancelled' ? '#fee2e2' : '#f8fafc'; }}
+                              onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = ws.status === 'Cancelled' ? '#fff5f5' : 'transparent'; }}
                             >
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                                <strong style={{ fontSize: '0.88rem', color: isSelected ? '#1e40af' : '#0f172a', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '170px' }}>
+                                <strong style={{ 
+                                  fontSize: '0.88rem', 
+                                  color: isSelected 
+                                    ? (ws.status === 'Cancelled' ? '#b91c1c' : '#1e40af') 
+                                    : (ws.status === 'Cancelled' ? '#991b1b' : '#0f172a'), 
+                                  textOverflow: 'ellipsis', 
+                                  overflow: 'hidden', 
+                                  whiteSpace: 'nowrap', 
+                                  maxWidth: '170px' 
+                                }}>
                                   {ws.title}
                                 </strong>
                                 <span style={{
                                   fontSize: '0.65rem',
                                   padding: '0.15rem 0.4rem',
                                   borderRadius: '1rem',
-                                  background: ws.status === 'Discussion' ? '#f59e0b' : '#10b981',
+                                  background: ws.status === 'Discussion' 
+                                    ? '#f59e0b' 
+                                    : ws.status === 'Cancelled' 
+                                      ? '#ef4444' 
+                                      : '#10b981',
                                   color: 'white',
                                   fontWeight: 'bold'
                                 }}>
@@ -2893,6 +2908,23 @@ const Home = () => {
 
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                        
+                        {/* Cancelled Banner */}
+                        {workspaceDetail.status === 'Cancelled' && (
+                          <div style={{
+                            background: '#fef2f2',
+                            color: '#b91c1c',
+                            padding: '0.75rem 1.25rem',
+                            borderBottom: '1.5px solid #fecaca',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            fontSize: '0.85rem',
+                            fontWeight: 'bold'
+                          }}>
+                            ❌ This project has been cancelled by the Client due to convenience. All content and tabs are now read-only.
+                          </div>
+                        )}
                         
                         {/* Workspace Header */}
                         <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
@@ -2996,48 +3028,98 @@ const Home = () => {
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '0.8rem', color: '#475569' }}>Status:</span>
-                            {(isWorkspaceClient || isWorkspaceContractor || isWorkspaceArchitect) ? (
-                              <select
-                                value={workspaceDetail.status}
-                                onChange={async (e) => {
-                                  const res = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/project-status`, {
-                                    method: 'PUT',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ status: e.target.value, senderId: currentUser._id })
-                                  });
-                                  if (res.ok) {
-                                    const data = await res.json();
-                                    setWorkspaceDetail(data.workspace);
-                                    fetchNotificationsAndWorkspaces();
-                                  }
-                                }}
-                                style={{
-                                  fontSize: '0.82rem',
-                                  color: workspaceDetail.status === 'Discussion' ? '#f59e0b' : '#10b981',
-                                  background: workspaceDetail.status === 'Discussion' ? '#fef3c7' : '#dcfce7',
-                                  padding: '0.25rem 0.5rem',
-                                  borderRadius: '0.5rem',
-                                  border: workspaceDetail.status === 'Discussion' ? '1px solid #fde68a' : '1px solid #bbf7d0',
-                                  fontWeight: 'bold',
-                                  cursor: 'pointer',
-                                  outline: 'none'
-                                }}
-                              >
-                                <option value="Discussion">Discussion</option>
-                                <option value="Active">Active</option>
-                                <option value="Completed">Completed</option>
-                              </select>
-                            ) : (
+                            {(workspaceDetail.status === 'Completed' || workspaceDetail.status === 'Cancelled') ? (
                               <strong style={{
                                 fontSize: '0.85rem',
-                                color: workspaceDetail.status === 'Discussion' ? '#f59e0b' : '#10b981',
-                                background: workspaceDetail.status === 'Discussion' ? '#fef3c7' : '#dcfce7',
+                                color: workspaceDetail.status === 'Completed' ? '#16a34a' : '#ef4444',
+                                background: workspaceDetail.status === 'Completed' ? '#f0fdf4' : '#fef2f2',
                                 padding: '0.25rem 0.75rem',
                                 borderRadius: '0.5rem',
-                                border: workspaceDetail.status === 'Discussion' ? '1px solid #fde68a' : '1px solid #bbf7d0'
+                                border: workspaceDetail.status === 'Completed' ? '1px solid #bbf7d0' : '1px solid #fecaca',
+                                fontWeight: 'bold'
                               }}>
-                                {workspaceDetail.status}
+                                {workspaceDetail.status.toUpperCase()}
                               </strong>
+                            ) : (
+                              (isWorkspaceClient || isWorkspaceContractor || isWorkspaceArchitect) ? (
+                                <div style={{ display: 'flex', alignItems: 'center' }}>
+                                  <select
+                                    value={workspaceDetail.status}
+                                    onChange={async (e) => {
+                                      const res = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/project-status`, {
+                                        method: 'PUT',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ status: e.target.value, senderId: currentUser._id })
+                                      });
+                                      if (res.ok) {
+                                        const data = await res.json();
+                                        setWorkspaceDetail(data.workspace);
+                                        fetchNotificationsAndWorkspaces();
+                                      }
+                                    }}
+                                    style={{
+                                      fontSize: '0.82rem',
+                                      color: workspaceDetail.status === 'Discussion' ? '#f59e0b' : '#10b981',
+                                      background: workspaceDetail.status === 'Discussion' ? '#fef3c7' : '#dcfce7',
+                                      padding: '0.25rem 0.5rem',
+                                      borderRadius: '0.5rem',
+                                      border: workspaceDetail.status === 'Discussion' ? '1px solid #fde68a' : '1px solid #bbf7d0',
+                                      fontWeight: 'bold',
+                                      cursor: 'pointer',
+                                      outline: 'none'
+                                    }}
+                                  >
+                                    <option value="Discussion">Discussion</option>
+                                    <option value="Active">Active</option>
+                                    <option value="Completed">Completed</option>
+                                  </select>
+                                  {isWorkspaceClient && (
+                                    <button
+                                      onClick={async () => {
+                                        if (window.confirm("Are you sure you want to cancel this project due to inconvenience? This will put the project into read-only mode for all members and cannot be undone.")) {
+                                          const res = await fetch(`https://allver.onrender.com/api/project-workspaces/${workspaceDetail._id}/project-status`, {
+                                            method: 'PUT',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ status: 'Cancelled', senderId: currentUser._id, reworkComment: "Cancelled by Client due to convenience" })
+                                          });
+                                          if (res.ok) {
+                                            const data = await res.json();
+                                            setWorkspaceDetail(data.workspace);
+                                            fetchNotificationsAndWorkspaces();
+                                          } else {
+                                            const err = await res.json();
+                                            alert(err.message || "Failed to cancel project");
+                                          }
+                                        }
+                                      }}
+                                      style={{
+                                        marginLeft: '10px',
+                                        padding: '0.25rem 0.65rem',
+                                        background: '#fef2f2',
+                                        color: '#ef4444',
+                                        border: '1px solid #fecaca',
+                                        borderRadius: '0.5rem',
+                                        fontSize: '0.8rem',
+                                        fontWeight: 'bold',
+                                        cursor: 'pointer'
+                                      }}
+                                    >
+                                      Cancel Project
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <strong style={{
+                                  fontSize: '0.85rem',
+                                  color: workspaceDetail.status === 'Discussion' ? '#f59e0b' : '#10b981',
+                                  background: workspaceDetail.status === 'Discussion' ? '#fef3c7' : '#dcfce7',
+                                  padding: '0.25rem 0.75rem',
+                                  borderRadius: '0.5rem',
+                                  border: workspaceDetail.status === 'Discussion' ? '1px solid #fde68a' : '1px solid #bbf7d0'
+                                }}>
+                                  {workspaceDetail.status}
+                                </strong>
+                              )
                             )}
                           </div>
                         </div>
@@ -3157,7 +3239,7 @@ const Home = () => {
                               </div>
 
                               {/* Input Form with Attachment trigger */}
-                              {isWorkspaceMember ? (
+                              {isWorkspaceMember && workspaceDetail.status !== 'Cancelled' ? (
                                 <form onSubmit={handleSendWsMessage} style={{ display: 'flex', gap: '0.75rem', padding: '0.75rem 0 0', borderTop: '1px solid #f1f5f9' }}>
                                   {(isWorkspaceClient || isWorkspaceContractor) && (
                                     <button
@@ -3231,8 +3313,8 @@ const Home = () => {
                                   </button>
                                 </form>
                               ) : (
-                                <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem', background: '#f8fafc', borderTop: '1px solid #f1f5f9', borderRadius: '0.5rem', color: '#64748b', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                                  🔒 Chat is read-only for guests
+                                <div style={{ display: 'flex', justifyContent: 'center', padding: '1rem', background: '#f8fafc', borderTop: '1px solid #f1f5f9', borderRadius: '0.5rem', color: workspaceDetail.status === 'Cancelled' ? '#ef4444' : '#64748b', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                  {workspaceDetail.status === 'Cancelled' ? '🚫 Project is cancelled. Chat is read-only.' : '🔒 Chat is read-only for guests'}
                                 </div>
                               )}
                             </div>

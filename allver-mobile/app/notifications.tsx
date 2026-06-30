@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { BACKEND_URL } from '../constants/Config';
+import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 
 const COLORS = {
   green: '#1BC47D', // Green accent
@@ -63,8 +63,15 @@ export default function NotificationsScreen() {
     try {
       const response = await fetch(`${BACKEND_URL}/api/notifications/${currentUser._id}`);
       const data = await response.json();
-      if (data.success) {
-        setNotifications(data.notifications);
+      if (data.success && data.notifications) {
+        let filtered = data.notifications;
+        if (currentUser?.role === 'Labour') {
+          filtered = filtered.filter((n: any) => {
+            const isNewProject = n.text && (n.text.includes('New Project') || n.text.includes('New Project Posted'));
+            return !isNewProject;
+          });
+        }
+        setNotifications(filtered);
       }
     } catch (error) {
       console.error('Error fetching notifications:', error);
@@ -149,6 +156,20 @@ export default function NotificationsScreen() {
     const sender = notification.senderId;
     if (!sender) return;
     
+    // Check if it's a project invitation notification
+    if (notification.text.includes('📩 Project Invitation') || notification.text.includes('Project Invitation')) {
+      const secondLine = notification.text.split('\n')[1] || '';
+      const titleHint = secondLine.split('invited you to the project: ')[1] || '';
+      router.push({
+        pathname: '/project-detail',
+        params: {
+          clientId: sender._id,
+          titleHint: titleHint.trim()
+        }
+      });
+      return;
+    }
+
     // Check if it's a new project notification
     if (notification.text.includes('🏗 New Project') || notification.text.includes('New Project Posted')) {
       router.push({
@@ -160,14 +181,14 @@ export default function NotificationsScreen() {
       });
       return;
     }
-    
+
     // Determine route based on sender role
     if (sender.role === 'Architect') {
-      router.push({ pathname: '/architect-detail', params: { id: sender._id, name: sender.fullName, avatar: sender.avatarUrl } });
+      router.push({ pathname: '/architect-detail', params: { id: sender._id, name: sender.fullName, avatar: resolveAvatarUrl(sender.avatarUrl) } });
     } else if (sender.role === 'Contractor') {
-      router.push({ pathname: '/contractor-detail', params: { id: sender._id, name: sender.fullName, avatar: sender.avatarUrl } });
+      router.push({ pathname: '/contractor-detail', params: { id: sender._id, name: sender.fullName, avatar: resolveAvatarUrl(sender.avatarUrl) } });
     } else if (sender.role === 'Labour') {
-      router.push({ pathname: '/labour-detail', params: { id: sender._id, name: sender.fullName, role: sender.role, avatar: sender.avatarUrl } });
+      router.push({ pathname: '/labour-detail', params: { id: sender._id, name: sender.fullName, role: sender.role, avatar: resolveAvatarUrl(sender.avatarUrl) } });
     }
   };
 
@@ -190,7 +211,7 @@ export default function NotificationsScreen() {
               activeOpacity={0.7}
             >
               <Image
-                source={{ uri: sender.avatarUrl || fallbackAvatar }}
+                source={{ uri: resolveAvatarUrl(sender.avatarUrl) || fallbackAvatar }}
                 style={styles.avatar}
                 contentFit="cover"
               />
@@ -247,7 +268,7 @@ export default function NotificationsScreen() {
           </View>
           <Text style={styles.emptyTitle}>No notifications yet</Text>
           <Text style={styles.emptySubtitle}>
-            We'll notify you here when users follow your profile or interact with your posts.
+            We'll notify you here when users add you to their network or interact with your posts.
           </Text>
         </ScrollView>
       ) : (

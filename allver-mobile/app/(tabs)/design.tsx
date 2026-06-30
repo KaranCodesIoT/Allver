@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TextInput, TouchableOpacity, Dimensions, FlatList, Platform } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TextInput, TouchableOpacity, Dimensions, FlatList, Platform, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -41,85 +41,21 @@ interface DesignItem {
   imagesList: string[];
   description?: string;
   quotation?: any;
+  price?: number;
 }
 
-const DESIGN_DATA: DesignItem[] = [
-  {
-    id: '1',
-    title: 'Modern 2BHK Apartment',
-    location: 'Mumbai, Maharashtra',
-    image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
-    likes: 128,
-    comments: 24,
-    rating: 4.8,
-    authorName: 'Ar. Neha Sharma',
-    authorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
-    authorId: '60c72b2f9b1d8a2a4c8b0001',
-    authorCover: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-    authorFirm: 'Design Space Architects',
-    authorExperience: '8+ Years',
-    authorProjects: '120',
-    authorFollowers: '256',
-    authorPhone: '+91 98765 43210',
-    authorReviews: '124',
-    imagesList: [
-      'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1616594039964-ae9021a400a0?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1600566752355-35792bedcfea?auto=format&fit=crop&w=800&q=80',
-    ]
-  },
-  {
-    id: '2',
-    title: 'Modern Bedroom Design',
-    location: 'Pune, Maharashtra',
-    image: 'https://images.unsplash.com/photo-1616594039964-ae9021a400a0?auto=format&fit=crop&w=800&q=80',
-    likes: 96,
-    comments: 18,
-    rating: 4.7,
-    authorName: 'Ar. Rohit Mehta',
-    authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-    authorId: '60c72b2f9b1d8a2a4c8b0002',
-    authorCover: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
-    authorFirm: 'RM Design Studios',
-    authorExperience: '10+ Years',
-    authorProjects: '96',
-    authorFollowers: '189',
-    authorPhone: '+91 98765 43211',
-    authorReviews: '98',
-    imagesList: [
-      'https://images.unsplash.com/photo-1616594039964-ae9021a400a0?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1600566752355-35792bedcfea?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
-    ]
-  },
-  {
-    id: '3',
-    title: 'Minimal Kitchen Design',
-    location: 'Bengaluru, Karnataka',
-    image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=800&q=80',
-    likes: 142,
-    comments: 32,
-    rating: 4.9,
-    authorName: 'Ar. Priya Nair',
-    authorAvatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
-    authorId: '60c72b2f9b1d8a2a4c8b0003',
-    authorCover: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&q=80',
-    authorFirm: 'Priya Nair & Associates',
-    authorExperience: '6+ Years',
-    authorProjects: '74',
-    authorFollowers: '142',
-    authorPhone: '+91 98765 43212',
-    authorReviews: '156',
-    imagesList: [
-      'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1600566752355-35792bedcfea?auto=format&fit=crop&w=800&q=80',
-      'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
-    ]
-  }
-];
+const DESIGN_DATA: DesignItem[] = [];
 
 const mapBackendPostToDesign = (bp: any): DesignItem => {
+  let itemPrice = 1800000; // default to 18L
+  if (bp.quotation?.totalCost) {
+    itemPrice = bp.quotation.totalCost;
+  } else if (bp.title?.toLowerCase().includes('bedroom')) {
+    itemPrice = 350000;
+  } else if (bp.title?.toLowerCase().includes('kitchen')) {
+    itemPrice = 480000;
+  }
+
   return {
     id: bp._id,
     title: bp.title || 'Modern Design Concept',
@@ -141,6 +77,7 @@ const mapBackendPostToDesign = (bp: any): DesignItem => {
     imagesList: bp.mediaUrls && bp.mediaUrls.length > 0 ? bp.mediaUrls : ['https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80'],
     description: bp.description || '',
     quotation: bp.quotation || null,
+    price: itemPrice,
   };
 };
 
@@ -151,6 +88,9 @@ export default function DesignScreen() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [savedDesignIds, setSavedDesignIds] = useState<string[]>([]);
   const [showSavedOnly, setShowSavedOnly] = useState(false);
+  const [selectedPrice, setSelectedPrice] = useState('All');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [priceModalVisible, setPriceModalVisible] = useState(false);
 
   useEffect(() => {
     let user = (global as any).currentUser;
@@ -214,7 +154,23 @@ export default function DesignScreen() {
       item.location.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesSaved = !showSavedOnly || savedDesignIds.includes(item.id);
-    return matchesSearch && matchesSaved;
+    
+    // Category match
+    const matchesCategory = selectedCategory === 'All' || 
+      item.title.toLowerCase().includes(selectedCategory.toLowerCase()) || 
+      (item.description && item.description.toLowerCase().includes(selectedCategory.toLowerCase()));
+      
+    // Price match
+    let matchesPrice = true;
+    if (selectedPrice === 'Under ₹5L') {
+      matchesPrice = (item.price || 0) < 500000;
+    } else if (selectedPrice === '₹5L - ₹15L') {
+      matchesPrice = (item.price || 0) >= 500000 && (item.price || 0) <= 1500000;
+    } else if (selectedPrice === 'Over ₹15L') {
+      matchesPrice = (item.price || 0) > 1500000;
+    }
+
+    return matchesSearch && matchesSaved && matchesCategory && matchesPrice;
   });
 
   const handleCardPress = (item: DesignItem) => {
@@ -349,45 +305,130 @@ export default function DesignScreen() {
             </View>
 
             {/* Filter Dropdowns / Search */}
-            <View style={styles.filtersWrapper}>
-              <View style={styles.filterBox}>
-                <Feather name="search" size={16} color={COLORS.textMuted} style={styles.searchIcon} />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search design type"
-                  placeholderTextColor={COLORS.textMuted}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                />
-                <Feather name="chevron-down" size={16} color={COLORS.textMuted} />
+            <View style={styles.filtersContainer}>
+              {/* Search Row */}
+              <View style={styles.searchBarRow}>
+                <View style={styles.searchBarContainer}>
+                  <Feather name="search" size={18} color={COLORS.textMuted} style={styles.searchIcon} />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search design type or location..."
+                    placeholderTextColor={COLORS.textMuted}
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                  />
+                  {searchQuery !== '' && (
+                    <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 4 }}>
+                      <Feather name="x" size={16} color={COLORS.textMuted} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Saved Designs Toggle Button */}
+                <TouchableOpacity 
+                  style={[
+                    styles.savedFilterBtn, 
+                    showSavedOnly && { backgroundColor: COLORS.greenLight, borderColor: COLORS.green }
+                  ]}
+                  onPress={handleToggleSaved}
+                  activeOpacity={0.7}
+                >
+                  <Feather 
+                    name="bookmark" 
+                    size={16} 
+                    color={showSavedOnly ? COLORS.green : COLORS.textDark} 
+                    style={showSavedOnly && { fill: COLORS.green }} 
+                  />
+                </TouchableOpacity>
               </View>
 
-              <View style={[styles.filterBox, { flex: 0.8 }]}>
-                <Feather name="search" size={16} color={COLORS.textMuted} style={styles.searchIcon} />
-                <Text style={styles.filterPlaceholderText}>Search price range</Text>
-                <Feather name="chevron-down" size={16} color={COLORS.textMuted} />
-              </View>
-
-              {/* Saved Designs Toggle Button */}
-              <TouchableOpacity 
-                style={[
-                  styles.savedFilterBtn, 
-                  showSavedOnly && { backgroundColor: COLORS.greenLight, borderColor: COLORS.green }
-                ]}
-                onPress={handleToggleSaved}
-                activeOpacity={0.7}
+              {/* Filter Scroll Row */}
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                contentContainerStyle={styles.filterPillsScroll}
               >
-                <Feather 
-                  name="bookmark" 
-                  size={16} 
-                  color={showSavedOnly ? COLORS.green : COLORS.textDark} 
-                  style={showSavedOnly && { fill: COLORS.green }} 
-                />
-              </TouchableOpacity>
+                {/* Price range selector dropdown pill */}
+                <TouchableOpacity 
+                  style={[
+                    styles.filterPillBtn,
+                    selectedPrice !== 'All' && { backgroundColor: COLORS.greenLight, borderColor: COLORS.green }
+                  ]}
+                  activeOpacity={0.8}
+                  onPress={() => setPriceModalVisible(true)}
+                >
+                  <Feather name="tag" size={13} color={selectedPrice !== 'All' ? COLORS.green : COLORS.textDark} style={{ marginRight: 4 }} />
+                  <Text style={[styles.filterPillText, selectedPrice !== 'All' && { color: COLORS.green, fontWeight: '700' }]}>
+                    {selectedPrice === 'All' ? 'Price Range' : selectedPrice}
+                  </Text>
+                  <Feather name="chevron-down" size={12} color={selectedPrice !== 'All' ? COLORS.green : COLORS.textMuted} style={{ marginLeft: 4 }} />
+                </TouchableOpacity>
+
+                {/* Categories filter pills */}
+                {['All', 'Apartment', 'Bedroom', 'Kitchen', 'Living Room'].map((cat) => {
+                  const isSelected = selectedCategory === cat;
+                  return (
+                    <TouchableOpacity
+                      key={cat}
+                      style={[
+                        styles.categoryPill,
+                        isSelected && { backgroundColor: COLORS.green, borderColor: COLORS.green }
+                      ]}
+                      onPress={() => setSelectedCategory(cat)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.categoryPillText, isSelected && { color: COLORS.white, fontWeight: '700' }]}>
+                        {cat}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
           </>
         }
       />
+
+      {/* Price Range Selector Modal */}
+      <Modal
+        visible={priceModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPriceModalVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setPriceModalVisible(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Price Range</Text>
+            <View style={styles.modalDivider} />
+            
+            {['All', 'Under ₹5L', '₹5L - ₹15L', 'Over ₹15L'].map((priceOption) => {
+              const isSelected = selectedPrice === priceOption;
+              return (
+                <TouchableOpacity
+                  key={priceOption}
+                  style={[styles.modalOption, isSelected && { backgroundColor: COLORS.greenLight }]}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setSelectedPrice(priceOption);
+                    setPriceModalVisible(false);
+                  }}
+                >
+                  <Text style={[styles.modalOptionText, isSelected && { color: COLORS.green, fontWeight: '700' }]}>
+                    {priceOption === 'All' ? 'All Prices' : priceOption}
+                  </Text>
+                  {isSelected && (
+                    <Feather name="check" size={16} color={COLORS.green} />
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -444,37 +485,116 @@ const styles = StyleSheet.create({
   bannerText: { flex: 1, color: COLORS.textDark, fontSize: 13, lineHeight: 18, fontWeight: '500' },
 
   /* FILTERS */
-  filtersWrapper: {
-    flexDirection: 'row',
-    gap: 12,
+  filtersContainer: {
     marginHorizontal: 16,
     marginTop: 16,
     marginBottom: 8,
+    gap: 12,
   },
-  filterBox: {
+  searchBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  searchBarContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: COLORS.white,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    height: 44,
   },
   searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 13, color: COLORS.textDark, padding: 0 },
-  filterPlaceholderText: { flex: 1, fontSize: 13, color: COLORS.textMuted },
+  searchInput: { flex: 1, fontSize: 14, color: COLORS.textDark, padding: 0 },
   savedFilterBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: COLORS.border,
     backgroundColor: COLORS.white,
     justifyContent: 'center',
     alignItems: 'center',
-    alignSelf: 'center',
+  },
+  filterPillsScroll: {
+    paddingVertical: 4,
+    gap: 8,
+    alignItems: 'center',
+  },
+  filterPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 20,
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 12,
+    height: 32,
+  },
+  filterPillText: {
+    fontSize: 12,
+    color: COLORS.textDark,
+  },
+  categoryPill: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 20,
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 14,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  categoryPillText: {
+    fontSize: 12,
+    color: COLORS.textDark,
+  },
+
+  /* MODAL */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '80%',
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  modalDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginBottom: 8,
+  },
+  modalOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginVertical: 4,
+  },
+  modalOptionText: {
+    fontSize: 14,
+    color: COLORS.textDark,
   },
 
   /* DESIGN CARD */

@@ -6,3 +6,15 @@ frontend/.env
 backend/.env
 
 backend/uploads/
+
+*.log
+git_*.txt
+git_*.json
+profile_*.json
+profile_*.txt
+reconstruction_*.json
+backups_found.json
+db_contents.txt
+history_folders.json
+styles_search*.json
+highlight_search.json

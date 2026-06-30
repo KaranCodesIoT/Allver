@@ -17,13 +17,22 @@ const LabourManagementTab = ({ workspaceDetail, currentUser, setWorkspaceDetail 
   const attendanceRecords = selectedDateRecord?.records || [];
 
   const handleAttendanceChange = (labourId, field, value) => {
-    setAttendanceForm(prev => ({
-      ...prev,
-      [labourId]: {
-        ...prev[labourId],
-        [field]: value
+    setAttendanceForm(prev => {
+      const updated = {
+        ...prev,
+        [labourId]: {
+          ...prev[labourId],
+          [field]: value
+        }
+      };
+      if (field === 'status') {
+        if (value === 'Present') updated[labourId].hours = 8;
+        else if (value === 'Half Day') updated[labourId].hours = 4;
+        else if (value === 'Overtime') updated[labourId].hours = 12;
+        else if (value === 'Absent') updated[labourId].hours = 0;
       }
-    }));
+      return updated;
+    });
   };
 
   const handleSaveAttendance = async () => {
@@ -97,7 +106,7 @@ const LabourManagementTab = ({ workspaceDetail, currentUser, setWorkspaceDetail 
   if (isClient) {
     const today = new Date().toISOString().split('T')[0];
     const todayRecord = workspaceDetail.labourManagement?.attendance?.find(a => a.date === today);
-    const todayPresent = todayRecord ? todayRecord.records.filter(r => r.status === 'Present' || r.status === 'Half Day').length : 0;
+    const todayPresent = todayRecord ? todayRecord.records.filter(r => r.status === 'Present' || r.status === 'Half Day' || r.status === 'Overtime').length : 0;
     
     const totalPayments = workspaceDetail.labourManagement?.payments?.reduce((sum, p) => sum + p.amount, 0) || 0;
 
@@ -154,7 +163,7 @@ const LabourManagementTab = ({ workspaceDetail, currentUser, setWorkspaceDetail 
                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem', background: 'white', border: '1px solid #e2e8f0', borderRadius: '0.5rem' }}>
                   <div style={{ fontSize: '0.85rem', fontWeight: '600', color: '#0f172a' }}>{rec.date}</div>
                   <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.8rem', color: rec.status === 'Absent' ? '#ef4444' : '#10b981', fontWeight: 'bold' }}>{rec.status}</span>
+                    <span style={{ fontSize: '0.8rem', color: rec.status === 'Absent' ? '#ef4444' : rec.status === 'Overtime' ? '#3b82f6' : '#10b981', fontWeight: 'bold' }}>{rec.status}</span>
                     <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{rec.hours} hrs</span>
                   </div>
                 </div>
@@ -231,11 +240,12 @@ const LabourManagementTab = ({ workspaceDetail, currentUser, setWorkspaceDetail 
                         <select 
                           value={currentStatus}
                           onChange={(e) => handleAttendanceChange(l._id, 'status', e.target.value)}
-                          style={{ padding: '0.25rem 0.5rem', borderRadius: '0.25rem', border: '1px solid #cbd5e1', background: currentStatus === 'Absent' ? '#fef2f2' : currentStatus === 'Half Day' ? '#fffbeb' : '#f0fdf4', color: currentStatus === 'Absent' ? '#ef4444' : currentStatus === 'Half Day' ? '#f59e0b' : '#10b981', fontWeight: 'bold' }}
+                          style={{ padding: '0.25rem 0.5rem', borderRadius: '0.25rem', border: '1px solid #cbd5e1', background: currentStatus === 'Absent' ? '#fef2f2' : currentStatus === 'Half Day' ? '#fffbeb' : currentStatus === 'Overtime' ? '#eff6ff' : '#f0fdf4', color: currentStatus === 'Absent' ? '#ef4444' : currentStatus === 'Half Day' ? '#f59e0b' : currentStatus === 'Overtime' ? '#3b82f6' : '#10b981', fontWeight: 'bold' }}
                         >
                           <option value="Present">Present</option>
                           <option value="Half Day">Half Day</option>
                           <option value="Absent">Absent</option>
+                          <option value="Overtime">Overtime</option>
                         </select>
                       </td>
                       <td style={{ padding: '0.75rem' }}>

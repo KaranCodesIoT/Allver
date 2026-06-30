@@ -13,13 +13,29 @@ const ContractorDetailPage = () => {
   const [isFollowing, setIsFollowing] = useState(false);
   const [contractorData, setContractorData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [realWorkspaces, setRealWorkspaces] = useState([]);
+  const [realTeam, setRealTeam] = useState([]);
+  const [realReviews, setRealReviews] = useState([]);
 
   useEffect(() => {
-    fetch(`https://allver.onrender.com/api/professional/${id}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.professional) {
-          setContractorData(data.professional);
+    Promise.all([
+      fetch(`https://allver.onrender.com/api/professional/${id}`).then(res => res.json()),
+      fetch(`https://allver.onrender.com/api/project-workspaces/user/${id}`).then(res => res.json()),
+      fetch(`https://allver.onrender.com/api/professional/${id}/team`).then(res => res.json()),
+      fetch(`https://allver.onrender.com/api/user/reviews/${id}`).then(res => res.json())
+    ])
+      .then(([profData, wsData, teamData, revData]) => {
+        if (profData.professional) {
+          setContractorData(profData.professional);
+        }
+        if (wsData.workspaces) {
+          setRealWorkspaces(wsData.workspaces);
+        }
+        if (teamData.team) {
+          setRealTeam(teamData.team);
+        }
+        if (revData.reviews) {
+          setRealReviews(revData.reviews);
         }
         setLoading(false);
       })
@@ -176,113 +192,101 @@ const ContractorDetailPage = () => {
           {/* Projects Tab */}
           {activeTab === 'projects' && (
             <div>
-              <div className="cp-project-card">
-                <img src={recentProjImgs[0]} alt="Project" />
-                <div className="cp-project-info">
-                  <div>
-                    <div className="cp-project-title">2BHK Residential Construction</div>
-                    <div className="cp-project-loc">Navi Mumbai</div>
-                    <div className="cp-project-status ongoing"><div className="dot"></div> Ongoing</div>
-                  </div>
-                  <div className="cp-progress-bar-container">
-                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Progress</span>
-                    <div className="cp-progress-bar">
-                      <div className="cp-progress-fill" style={{ width: '60%' }}></div>
-                    </div>
-                    <span className="cp-progress-text">60%</span>
-                  </div>
+              {realWorkspaces.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b', fontSize: '0.9rem' }}>
+                  No performed projects yet.
                 </div>
-              </div>
-
-              <div className="cp-project-card">
-                <img src={recentProjImgs[1]} alt="Project" />
-                <div className="cp-project-info">
-                  <div>
-                    <div className="cp-project-title">3BHK Villa Project</div>
-                    <div className="cp-project-loc">Panvel, Navi Mumbai</div>
-                    <div className="cp-project-status completed"><div className="dot"></div> Completed</div>
-                  </div>
-                  <div className="cp-progress-bar-container">
-                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Progress</span>
-                    <div className="cp-progress-bar">
-                      <div className="cp-progress-fill" style={{ width: '100%', background: '#3b82f6' }}></div>
+              ) : (
+                realWorkspaces.map((ws, idx) => {
+                  const isCompleted = ws.status === 'Completed';
+                  const isCancelled = ws.status === 'Cancelled';
+                  const progressVal = isCompleted ? 100 : isCancelled ? 0 : 60;
+                  const statusClass = isCompleted ? 'completed' : isCancelled ? 'cancelled' : 'ongoing';
+                  const statusText = isCompleted ? 'Completed' : isCancelled ? 'Cancelled' : 'Ongoing';
+                  const image = ws.projectType === 'Interior' 
+                    ? 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=300&q=80' 
+                    : 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=300&q=80';
+                  
+                  return (
+                    <div 
+                      key={ws._id || idx} 
+                      className="cp-project-card" 
+                      style={{ cursor: 'pointer' }} 
+                      onClick={() => navigate('/', { state: { activeTab: 'workspaces', selectedWorkspace: ws._id } })}
+                    >
+                      <img src={image} alt="Project" />
+                      <div className="cp-project-info">
+                        <div>
+                          <div className="cp-project-title">{ws.title}</div>
+                          <div className="cp-project-loc">{ws.client?.city || ws.client?.location || 'Thane'}</div>
+                          <div className={`cp-project-status ${statusClass}`}><div className="dot"></div> {statusText}</div>
+                        </div>
+                        <div className="cp-progress-bar-container">
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Progress</span>
+                          <div className="cp-progress-bar">
+                            <div className="cp-progress-fill" style={{ width: `${progressVal}%`, background: isCompleted ? '#22c55e' : isCancelled ? '#ef4444' : '#3b82f6' }}></div>
+                          </div>
+                          <span className="cp-progress-text">{progressVal}%</span>
+                        </div>
+                      </div>
                     </div>
-                    <span className="cp-progress-text">100%</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="cp-project-card">
-                <img src={recentProjImgs[2]} alt="Project" />
-                <div className="cp-project-info">
-                  <div>
-                    <div className="cp-project-title">Interior Work</div>
-                    <div className="cp-project-loc">Kharghar, Navi Mumbai</div>
-                    <div className="cp-project-status ongoing"><div className="dot"></div> Ongoing</div>
-                  </div>
-                  <div className="cp-progress-bar-container">
-                    <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Progress</span>
-                    <div className="cp-progress-bar">
-                      <div className="cp-progress-fill" style={{ width: '40%' }}></div>
-                    </div>
-                    <span className="cp-progress-text">40%</span>
-                  </div>
-                </div>
-              </div>
+                  );
+                })
+              )}
             </div>
           )}
 
           {/* Media Tab */}
           {activeTab === 'media' && (
             <div>
-              <div className="cp-media-filters">
-                <button className="cp-media-filter active">All</button>
-                <button className="cp-media-filter">Photos</button>
-                <button className="cp-media-filter">Videos</button>
-              </div>
-              <div className="cp-media-grid">
-                <div className="cp-media-item"><img src={recentProjImgs[0]} alt="media" /></div>
-                <div className="cp-media-item">
-                  <img src={recentProjImgs[1]} alt="media" />
-                  <div className="cp-media-duration">0:30</div>
+              {!c.portfolioImages || c.portfolioImages.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b', fontSize: '0.9rem' }}>
+                  No media uploaded yet.
                 </div>
-                <div className="cp-media-item"><img src={recentProjImgs[2]} alt="media" /></div>
-                <div className="cp-media-item"><img src={recentProjImgs[3]} alt="media" /></div>
-                <div className="cp-media-item">
-                  <img src="https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=300&q=80" alt="media" />
-                  <div className="cp-media-duration">0:45</div>
+              ) : (
+                <div className="cp-media-grid">
+                  {c.portfolioImages.map((img, idx) => (
+                    <div key={idx} className="cp-media-item">
+                      <img src={img} alt="media" />
+                    </div>
+                  ))}
                 </div>
-                <div className="cp-media-item"><img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=300&q=80" alt="media" /></div>
-              </div>
+              )}
             </div>
           )}
 
           {/* Team Tab */}
           {activeTab === 'team' && (
             <div>
-              {[
-                { name: 'Ramesh Yadav', role: 'Site Supervisor', exp: '8 Years Experience', img: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80' },
-                { name: 'Suresh Patil', role: 'Mason', exp: '10 Years Experience', img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80' },
-                { name: 'Ravi Singh', role: 'Carpenter', exp: '7 Years Experience', img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80' },
-                { name: 'Imran Shaikh', role: 'Electrician', exp: '6 Years Experience', img: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=150&q=80' },
-              ].map((member, idx) => (
-                <div key={idx} className="cp-team-card">
-                  <img src={member.img} alt={member.name} className="cp-team-avatar" />
-                  <div className="cp-team-info">
-                    <div className="cp-team-name">{member.name}</div>
-                    <div className="cp-team-role">{member.role}</div>
-                    <div className="cp-team-exp">{member.exp}</div>
-                  </div>
-                  <div className="cp-team-badge" style={{ marginRight: '10px' }}>Available</div>
-                  <button 
-                    className="cp-follow-btn" 
-                    style={{ padding: '0.4rem 1rem', fontSize: '0.8rem', background: 'white', color: '#0f172a', border: '1px solid #e2e8f0' }}
-                    onClick={() => navigate(`/labour/manage/team-member`)}
-                  >
-                    Project Dashboard
-                  </button>
+              {realTeam.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b', fontSize: '0.9rem' }}>
+                  No team members available.
                 </div>
-              ))}
+              ) : (
+                realTeam.map((member, idx) => {
+                  const memberName = member.fullName || member.name;
+                  const memberRole = member.skillType || member.role || 'Team Member';
+                  const memberAvatar = member.avatarUrl || 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80';
+                  return (
+                    <div key={member._id || idx} className="cp-team-card">
+                      <img src={memberAvatar} alt={memberName} className="cp-team-avatar" />
+                      <div className="cp-team-info">
+                        <div className="cp-team-name">{memberName}</div>
+                        <div className="cp-team-role">{memberRole}</div>
+                        <div className="cp-team-exp">{member.experience || 'No'} Experience</div>
+                      </div>
+                      <div className="cp-team-badge" style={{ marginRight: '10px' }}>{member.availability || 'Available'}</div>
+                      <button 
+                        className="cp-follow-btn" 
+                        style={{ padding: '0.4rem 1rem', fontSize: '0.8rem', background: 'white', color: '#0f172a', border: '1px solid #e2e8f0' }}
+                        onClick={() => navigate(`/labour/manage/team-member`)}
+                      >
+                        Project Dashboard
+                      </button>
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
 

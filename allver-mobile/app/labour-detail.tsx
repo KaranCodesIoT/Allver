@@ -1,12 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, TextInput, Alert, Modal } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, TextInput, Alert, Modal, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { BACKEND_URL } from '../constants/Config';
+import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
+import * as Location from 'expo-location';
 
 const { width } = Dimensions.get('window');
+
+const PROJECT_TYPE_IMAGES: Record<string, string> = {
+  'Residential': 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=300&q=80',
+  'Commercial': 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=300&q=80',
+  'Interior': 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=300&q=80',
+  'Renovation': 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=300&q=80',
+  'General': 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=300&q=80',
+};
 
 const COLORS = {
   green: '#10B981', // Accent green
@@ -33,45 +42,12 @@ interface CalendarDay {
   hours?: number;
   advance?: number;
   remarks?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
-const INITIAL_CALENDAR_DAYS: CalendarDay[] = [
-  { day: 29, isCurrentMonth: false },
-  { day: 30, isCurrentMonth: false },
-  { day: 1, isCurrentMonth: true, status: 'Present', hours: 8, advance: 100, remarks: '-' },
-  { day: 2, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 3, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 4, isCurrentMonth: true, status: 'Half Day', hours: 4, advance: 100, remarks: '-' },
-  { day: 5, isCurrentMonth: true, status: 'Absent', hours: 0, advance: 0, remarks: 'Personal' },
-  { day: 6, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 7, isCurrentMonth: true, status: 'Present', hours: 8, advance: 100, remarks: '-' },
-  { day: 8, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 9, isCurrentMonth: true, status: 'Present', hours: 8, advance: 100, remarks: '-' },
-  { day: 10, isCurrentMonth: true, status: 'Overtime', hours: 12, advance: 0, remarks: 'OT Shift' },
-  { day: 11, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 12, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 13, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 14, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 15, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 16, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 17, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 18, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 19, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 20, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 21, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 22, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 23, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 24, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 25, isCurrentMonth: true, status: 'Half Day', hours: 4, advance: 100, remarks: '-' },
-  { day: 26, isCurrentMonth: true, status: 'Absent', hours: 0, advance: 0, remarks: '-' },
-  { day: 27, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 28, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 29, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 30, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 31, isCurrentMonth: true, status: 'Present', hours: 8, advance: 0, remarks: '-' },
-  { day: 1, isCurrentMonth: false },
-  { day: 2, isCurrentMonth: false },
-];
+
+
 
 export default function LabourDetailScreen() {
   const router = useRouter();
@@ -81,24 +57,147 @@ export default function LabourDetailScreen() {
   const id = (params.id as string) || '60c72b2f9b1d8a2a4c8b0004';
   const name = (params.name as string) || 'Ramesh Yadav';
   const role = (params.role as string) || 'Mason';
-  const avatar = (params.avatar as string) || '';
+  const avatar = resolveAvatarUrl(params.avatar as string) || '';
   const experience = (params.experience as string) || '12+ Years Experience';
   const location = (params.location as string) || 'Mumbai, Maharashtra';
   const rating = (params.rating as string) || '4.8';
   const reviews = (params.reviews as string) || '124';
   const contractorName = (params.contractorName as string) || 'BuildWell Contractors';
+  const workspaceId = (params.workspaceId as string) || '';
 
   const [activeTab, setActiveTab] = useState<'attendance' | 'payments' | 'documents'>('attendance');
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [allWorkspaces, setAllWorkspaces] = useState<any[]>([]);
   
   // States for Follow/Unfollow
   const [followersCountVal, setFollowersCountVal] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
   const [showUnfollowModal, setShowUnfollowModal] = useState(false);
+  const [specializations, setSpecializations] = useState<string[]>([]);
+  const [portfolioProjects, setPortfolioProjects] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (id) {
+      fetch(`${BACKEND_URL}/api/professional/${id}/portfolio-highlights`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.portfolioHighlights) {
+            setPortfolioProjects(data.portfolioHighlights);
+          }
+        })
+        .catch(err => console.error("Error fetching portfolio highlights:", err));
+    }
+  }, [id]);
 
   // States for editable attendance
-  const [days, setDays] = useState<CalendarDay[]>(INITIAL_CALENDAR_DAYS);
+  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
+  const [days, setDays] = useState<CalendarDay[]>([]);
   const [selectedDay, setSelectedDay] = useState<CalendarDay | null>(null);
+  const [isReadOnlyModal, setIsReadOnlyModal] = useState(false);
+
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
+
+  const handleOpenMonthPicker = () => {
+    setPickerYear(currentYear);
+    setShowMonthPicker(true);
+  };
+
+  const handlePrevPickerYear = () => {
+    setPickerYear(prev => prev - 1);
+  };
+
+  const handleNextPickerYear = () => {
+    setPickerYear(prev => prev + 1);
+  };
+
+  const handleSelectMonth = (monthIdx: number) => {
+    setCurrentMonth(monthIdx);
+    setCurrentYear(pickerYear);
+    setShowMonthPicker(false);
+  };
+
+  const getMonthName = (monthIdx: number) => {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return months[monthIdx];
+  };
+
+  const handlePrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear(prev => prev - 1);
+    } else {
+      setCurrentMonth(prev => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear(prev => prev + 1);
+    } else {
+      setCurrentMonth(prev => prev + 1);
+    }
+  };
+
+  const generateCalendar = (year: number, month: number) => {
+    const todayDate = new Date();
+    const isThisMonth = todayDate.getFullYear() === year && todayDate.getMonth() === month;
+    const today = todayDate.getDate();
+
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    let firstDayIndex = new Date(year, month, 1).getDay(); // 0 is Sun, 1 is Mon
+    const paddingDays = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
+
+    const prevMonthDays = new Date(year, month, 0).getDate();
+    const daysList: CalendarDay[] = [];
+
+    // Prev month padding
+    for (let i = paddingDays - 1; i >= 0; i--) {
+      daysList.push({ day: prevMonthDays - i, isCurrentMonth: false });
+    }
+
+    // Current month days
+    for (let i = 1; i <= totalDays; i++) {
+      const d = new Date(year, month, i);
+      const dayOfWeek = d.getDay();
+      let status: 'Present' | 'Half Day' | 'Absent' | 'Overtime' | undefined = undefined;
+      let hours = undefined;
+
+      const compToday = new Date();
+      compToday.setHours(0, 0, 0, 0);
+      const cellDate = new Date(year, month, i);
+      cellDate.setHours(0, 0, 0, 0);
+
+      const isPast = cellDate < compToday;
+      const isToday = cellDate.getTime() === compToday.getTime();
+
+      // Past and today days start with no status — only real marked attendance is shown
+      // (status and hours remain undefined until explicitly set by contractor/labour)
+
+      daysList.push({
+        day: i,
+        isCurrentMonth: true,
+        status,
+        hours,
+        advance: 0,
+        remarks: '-'
+      });
+    }
+
+    // Next month padding
+    const totalCells = daysList.length > 35 ? 42 : 35;
+    const nextMonthPadding = totalCells - daysList.length;
+    for (let i = 1; i <= nextMonthPadding; i++) {
+      daysList.push({ day: i, isCurrentMonth: false });
+    }
+
+    return daysList;
+  };
   
   // Form edit states
   const [editStatus, setEditStatus] = useState<'Present' | 'Half Day' | 'Absent' | 'Overtime'>('Present');
@@ -136,6 +235,9 @@ export default function LabourDetailScreen() {
         .then(data => {
           if (data.professional) {
             setFollowersCountVal(data.professional.followersCount || 0);
+            if (data.professional.specialization) {
+              setSpecializations(data.professional.specialization);
+            }
           }
         })
         .catch(err => console.error("Error fetching professional info:", err));
@@ -205,29 +307,118 @@ export default function LabourDetailScreen() {
     }
   };
 
-  // Load persisted attendance when name changes
+  // Purge ALL legacy attendance cache keys on mount and whenever month/year changes
+  // This ensures new users never see stale mock data
   useEffect(() => {
-    const key = `attendance_${name}`;
-    let saved = null;
+    // Clear any old-format keys from localStorage
     if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-      saved = localStorage.getItem(key);
-    } else {
-      saved = (global as any)[key];
-    }
-
-    if (saved) {
-      try {
-        setDays(JSON.parse(saved));
-      } catch (e) {
-        console.error('Error parsing saved attendance:', e);
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('attendance_') || k.startsWith('att_v2_'))) {
+          keysToRemove.push(k);
+        }
       }
-    } else {
-      setDays(INITIAL_CALENDAR_DAYS);
+      keysToRemove.forEach(k => localStorage.removeItem(k));
     }
-  }, [name]);
 
-  // Determine if editing is enabled (if current user is a Contractor or if we are in mock mode)
-  const isContractor = !currentUser || currentUser.role === 'Contractor';
+    // Clear any old-format keys from global memory
+    const globalObj = global as any;
+    Object.keys(globalObj).forEach(k => {
+      if (k.startsWith('attendance_') || k.startsWith('att_v2_')) {
+        delete globalObj[k];
+      }
+    });
+
+    // Generate base calendar and merge with backend workspace attendance
+    const initialDays = generateCalendar(currentYear, currentMonth);
+    const populated = mergeAttendanceData(initialDays, allWorkspaces, currentYear, currentMonth, id);
+    setDays(populated);
+  }, [name, currentYear, currentMonth, allWorkspaces, id]);
+
+  const fetchLabourWorkspaces = () => {
+    if (!id) return;
+    fetch(`${BACKEND_URL}/api/project-workspaces/user/${id}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.workspaces) {
+          setAllWorkspaces(data.workspaces);
+        }
+      })
+      .catch(err => console.error("Error fetching labour workspaces:", err));
+  };
+
+  useEffect(() => {
+    fetchLabourWorkspaces();
+  }, [id]);
+
+  const formatDateString = (year: number, month: number, day: number) => {
+    const m = month + 1;
+    const d = day;
+    return `${year}-${m < 10 ? '0' + m : m}-${d < 10 ? '0' + d : d}`;
+  };
+
+  const mergeAttendanceData = (
+    calendarDays: CalendarDay[], 
+    workspacesList: any[], 
+    year: number, 
+    month: number, 
+    userId: string
+  ) => {
+    return calendarDays.map(d => {
+      if (!d.isCurrentMonth) return d;
+      
+      const dateStr = formatDateString(year, month, d.day);
+      let foundStatus: any;
+      let foundHours: number | undefined;
+      let foundLatitude: number | undefined;
+      let foundLongitude: number | undefined;
+      let foundAdvance = 0;
+      let foundRemarks = '-';
+
+      workspacesList.forEach((w: any) => {
+        const attRecord = w.labourManagement?.attendance?.find((a: any) => a.date === dateStr);
+        if (attRecord) {
+          const matchingRecord = attRecord.records?.find(
+            (r: any) => (r.labourId?._id || r.labourId)?.toString() === userId.toString()
+          );
+          if (matchingRecord) {
+            foundStatus = matchingRecord.status;
+            foundHours = matchingRecord.hours;
+            foundLatitude = matchingRecord.latitude;
+            foundLongitude = matchingRecord.longitude;
+          }
+        }
+
+        w.labourManagement?.payments?.forEach((p: any) => {
+          const pDate = new Date(p.date);
+          const pYear = pDate.getFullYear();
+          const pMonth = pDate.getMonth();
+          const pDay = pDate.getDate();
+          if (pYear === year && pMonth === month && pDay === d.day && (p.labourId?._id || p.labourId)?.toString() === userId.toString()) {
+            if (p.type === 'Advance') {
+              foundAdvance += p.amount || 0;
+            }
+          }
+        });
+      });
+
+      return {
+        ...d,
+        status: foundStatus || d.status,
+        hours: foundHours !== undefined ? foundHours : d.hours,
+        advance: foundAdvance || d.advance,
+        remarks: foundRemarks,
+        latitude: foundLatitude,
+        longitude: foundLongitude
+      };
+    });
+  };
+
+  // Determine if editing is enabled (Only Contractor role can edit/mark attendance, labourers cannot)
+  const isContractor = currentUser && currentUser.role === 'Contractor';
+  const isLabour = currentUser && currentUser.role === 'Labour' && currentUser._id === id;
+  const canEdit = isContractor;
 
   // Calculate stats dynamically
   const presentCount = days.filter(d => d.isCurrentMonth && d.status === 'Present').length;
@@ -244,17 +435,41 @@ export default function LabourDetailScreen() {
 
   // Load selected day into editing form states
   const handleDayPress = (dayObj: CalendarDay) => {
-    if (!isContractor || !dayObj.isCurrentMonth) return;
+    if (!dayObj.isCurrentMonth) return;
+
+    const todayDate = new Date();
+    const isToday = todayDate.getFullYear() === currentYear && 
+                    todayDate.getMonth() === currentMonth && 
+                    dayObj.day === todayDate.getDate();
+
+    // Past dates or non-contractor/non-labour views will be read-only
+    setIsReadOnlyModal(!isToday || !canEdit);
     
     setSelectedDay(dayObj);
     setEditStatus(dayObj.status || 'Present');
-    setEditHours(dayObj.hours?.toString() || '8.0');
+    setEditHours(dayObj.hours?.toString() || '0.0');
     setEditAdvance(dayObj.advance?.toString() || '0');
     setEditRemarks(dayObj.remarks || '');
   };
 
-  const saveAttendance = () => {
+  const saveAttendance = async () => {
     if (!selectedDay) return;
+
+    if (!isContractor) {
+      Alert.alert('Forbidden', 'Only the assigned contractor can mark or edit attendance.');
+      return;
+    }
+
+    // Ensure selected date is today
+    const todayDate = new Date();
+    const isToday = todayDate.getFullYear() === currentYear && 
+                    todayDate.getMonth() === currentMonth && 
+                    selectedDay.day === todayDate.getDate();
+
+    if (!isToday) {
+      Alert.alert('Error', 'Only today\'s attendance can be edited.');
+      return;
+    }
 
     const parsedHours = parseFloat(editHours);
     const parsedAdvance = parseInt(editAdvance, 10);
@@ -269,44 +484,213 @@ export default function LabourDetailScreen() {
       return;
     }
 
-    const updatedDays = days.map(d => {
-      if (d.isCurrentMonth && d.day === selectedDay.day) {
-        return {
-          ...d,
-          status: editStatus,
-          hours: parsedHours,
-          advance: parsedAdvance,
-          remarks: editRemarks || '-'
-        };
+    // Resolve target workspace ID
+    let targetWorkspaceId = workspaceId;
+    if (!targetWorkspaceId && allWorkspaces.length > 0) {
+      const contractorWs = allWorkspaces.find(
+        (w: any) => (w.contractor?._id || w.contractor)?.toString() === currentUser?._id?.toString() || 
+                    (w.professional?._id || w.professional)?.toString() === currentUser?._id?.toString()
+      );
+      if (contractorWs) {
+        targetWorkspaceId = contractorWs._id;
+      } else {
+        targetWorkspaceId = allWorkspaces[0]._id;
       }
-      return d;
-    });
-
-    setDays(updatedDays);
-
-    // Persist changes
-    const key = `attendance_${name}`;
-    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-      localStorage.setItem(key, JSON.stringify(updatedDays));
     }
-    (global as any)[key] = JSON.stringify(updatedDays);
+
+    if (!targetWorkspaceId) {
+      Alert.alert('Error', 'No active project workspace found to save attendance.');
+      return;
+    }
+
+    const dateStr = formatDateString(currentYear, currentMonth, selectedDay.day);
+
+    // Save Attendance to Backend
+    try {
+      const attRes = await fetch(`${BACKEND_URL}/api/project-workspaces/${targetWorkspaceId}/labour/attendance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: dateStr,
+          records: [{
+            labourId: id,
+            status: editStatus,
+            hours: parsedHours,
+            latitude: selectedDay.latitude,
+            longitude: selectedDay.longitude
+          }],
+          senderId: currentUser._id
+        })
+      });
+
+      if (!attRes.ok) {
+        const errData = await attRes.json();
+        Alert.alert('Error', errData.message || 'Failed to save attendance.');
+        return;
+      }
+
+      // If advance is specified, save Payment to Backend
+      if (parsedAdvance > 0) {
+        const payRes = await fetch(`${BACKEND_URL}/api/project-workspaces/${targetWorkspaceId}/labour/payment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            labourId: id,
+            amount: parsedAdvance,
+            type: 'Advance',
+            senderId: currentUser._id
+          })
+        });
+
+        if (!payRes.ok) {
+          console.warn('Failed to record advance payment on backend.');
+        }
+      }
+
+      // Reload workspaces to update UI with latest from DB
+      fetchLabourWorkspaces();
+      Alert.alert('Success', 'Attendance recorded successfully.');
+
+    } catch (err) {
+      console.error('Error saving attendance:', err);
+      Alert.alert('Error', 'Failed to save attendance due to a network error.');
+      return;
+    }
 
     setSelectedDay(null);
   };
 
-  // Build Recent Activity dynamically from the last 4 days that have logs
-  const getRecentActivity = () => {
-    const activeDays = days
-      .filter(d => d.isCurrentMonth && d.status)
-      .sort((a, b) => b.day - a.day) // latest first
-      .slice(0, 4); // get top 4
+  const handleLabourCheckIn = async () => {
+    if (!selectedDay) return;
 
-    return activeDays.map(d => ({
-      date: `${d.day < 10 ? '0' + d.day : d.day} May 2024, ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(2024, 4, d.day).getDay()]}`,
-      hours: `${d.hours?.toFixed(1) || '0.0'} Hours`,
-      status: d.status || 'Present',
-      advance: d.advance || 0
-    }));
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Location permission is required for GPS check-in.');
+        return;
+      }
+
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const lat = loc.coords.latitude;
+      const lng = loc.coords.longitude;
+
+      let targetWorkspaceId = workspaceId;
+      if (!targetWorkspaceId && allWorkspaces.length > 0) {
+        targetWorkspaceId = allWorkspaces[0]._id;
+      }
+
+      if (!targetWorkspaceId) {
+        Alert.alert('Error', 'No active project workspace found to check in.');
+        return;
+      }
+
+      const dateStr = formatDateString(currentYear, currentMonth, selectedDay.day);
+
+      const response = await fetch(`${BACKEND_URL}/api/project-workspaces/${targetWorkspaceId}/labour/attendance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: dateStr,
+          records: [{
+            labourId: id,
+            status: selectedDay.status || 'Present',
+            hours: selectedDay.hours || 0,
+            latitude: lat,
+            longitude: lng
+          }],
+          senderId: currentUser._id
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        Alert.alert('Error', errData.message || 'Failed to check in.');
+        return;
+      }
+
+      fetchLabourWorkspaces();
+      Alert.alert('Success', 'Checked in successfully! GPS location stamped.');
+      setSelectedDay(null);
+
+    } catch (err) {
+      console.error('Error during labour check-in:', err);
+      Alert.alert('Error', 'Failed to check in due to a network or GPS error.');
+    }
+  };
+
+  // Build Recent Activity dynamically from all workspaces (all months)
+  const getRecentActivity = () => {
+    const activities: any[] = [];
+
+    allWorkspaces.forEach((w: any) => {
+      // 1. Gather Attendance Records
+      if (w.labourManagement?.attendance) {
+        w.labourManagement.attendance.forEach((att: any) => {
+          const match = att.records?.find(
+            (r: any) => (r.labourId?._id || r.labourId)?.toString() === id.toString()
+          );
+          if (match && match.status) {
+            activities.push({
+              dateRaw: new Date(att.date),
+              hours: `${match.hours?.toFixed(1) || '0.0'} Hours`,
+              status: match.status,
+              advance: 0,
+              rawDay: {
+                day: new Date(att.date).getDate(),
+                isCurrentMonth: new Date(att.date).getMonth() === currentMonth && new Date(att.date).getFullYear() === currentYear,
+                status: match.status,
+                hours: match.hours,
+                advance: 0,
+                remarks: match.remarks || '-'
+              }
+            });
+          }
+        });
+      }
+
+      // 2. Gather Payments/Advances
+      if (w.labourManagement?.payments) {
+        w.labourManagement.payments.forEach((p: any) => {
+          if ((p.labourId?._id || p.labourId)?.toString() === id.toString()) {
+            const pDate = new Date(p.date);
+            activities.push({
+              dateRaw: pDate,
+              hours: p.type === 'Advance' ? `Advance: ₹${p.amount}` : `Paid: ₹${p.amount}`,
+              status: p.type === 'Advance' ? 'Half Day' : 'Present', // Use visual status icons as mapping
+              advance: p.amount || 0,
+              rawDay: {
+                day: pDate.getDate(),
+                isCurrentMonth: pDate.getMonth() === currentMonth && pDate.getFullYear() === currentYear,
+                status: p.type === 'Advance' ? 'Half Day' : 'Present',
+                hours: 0,
+                advance: p.amount || 0,
+                remarks: p.remarks || '-'
+              }
+            });
+          }
+        });
+      }
+    });
+
+    // Sort by dateRaw latest first
+    activities.sort((a, b) => b.dateRaw.getTime() - a.dateRaw.getTime());
+
+    // Format dates nicely and return top 4
+    return activities.slice(0, 4).map(act => {
+      const d = act.dateRaw;
+      const daysOfWeekNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const dayName = daysOfWeekNames[d.getDay()];
+      const monthName = getMonthName(d.getMonth());
+      const dateFormatted = `${d.getDate() < 10 ? '0' + d.getDate() : d.getDate()} ${monthName} ${d.getFullYear()}, ${dayName}`;
+      
+      return {
+        date: dateFormatted,
+        hours: act.hours,
+        status: act.status,
+        advance: act.advance || 0,
+        rawDay: act.rawDay
+      };
+    });
   };
 
   const handleMessage = () => {
@@ -322,7 +706,16 @@ export default function LabourDetailScreen() {
       
       {/* ================= TOP HEADER ================= */}
       <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity 
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)');
+            }
+          }} 
+          style={styles.backButton}
+        >
           <Feather name="arrow-left" size={24} color={COLORS.textDark} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Labour Profile</Text>
@@ -337,8 +730,8 @@ export default function LabourDetailScreen() {
         {isContractor && (
           <View style={styles.infoBanner}>
             <Feather name="edit-3" size={14} color="#047857" style={{ marginRight: 6 }} />
-            <Text style={styles.infoBannerText}>
-              Contractor Mode: Tap any day in the calendar grid to mark attendance.
+            <Text style={{ fontSize: 10, color: '#065F46', fontWeight: '600' }}>
+              Contractor Mode: Tapping today's date allows editing. Past dates are read-only.
             </Text>
           </View>
         )}
@@ -346,7 +739,7 @@ export default function LabourDetailScreen() {
         {/* ================= PROFILE DETAILS CARD ================= */}
         <View style={styles.profileCard}>
           <View style={styles.profileAvatarWrapper}>
-            <Image source={avatar ? { uri: avatar } : require('@/assets/images/app-icon.png')} style={styles.avatarImage} contentFit={avatar ? "cover" : "contain"} />
+            <Image source={avatar ? { uri: avatar } : require('../assets/android-icon-foreground.png')} style={styles.avatarImage} contentFit={avatar ? "cover" : "contain"} />
             <View style={styles.verifiedBadge}>
               <Feather name="check" size={10} color={COLORS.white} />
             </View>
@@ -386,7 +779,7 @@ export default function LabourDetailScreen() {
                 }}
               >
                 <Feather name="users" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
-                <Text style={styles.followersText}>{followersCountVal} Followers</Text>
+                <Text style={styles.followersText}>{followersCountVal} Networks</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -401,7 +794,7 @@ export default function LabourDetailScreen() {
               >
                 <Feather name={isFollowing ? "check" : "user-plus"} size={12} color={isFollowing ? COLORS.textDark : COLORS.white} style={{ marginRight: 4 }} />
                 <Text style={[styles.followBtnText, isFollowing && { color: COLORS.textDark }]}>
-                  {isFollowing ? 'Following \u2713' : 'Follow'}
+                  {isFollowing ? 'In Network' : 'Add to Network'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -410,13 +803,67 @@ export default function LabourDetailScreen() {
               <Feather name="message-square" size={13} color={COLORS.teal} style={{ marginRight: 6 }} />
               <Text style={styles.messageBtnText}>Message</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity style={styles.hireBtn} onPress={handleHire} activeOpacity={0.8}>
-              <Feather name="briefcase" size={13} color={COLORS.white} style={{ marginRight: 6 }} />
-              <Text style={styles.hireBtnText}>Hire / Give Work</Text>
-            </TouchableOpacity>
           </View>
         </View>
+
+        {/* ================= SPECIALIZATION SECTION ================= */}
+        <View style={styles.specializationSection}>
+          <Text style={styles.sectionHeaderTitle}>Specialization</Text>
+          <View style={styles.specializationsWrap}>
+            {(specializations && specializations.length > 0 ? specializations : [role]).map((spec, index) => (
+              <View key={index} style={styles.specTag}>
+                <View style={styles.specDot} />
+                <Text style={styles.specTagText}>{spec}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* ================= PORTFOLIO HIGHLIGHTS ================= */}
+        {portfolioProjects.length > 0 && (
+          <View style={{ marginHorizontal: 20, marginBottom: 20 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark }}>Portfolio Highlights</Text>
+              <TouchableOpacity onPress={() => router.push({ pathname: '/portfolio-highlights', params: { userId: id } })}>
+                <Text style={{ fontSize: 13, color: COLORS.orange, fontWeight: '700' }}>View All ›</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 16 }}>
+              {portfolioProjects.map((item, index) => {
+                const image = (item.mediaUrls && item.mediaUrls.length > 0) ? item.mediaUrls[0] : (PROJECT_TYPE_IMAGES[item.projectType] || PROJECT_TYPE_IMAGES['General']);
+                return (
+                  <View key={item._id || index} style={{ alignItems: 'center', width: 72 }}>
+                    <TouchableOpacity 
+                      style={{
+                        width: 70,
+                        height: 70,
+                        borderRadius: 14,
+                        borderWidth: 2.5,
+                        borderColor: '#F59E0B',
+                        padding: 2,
+                        backgroundColor: '#FFFFFF',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.08,
+                        shadowRadius: 4,
+                        elevation: 2,
+                      }}
+                      onPress={() => router.push({ pathname: '/portfolio-highlights', params: { userId: id } })}
+                      activeOpacity={0.85}
+                    >
+                      <Image source={{ uri: image }} style={{ width: '100%', height: '100%', borderRadius: 10 }} contentFit="cover" />
+                    </TouchableOpacity>
+                    <Text style={{ fontSize: 10, fontWeight: '600', color: '#334155', marginTop: 6, textAlign: 'center', width: '100%' }} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
         {/* ================= SUMMARY STATS (4 Cards) ================= */}
         <View style={styles.statsContainer}>
@@ -493,14 +940,18 @@ export default function LabourDetailScreen() {
               <View style={styles.calendarLeft}>
                 {/* Header Month Selector */}
                 <View style={styles.calendarHeader}>
-                  <View style={styles.monthSelector}>
+                  <TouchableOpacity style={styles.monthSelector} onPress={handleOpenMonthPicker} activeOpacity={0.7}>
                     <Feather name="calendar" size={16} color={COLORS.textDark} style={{ marginRight: 6 }} />
-                    <Text style={styles.monthText}>May 2024</Text>
+                    <Text style={styles.monthText}>{`${getMonthName(currentMonth)} ${currentYear}`}</Text>
                     <Feather name="chevron-down" size={14} color={COLORS.textDark} style={{ marginLeft: 4 }} />
-                  </View>
+                  </TouchableOpacity>
                   <View style={styles.arrowControls}>
-                    <TouchableOpacity style={styles.arrowBtn}><Feather name="chevron-left" size={16} color={COLORS.textDark} /></TouchableOpacity>
-                    <TouchableOpacity style={styles.arrowBtn}><Feather name="chevron-right" size={16} color={COLORS.textDark} /></TouchableOpacity>
+                    <TouchableOpacity style={styles.arrowBtn} onPress={handlePrevMonth}>
+                      <Feather name="chevron-left" size={16} color={COLORS.textDark} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.arrowBtn} onPress={handleNextMonth}>
+                      <Feather name="chevron-right" size={16} color={COLORS.textDark} />
+                    </TouchableOpacity>
                   </View>
                 </View>
 
@@ -514,16 +965,29 @@ export default function LabourDetailScreen() {
                 {/* Days Grid */}
                 <View style={styles.daysGrid}>
                   {days.map((d, idx) => {
-                    const isToday = d.day === 7 && d.isCurrentMonth;
+                    const todayDate = new Date();
+                    const isToday = todayDate.getFullYear() === currentYear && 
+                                    todayDate.getMonth() === currentMonth && 
+                                    d.day === todayDate.getDate() && 
+                                    d.isCurrentMonth;
+                    
+                    const cellDate = new Date(currentYear, currentMonth, d.day);
+                    cellDate.setHours(0, 0, 0, 0);
+                    const compToday = new Date();
+                    compToday.setHours(0, 0, 0, 0);
+                    const isFuture = d.isCurrentMonth && cellDate > compToday;
+
                     return (
                       <TouchableOpacity 
                         key={idx} 
                         style={[
                           styles.dayCell, 
-                          isContractor && d.isCurrentMonth && styles.dayCellEditable
+                          canEdit && d.isCurrentMonth && isToday && styles.dayCellEditable,
+                          canEdit && d.isCurrentMonth && !isToday && !isFuture && styles.dayCellLocked,
+                          isFuture && styles.dayCellFuture
                         ]}
                         onPress={() => handleDayPress(d)}
-                        disabled={!isContractor || !d.isCurrentMonth}
+                        disabled={!d.isCurrentMonth || isFuture}
                         activeOpacity={0.6}
                       >
                         <Text style={[
@@ -595,12 +1059,6 @@ export default function LabourDetailScreen() {
                   <Text style={styles.summaryStatLabel}>Absent Days</Text>
                   <Text style={[styles.summaryStatValue, { color: COLORS.red }]}>{absentCount}</Text>
                 </View>
-
-                <View style={styles.sidebarDivider} />
-
-                <Text style={styles.sidebarSectionTitle}>Attendance %</Text>
-                <Text style={styles.percentageText}>{attendancePercentage}%</Text>
-                <Text style={styles.percentageLabel}>{attendanceStatusLabel}</Text>
               </View>
 
             </View>
@@ -645,7 +1103,11 @@ export default function LabourDetailScreen() {
                       </View>
 
                       {/* Content Row */}
-                      <View style={styles.timelineContentCard}>
+                      <TouchableOpacity 
+                        style={styles.timelineContentCard}
+                        onPress={() => handleDayPress(act.rawDay)}
+                        activeOpacity={0.7}
+                      >
                         <View style={styles.timelineMainInfo}>
                           <Text style={styles.timelineDate}>{act.date}</Text>
                           <Text style={styles.timelineHours}>{act.hours}</Text>
@@ -654,8 +1116,8 @@ export default function LabourDetailScreen() {
                             act.status === 'Present' ? styles.badgePresent : act.status === 'Half Day' ? styles.badgeHalf : act.status === 'Overtime' ? styles.badgeOvertime : styles.badgeAbsent
                           ]}>
                             <Text style={[
-                              styles.statusBadgeText,
-                              act.status === 'Present' ? { color: COLORS.green } : act.status === 'Half Day' ? { color: COLORS.orange } : act.status === 'Overtime' ? { color: COLORS.blue } : { color: COLORS.red }
+                                styles.statusBadgeText,
+                                act.status === 'Present' ? { color: COLORS.green } : act.status === 'Half Day' ? { color: COLORS.orange } : act.status === 'Overtime' ? { color: COLORS.blue } : { color: COLORS.red }
                             ]}>{act.status}</Text>
                           </View>
                         </View>
@@ -671,7 +1133,7 @@ export default function LabourDetailScreen() {
                           )}
                           <Feather name="chevron-right" size={16} color={COLORS.textMuted} style={{ marginLeft: 8 }} />
                         </View>
-                      </View>
+                      </TouchableOpacity>
 
                     </View>
                   );
@@ -754,7 +1216,7 @@ export default function LabourDetailScreen() {
           <View style={styles.modalCard}>
             {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Attendance - May {selectedDay.day}</Text>
+              <Text style={styles.modalTitle}>{isReadOnlyModal ? 'View Attendance' : 'Edit Attendance'} - {getMonthName(currentMonth)} {selectedDay.day}</Text>
               <TouchableOpacity onPress={() => setSelectedDay(null)}>
                 <Feather name="x" size={20} color={COLORS.textDark} />
               </TouchableOpacity>
@@ -773,6 +1235,7 @@ export default function LabourDetailScreen() {
                       styles.statusSelectBtn,
                       isSelected && { borderColor: statusColor, backgroundColor: statusColor + '10' }
                     ]}
+                    disabled={isReadOnlyModal}
                     onPress={() => {
                       setEditStatus(status);
                       setEditHours(status === 'Present' ? '8.0' : status === 'Half Day' ? '4.0' : status === 'Overtime' ? '12.0' : '0.0');
@@ -797,10 +1260,11 @@ export default function LabourDetailScreen() {
                 <Text style={styles.inputLabel}>Hours Worked</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput 
-                    style={styles.textInput} 
+                    style={[styles.textInput, isReadOnlyModal && { backgroundColor: '#F1F5F9', color: COLORS.textMuted }]} 
                     value={editHours} 
                     onChangeText={setEditHours}
                     keyboardType="numeric"
+                    editable={!isReadOnlyModal}
                   />
                 </View>
               </View>
@@ -809,10 +1273,11 @@ export default function LabourDetailScreen() {
                 <Text style={styles.inputLabel}>Advance Given (₹)</Text>
                 <View style={styles.inputWrapper}>
                   <TextInput 
-                    style={styles.textInput} 
+                    style={[styles.textInput, isReadOnlyModal && { backgroundColor: '#F1F5F9', color: COLORS.textMuted }]} 
                     value={editAdvance} 
                     onChangeText={setEditAdvance}
                     keyboardType="numeric"
+                    editable={!isReadOnlyModal}
                   />
                 </View>
               </View>
@@ -822,29 +1287,91 @@ export default function LabourDetailScreen() {
             <Text style={styles.inputLabel}>Remarks</Text>
             <View style={[styles.inputWrapper, { height: 40 }]}>
               <TextInput 
-                style={styles.textInput} 
+                style={[styles.textInput, isReadOnlyModal && { backgroundColor: '#F1F5F9', color: COLORS.textMuted }]} 
                 value={editRemarks} 
                 onChangeText={setEditRemarks}
                 placeholder="Optional remark..."
                 placeholderTextColor={COLORS.textMuted}
+                editable={!isReadOnlyModal}
               />
             </View>
 
+            {/* GPS Stamping Indicator / Display */}
+            {selectedDay?.latitude && selectedDay?.longitude ? (
+              <View style={{ marginTop: 12, padding: 10, backgroundColor: '#E6FDF5', borderRadius: 8, borderWidth: 1, borderColor: '#A7F3D0' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Feather name="map-pin" size={14} color="#10B981" />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#047857' }}>📍 GPS Attendance Stamp</Text>
+                </View>
+                <Text style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 8 }}>
+                  Coordinates: {selectedDay.latitude.toFixed(6)}, {selectedDay.longitude.toFixed(6)}
+                </Text>
+                <TouchableOpacity 
+                  style={{
+                    backgroundColor: '#10B981',
+                    paddingVertical: 6,
+                    paddingHorizontal: 12,
+                    borderRadius: 6,
+                    alignItems: 'center',
+                    alignSelf: 'flex-start'
+                  }}
+                  onPress={() => {
+                    const url = `https://www.google.com/maps/search/?api=1&query=${selectedDay.latitude},${selectedDay.longitude}`;
+                    Linking.openURL(url).catch(err => console.error("Couldn't load map", err));
+                  }}
+                >
+                  <Text style={{ color: COLORS.white, fontSize: 11, fontWeight: '700' }}>View on Google Maps</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              !isReadOnlyModal && editStatus !== 'Absent' && (
+                <View style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8, backgroundColor: isLabour ? '#E6FDF5' : '#EFF6FF', borderRadius: 6, borderWidth: 1, borderColor: isLabour ? '#A7F3D0' : '#BFDBFE' }}>
+                  <Feather name="info" size={14} color={isLabour ? '#10B981' : '#3B82F6'} />
+                  <Text style={{ fontSize: 11, color: isLabour ? '#047857' : '#1D4ED8', fontWeight: '600' }}>
+                    {isLabour 
+                      ? "GPS location will be stamped automatically upon saving." 
+                      : "Editing as Contractor. Existing GPS check-in data will be preserved."}
+                  </Text>
+                </View>
+              )
+            )}
+
             {/* Modal Buttons */}
             <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.modalBtn, styles.cancelBtn]} 
-                onPress={() => setSelectedDay(null)}
-              >
-                <Text style={styles.cancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
+              {isReadOnlyModal ? (
+                <View style={{ flexDirection: 'row', gap: 10, flex: 1 }}>
+                  <TouchableOpacity 
+                    style={[styles.modalBtn, styles.cancelBtn, { flex: 1 }]} 
+                    onPress={() => setSelectedDay(null)}
+                  >
+                    <Text style={styles.cancelBtnText}>Close</Text>
+                  </TouchableOpacity>
+                  {isLabour && !selectedDay?.latitude && (
+                    <TouchableOpacity 
+                      style={[styles.modalBtn, styles.saveBtn, { flex: 1.5, backgroundColor: '#10B981' }]} 
+                      onPress={handleLabourCheckIn}
+                    >
+                      <Text style={styles.saveBtnText}>Check In (GPS)</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ) : (
+                <>
+                  <TouchableOpacity 
+                    style={[styles.modalBtn, styles.cancelBtn]} 
+                    onPress={() => setSelectedDay(null)}
+                  >
+                    <Text style={styles.cancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={[styles.modalBtn, styles.saveBtn]} 
-                onPress={saveAttendance}
-              >
-                <Text style={styles.saveBtnText}>Save</Text>
-              </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.modalBtn, styles.saveBtn]} 
+                    onPress={saveAttendance}
+                  >
+                    <Text style={styles.saveBtnText}>Save</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
 
           </View>
@@ -861,7 +1388,7 @@ export default function LabourDetailScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <Image source={{ uri: avatar }} style={styles.modalAvatar} />
-            <Text style={styles.modalTitle}>Unfollow {name}?</Text>
+            <Text style={styles.modalTitle}>Remove {name} from Network?</Text>
             <Text style={styles.modalSubtitle}>You will stop seeing their updates in your feed.</Text>
             
             <View style={styles.modalBtnRow}>
@@ -876,9 +1403,66 @@ export default function LabourDetailScreen() {
                 style={styles.modalConfirmBtn} 
                 onPress={executeUnfollow}
               >
-                <Text style={styles.modalConfirmBtnText}>Unfollow</Text>
+                <Text style={styles.modalConfirmBtnText}>Remove</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Month/Year Picker Modal */}
+      <Modal
+        visible={showMonthPicker}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowMonthPicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { width: width * 0.85, padding: 20 }]}>
+            {/* Year Selector Row */}
+            <View style={styles.pickerYearRow}>
+              <TouchableOpacity onPress={handlePrevPickerYear} style={styles.pickerArrowBtn} activeOpacity={0.7}>
+                <Feather name="chevron-left" size={20} color={COLORS.textDark} />
+              </TouchableOpacity>
+              <Text style={styles.pickerYearText}>{pickerYear}</Text>
+              <TouchableOpacity onPress={handleNextPickerYear} style={styles.pickerArrowBtn} activeOpacity={0.7}>
+                <Feather name="chevron-right" size={20} color={COLORS.textDark} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Months Grid */}
+            <View style={styles.pickerMonthsGrid}>
+              {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((mName, index) => {
+                const isSelected = index === currentMonth && pickerYear === currentYear;
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.pickerMonthCell,
+                      isSelected && styles.pickerMonthCellActive
+                    ]}
+                    onPress={() => handleSelectMonth(index)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[
+                      styles.pickerMonthText,
+                      isSelected && styles.pickerMonthTextActive
+                    ]}>
+                      {mName}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Close Button */}
+            <TouchableOpacity 
+              style={styles.pickerCloseBtn}
+              onPress={() => setShowMonthPicker(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.pickerCloseBtnText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1010,7 +1594,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: COLORS.teal,
-    borderRadius: 6,
+    borderRadius: 15,
     paddingVertical: 5,
     backgroundColor: COLORS.white,
   },
@@ -1024,7 +1608,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.teal,
-    borderRadius: 6,
+    borderRadius: 15,
     paddingVertical: 5,
   },
   hireBtnText: { 
@@ -1169,9 +1753,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   dayCellEditable: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: COLORS.blue,
+    borderRadius: 8,
+  },
+  dayCellLocked: {
     backgroundColor: '#F8FAFC',
     borderWidth: 0.5,
     borderColor: '#F1F5F9',
+  },
+  dayCellFuture: {
+    backgroundColor: COLORS.white,
+    opacity: 0.4,
   },
   dayText: {
     fontSize: 11,
@@ -1222,42 +1816,42 @@ const styles = StyleSheet.create({
 
   /* SUMMARY SIDEBAR */
   summarySidebar: {
-    width: 105,
+    width: 115,
     backgroundColor: '#F0FDF4',
     borderRadius: 12,
-    padding: 8,
+    padding: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sidebarIconBox: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#DCFCE7',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   sidebarSectionTitle: {
-    fontSize: 8,
-    color: COLORS.textMuted,
+    fontSize: 11,
+    color: COLORS.textDark,
     fontWeight: '800',
     textAlign: 'center',
-    marginBottom: 4,
+    marginBottom: 10,
   },
   summaryStatItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    paddingVertical: 2,
+    paddingVertical: 4,
   },
   summaryStatLabel: {
-    fontSize: 8,
+    fontSize: 10,
     color: COLORS.textMuted,
     fontWeight: '600',
   },
   summaryStatValue: {
-    fontSize: 8,
+    fontSize: 11,
     fontWeight: '800',
   },
   sidebarDivider: {
@@ -1745,5 +2339,114 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.white,
+  },
+  specializationSection: {
+    marginHorizontal: 16,
+    marginTop: 16,
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 16,
+  },
+  sectionHeaderTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 8,
+  },
+  specializationsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  specTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgLight,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 6,
+  },
+  specDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.teal,
+  },
+  specTagText: {
+    fontSize: 11,
+    color: COLORS.textDark,
+    fontWeight: '600',
+  },
+  pickerYearRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 20,
+    paddingHorizontal: 10,
+  },
+  pickerArrowBtn: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: COLORS.bgLight,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  pickerYearText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.textDark,
+  },
+  pickerMonthsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 20,
+  },
+  pickerMonthCell: {
+    width: '30%',
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+    backgroundColor: COLORS.bgLight,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginVertical: 4,
+  },
+  pickerMonthCellActive: {
+    backgroundColor: COLORS.teal,
+    borderColor: COLORS.teal,
+  },
+  pickerMonthText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textDark,
+  },
+  pickerMonthTextActive: {
+    color: COLORS.white,
+    fontWeight: '800',
+  },
+  pickerCloseBtn: {
+    width: '100%',
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+  },
+  pickerCloseBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textMuted,
   },
 });

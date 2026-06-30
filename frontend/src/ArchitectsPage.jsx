@@ -210,7 +210,7 @@ const ArchitectsPage = () => {
                   </div>
                 )}
                 <div className="lpc-stats">
-                  <span><Briefcase size={11} /> {prof.projects || '—'} Projects</span>
+                  <span><Briefcase size={11} /> {prof.projects || 0} Projects</span>
                   <span><Users size={11} /> {prof.followers || '—'} Followers</span>
                 </div>
                 <button className="lpc-view-btn green" onClick={() => navigate(`/architect/${prof._id}`)}>View Profile</button>

@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, useWindowDimensions, TextInput, ActivityIndicator, Modal } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, useWindowDimensions, TextInput, ActivityIndicator, Modal, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import NotificationBell from '../../components/NotificationBell';
-import { BACKEND_URL } from '../../constants/Config';
+import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
+import { Fonts } from '../../constants/theme';
 
 const { width } = Dimensions.get('window');
 
@@ -113,45 +115,7 @@ const SERVICE_DIRECT_NAV: Record<string, string> = {
   'Civil Work': '/contractors',
 };
 
-const ACTIVITIES_DATA = [
-  {
-    id: '1',
-    title: 'Rahul Contractor accepted your project invitation',
-    project: 'Luxury Villa Construction',
-    time: '2h ago',
-    icon: 'user-check',
-    color: '#16A34A',
-    bgColor: '#DCFCE7'
-  },
-  {
-    id: '2',
-    title: 'Ankit Kumar marked attendance',
-    detail: '12 Workers',
-    project: 'Office Renovation',
-    time: '4h ago',
-    icon: 'check-square',
-    color: '#2563EB',
-    bgColor: '#DBEAFE'
-  },
-  {
-    id: '3',
-    title: '50 Cement Bags delivered',
-    project: 'Luxury Villa Construction',
-    time: '6h ago',
-    icon: 'truck',
-    color: '#EA580C',
-    bgColor: '#FFEDD5'
-  },
-  {
-    id: '4',
-    title: 'New quotation received from Amit Supplier',
-    project: 'Office Renovation',
-    time: '8h ago',
-    icon: 'file-text',
-    color: '#9333EA',
-    bgColor: '#F3E8FF'
-  }
-];
+
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -160,46 +124,276 @@ export default function DashboardScreen() {
   const [selectedService, setSelectedService] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [clientRequests, setClientRequests] = useState<any[]>([]);
+  const [labourProjects, setLabourProjects] = useState<any[]>([]);
   const [serviceMenuVisible, setServiceMenuVisible] = useState(false);
   const [activeServiceMenu, setActiveServiceMenu] = useState<string | null>(null);
   const [featuredProfessionals, setFeaturedProfessionals] = useState<any[]>([]);
   const [featuredLoading, setFeaturedLoading] = useState(true);
+  const [recentActivities, setRecentActivities] = useState<any[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(true);
+  const [unreadMsgCount, setUnreadMsgCount] = useState(0);
 
 
-  // Fetch client requests
+  // Fetch unread message count from backend
+  const fetchUnreadMsgCount = useCallback(async () => {
+    if (!currentUser?._id) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/conversations/unread-total/${currentUser._id}`);
+      const data = await res.json();
+      if (data.success) {
+        setUnreadMsgCount(data.totalUnread || 0);
+      }
+    } catch (err) {
+      console.log('Error fetching unread msg count:', err);
+    }
+  }, [currentUser?._id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchUnreadMsgCount();
+    }, [fetchUnreadMsgCount])
+  );
+
   useEffect(() => {
-    if (!currentUser?._id || currentUser?.role !== 'Client') return;
+    fetchUnreadMsgCount();
+    const interval = setInterval(fetchUnreadMsgCount, 15000);
+    return () => clearInterval(interval);
+  }, [fetchUnreadMsgCount]);
+
+  // Fetch client requests or professional projects
+  useEffect(() => {
+    if (!currentUser?._id) return;
     const fetchRequests = async () => {
       try {
-        const res = await fetch(`${BACKEND_URL}/api/contract-requests/user/${currentUser._id}`);
-        const data = await res.json();
-        if (data.requests) {
-          setClientRequests(data.requests);
+        if (currentUser.role === 'Client') {
+          const res = await fetch(`${BACKEND_URL}/api/contract-requests/user/${currentUser._id}`);
+          const data = await res.json();
+
+          const wsRes = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${currentUser._id}`);
+          const wsData = await wsRes.json();
+          const workspaces = wsData.workspaces || [];
+
+          if (data.requests) {
+            const merged = data.requests.map((req: any) => {
+              const assocWorkspace = workspaces.find((w: any) => {
+                const wReqId = w.contractRequest?._id || w.contractRequest;
+                return wReqId && req._id && wReqId.toString() === req._id.toString();
+              });
+              let displayStatus = 'Hiring';
+              if (assocWorkspace) {
+                displayStatus = assocWorkspace.status === 'Completed' ? 'Completed' : assocWorkspace.status === 'Cancelled' ? 'Cancelled' : 'In Progress';
+              }
+              return {
+                ...req,
+                status: displayStatus,
+                workspaceId: assocWorkspace?._id || null,
+                updates: assocWorkspace?.updates || []
+              };
+            });
+
+            const sortedMerged = merged.sort((a: any, b: any) => {
+              const aFinished = a.status === 'Completed' || a.status === 'Cancelled';
+              const bFinished = b.status === 'Completed' || b.status === 'Cancelled';
+              if (aFinished && !bFinished) return 1;
+              if (!aFinished && bFinished) return -1;
+              return 0;
+            });
+            setClientRequests(sortedMerged);
+          }
+        } else if (currentUser.role === 'Contractor' || currentUser.role === 'Architect' || currentUser.role === 'Labour') {
+          // Fetch workspaces where this professional/labour is assigned
+          const wsRes = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${currentUser._id}`);
+          const wsData = await wsRes.json();
+          const workspaces = wsData.workspaces || [];
+
+          const mapped = workspaces.map((w: any) => {
+            return {
+              _id: w._id,
+              title: w.title,
+              location: w.contractRequest?.location || 'Thane',
+              status: w.status === 'Completed' ? 'Completed' : w.status === 'Cancelled' ? 'Cancelled' : 'In Progress',
+              workspaceId: w._id,
+              timeline: w.contractRequest?.timeline || '20 Days',
+              description: w.contractRequest?.description || '',
+              budget: w.quotation?.totalCost ? `₹${w.quotation.totalCost.toLocaleString('en-IN')}` : '',
+              requirements: w.contractRequest?.requirements || [],
+              updates: w.updates || []
+            };
+          });
+
+          // Fetch direct pending invitations
+          try {
+            const reqRes = await fetch(`${BACKEND_URL}/api/contract-requests/user/${currentUser._id}`);
+            const reqData = await reqRes.json();
+            if (reqData.requests) {
+              const pendingInvitations = reqData.requests.filter((r: any) => {
+                const isPending = r.status === 'Pending';
+                const isDirectInvitation = r.professional && 
+                  ((typeof r.professional === 'object' && r.professional._id && r.professional._id.toString() === currentUser._id.toString()) ||
+                   (typeof r.professional === 'string' && r.professional === currentUser._id.toString()));
+                return isPending && isDirectInvitation;
+              });
+
+              const mappedInvitations = pendingInvitations.map((inv: any) => {
+                const clientId = typeof inv.client === 'object' && inv.client._id ? inv.client._id : inv.client;
+                return {
+                  _id: inv._id,
+                  title: inv.title,
+                  location: inv.location,
+                  status: 'Invitation',
+                  workspaceId: null,
+                  clientId: clientId,
+                  timeline: inv.timeline || 'Not Specified',
+                  description: inv.description || '',
+                  budget: inv.budget || '',
+                  requirements: inv.requirements || [],
+                  updates: []
+                };
+              });
+
+              mapped.push(...mappedInvitations);
+            }
+          } catch (invErr) {
+            console.error('Error fetching invitations:', invErr);
+          }
+
+          const sortedMapped = mapped.sort((a: any, b: any) => {
+            const aFinished = a.status === 'Completed' || a.status === 'Cancelled';
+            const bFinished = b.status === 'Completed' || b.status === 'Cancelled';
+            if (aFinished && !bFinished) return 1;
+            if (!aFinished && bFinished) return -1;
+            // Put invitations first
+            if (a.status === 'Invitation' && b.status !== 'Invitation') return -1;
+            if (a.status !== 'Invitation' && b.status === 'Invitation') return 1;
+            return 0;
+          });
+          setClientRequests(sortedMapped);
         }
       } catch (err) {
-        console.error('Error fetching client requests:', err);
+        console.error('Error fetching projects:', err);
       }
     };
     fetchRequests();
   }, [currentUser?._id, currentUser?.role]);
 
-  // Load current user from global/localStorage
+  // Fetch recent activities - also refresh on screen focus
+  const fetchActivities = useCallback(async () => {
+    if (!currentUser?._id) {
+      setActivitiesLoading(false);
+      return;
+    }
+    const run = async () => {
+      try {
+        setActivitiesLoading(true);
+        const res = await fetch(`${BACKEND_URL}/api/notifications/${currentUser._id}`);
+        const data = await res.json();
+        if (data.success && data.notifications) {
+          // Map notifications to activity items
+          const mapped = data.notifications.slice(0, 5).map((n: any) => {
+            let icon = 'bell';
+            let color = '#3B82F6';
+            let bgColor = '#EFF6FF';
+            
+            const text = n.text || '';
+            if (text.includes('attendance') || text.includes('Attendance') || text.includes('marked present')) {
+              icon = 'check-square';
+              color = '#10B981';
+              bgColor = '#E6FDF5';
+            } else if (text.includes('quotation') || text.includes('Quotation') || text.includes('bid') || text.includes('Bid') || text.includes('Invitation to bid')) {
+              icon = 'file-text';
+              color = '#8B5CF6';
+              bgColor = '#F5F3FF';
+            } else if (text.includes('payment') || text.includes('Payment') || text.includes('Paid') || text.includes('wage') || text.includes('credited')) {
+              icon = 'credit-card';
+              color = '#F59E0B';
+              bgColor = '#FEF3C7';
+            } else if (text.includes('accepted') || text.includes('Accepted') || text.includes('invitation') || text.includes('Invitation') || text.includes('portfolio') || text.includes('matched') || text.includes('Welcome')) {
+              icon = 'user-check';
+              color = '#10B981';
+              bgColor = '#E6FDF5';
+            } else if (text.includes('materials') || text.includes('delivered') || text.includes('Delivery') || text.includes('project') || text.includes('Project') || text.includes('opportunity')) {
+              icon = 'truck';
+              color = '#F97316';
+              bgColor = '#FFF7ED';
+            }
+            
+            const diffMs = new Date().getTime() - new Date(n.createdAt).getTime();
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMins / 60);
+            const diffDays = Math.floor(diffHours / 24);
+            
+            let timeStr = 'Just now';
+            if (diffDays > 0) timeStr = `${diffDays}d ago`;
+            else if (diffHours > 0) timeStr = `${diffHours}h ago`;
+            else if (diffMins > 0) timeStr = `${diffMins}m ago`;
+
+            let projectTitle = '';
+            const projMatch = text.match(/for\s+project\s+([^[\]\n]+)/i) || text.match(/for\s+([^[\]\n]+)/i);
+            if (projMatch && projMatch[1]) {
+              projectTitle = projMatch[1].trim().split('\n')[0].substring(0, 30);
+            }
+
+            return {
+              id: n._id,
+              title: text.split('\n')[0],
+              project: projectTitle || 'Project Update',
+              time: timeStr,
+              icon: icon,
+              color: color,
+              bgColor: bgColor,
+              isClickable: true
+            };
+          });
+          setRecentActivities(mapped);
+        } else {
+          setRecentActivities([]);
+        }
+      } catch (err) {
+        console.error('Error fetching dashboard activities:', err);
+        setRecentActivities([]);
+      } finally {
+        setActivitiesLoading(false);
+      }
+    };
+    run();
+  }, [currentUser?._id]);
+
+  useEffect(() => { fetchActivities(); }, [currentUser?._id]);
+
+  useFocusEffect(useCallback(() => { fetchActivities(); }, [fetchActivities]));
+
+  // Fetch Labour portfolio highlights
   useEffect(() => {
+    if (!currentUser?._id || currentUser?.role !== 'Labour') return;
+    const fetchLabourPortfolio = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/professional/${currentUser._id}/portfolio-highlights`);
+        const data = await res.json();
+        if (data.portfolioHighlights) {
+          setLabourProjects(data.portfolioHighlights);
+        }
+      } catch (err) {
+        console.error('Error fetching labour portfolio highlights:', err);
+      }
+    };
+    fetchLabourPortfolio();
+  }, [currentUser?._id, currentUser?.role]);
+
+  // Load current user from global/localStorage on every focus
+  const loadCurrentUser = useCallback(() => {
     let user = (global as any).currentUser;
-    if (!user && (Platform.OS === 'web') && typeof localStorage !== 'undefined') {
+    if (!user && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
       const stored = localStorage.getItem('currentUser');
       if (stored) {
-        try {
-          user = JSON.parse(stored);
-        } catch (e) {
-          console.error(e);
-        }
+        try { user = JSON.parse(stored); } catch (e) {}
       }
     }
-    if (user) {
-      setCurrentUser(user);
-    }
+    if (user) setCurrentUser(user);
   }, []);
+
+  useEffect(() => { loadCurrentUser(); }, []);
+
+  useFocusEffect(useCallback(() => { loadCurrentUser(); }, [loadCurrentUser]));
 
   // Fetch featured professionals from API when user is loaded
   useEffect(() => {
@@ -234,6 +428,12 @@ export default function DashboardScreen() {
   const totalGapWidth = gridGap * (numCols - 1);
   const availableGridWidth = screenWidth - (gridPadding * 2) - totalGapWidth;
   const srvCardWidth = Math.floor(availableGridWidth / numCols);
+
+  const handleSearch = (query: string) => {
+    const q = query.trim();
+    if (!q) return;
+    router.push({ pathname: '/search-results', params: { searchQuery: q } } as any);
+  };
 
   const handleToggleService = (serviceName: string) => {
     const cleanedTitle = serviceName.replace('\n', ' ');
@@ -276,7 +476,7 @@ export default function DashboardScreen() {
 
     const profId = prof._id || prof.id;
     const profName = prof.fullName || prof.name;
-    const profAvatar = prof.avatarUrl || prof.avatar || '';
+    const profAvatar = resolveAvatarUrl(prof.avatarUrl) || prof.avatar || '';
     const profLocation = prof.location || (prof.city ? `${prof.city}${prof.state ? ', ' + prof.state : ''}` : '');
     const profRating = (prof.rating || 0).toString();
     const profReviews = (prof.reviews || 0).toString();
@@ -329,6 +529,7 @@ export default function DashboardScreen() {
       router.push({
         pathname: '/labour-detail',
         params: {
+          id: prof._id || prof.id || '',
           name: profName,
           role: prof.skillType || prof.role,
           avatar: profAvatar,
@@ -351,6 +552,41 @@ export default function DashboardScreen() {
         }
       });
     }
+  };
+
+  const checkNewUpdates = (workspaceId: string, updates: any[]) => {
+    if (!workspaceId || !updates || updates.length === 0 || !currentUser?._id) return false;
+    
+    // Find updates posted by others
+    const otherUpdates = updates.filter(up => {
+      const senderId = up.postedBy?.senderId || up.postedBy?.userId;
+      if (!senderId) return up.postedBy?.senderRole !== currentUser.role;
+      return senderId.toString() !== currentUser._id.toString();
+    });
+
+    if (otherUpdates.length === 0) return false;
+
+    // Get latest update time
+    const latestUpdate = otherUpdates.reduce((latest, current) => {
+      const latestTime = new Date(latest.createdAt || 0).getTime();
+      const currentTime = new Date(current.createdAt || 0).getTime();
+      return currentTime > latestTime ? current : latest;
+    });
+
+    const latestUpdateTime = new Date(latestUpdate.createdAt || 0).getTime();
+
+    // Get last viewed time
+    let lastViewed = 0;
+    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      const val = localStorage.getItem(`lastViewedUpdates_${workspaceId}`);
+      if (val) lastViewed = parseInt(val);
+    }
+    if ((global as any).lastViewedUpdates && (global as any).lastViewedUpdates[workspaceId]) {
+      const globalVal = (global as any).lastViewedUpdates[workspaceId];
+      if (globalVal > lastViewed) lastViewed = globalVal;
+    }
+
+    return latestUpdateTime > lastViewed;
   };
 
   // Filter featured professionals based on search/service selection
@@ -402,18 +638,26 @@ export default function DashboardScreen() {
               onPress={() => router.push('/chats')}
             >
               <Feather name="message-square" size={20} color={COLORS.textDark} />
-              <View style={styles.badgeCircle}><Text style={styles.badgeText}>5</Text></View>
+              {unreadMsgCount > 0 && (
+                <View style={styles.badgeCircle}><Text style={styles.badgeText}>{unreadMsgCount > 9 ? '9+' : unreadMsgCount}</Text></View>
+              )}
             </TouchableOpacity>
 
             <TouchableOpacity 
               style={styles.avatarBtn}
               onPress={() => router.push('/profile')}
             >
-              <Image 
-                source={currentUser?.avatarUrl ? { uri: currentUser.avatarUrl } : require('@/assets/images/app-icon.png')} 
-                style={styles.avatarImage}
-                contentFit={currentUser?.avatarUrl ? "cover" : "contain"}
-              />
+              {currentUser?.avatarUrl ? (
+                <Image 
+                  source={{ uri: resolveAvatarUrl(currentUser.avatarUrl) }} 
+                  style={styles.avatarImage} 
+                  contentFit="cover" 
+                />
+              ) : (
+                <View style={[styles.avatarImage, { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }]}>
+                  <Feather name="user" size={16} color="#94A3B8" />
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -431,14 +675,23 @@ export default function DashboardScreen() {
         {/* ================= SEARCH BAR ================= */}
         <View style={styles.searchContainer}>
           <View style={styles.searchBarWrapper}>
-            <Feather name="search" size={18} color={COLORS.textMuted} style={styles.searchIcon} />
+            <TouchableOpacity onPress={() => handleSearch(searchQuery)}>
+              <Feather name="search" size={18} color={COLORS.textMuted} style={styles.searchIcon} />
+            </TouchableOpacity>
             <TextInput 
               style={styles.searchInput} 
               placeholder="Search architects, contractors, labour, services..." 
               placeholderTextColor={COLORS.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
+              onSubmitEditing={() => handleSearch(searchQuery)}
+              returnKeyType="search"
             />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 4 }}>
+                <Feather name="x" size={16} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.filterBtn}>
               <Feather name="sliders" size={18} color={COLORS.textDark} />
             </TouchableOpacity>
@@ -463,13 +716,12 @@ export default function DashboardScreen() {
                 </View>
                 <View style={styles.qaCardTextCol}>
                   <Text style={styles.qaCardTitle}>Find Contractor</Text>
-                  <Text style={styles.qaCardDesc}>Vetted & experienced builders.</Text>
+                  <Text style={styles.qaCardDesc}>Hire trusted contractors for your project.</Text>
                 </View>
               </View>
               <View style={styles.qaCardFooter}>
                 <View style={[styles.qaPill, { backgroundColor: '#10B981' }]}>
-                  <Text style={styles.qaPillText}>Select</Text>
-                  <Feather name="arrow-up-right" size={11} color="#FFF" />
+                  <Text style={styles.qaPillText}>Hire Now ↗</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -486,13 +738,12 @@ export default function DashboardScreen() {
                 </View>
                 <View style={styles.qaCardTextCol}>
                   <Text style={styles.qaCardTitle}>Find Architect</Text>
-                  <Text style={styles.qaCardDesc}>Design & planning visionaries.</Text>
+                  <Text style={styles.qaCardDesc}>Discover architects for design & planning.</Text>
                 </View>
               </View>
               <View style={styles.qaCardFooter}>
                 <View style={[styles.qaPill, { backgroundColor: '#2563EB' }]}>
-                  <Text style={styles.qaPillText}>Design</Text>
-                  <Feather name="arrow-up-right" size={11} color="#FFF" />
+                  <Text style={styles.qaPillText}>Explore ↗</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -509,13 +760,12 @@ export default function DashboardScreen() {
                 </View>
                 <View style={styles.qaCardTextCol}>
                   <Text style={styles.qaCardTitle}>Skilled Labour</Text>
-                  <Text style={styles.qaCardDesc}>Skilled & reliable crews.</Text>
+                  <Text style={styles.qaCardDesc}>Connect with verified skilled workers.</Text>
                 </View>
               </View>
               <View style={styles.qaCardFooter}>
                 <View style={[styles.qaPill, { backgroundColor: '#F97316' }]}>
-                  <Text style={styles.qaPillText}>Request</Text>
-                  <Feather name="arrow-up-right" size={11} color="#FFF" />
+                  <Text style={styles.qaPillText}>Find Labour ↗</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -523,13 +773,21 @@ export default function DashboardScreen() {
 
           {/* Secondary Actions Row */}
           <View style={styles.qaSecondaryRow}>
-            <TouchableOpacity style={[styles.qaSecondaryCard, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}>
+            <TouchableOpacity 
+              style={[styles.qaSecondaryCard, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}
+              onPress={() => router.push('/(tabs)/post-project')}
+            >
               <View style={[styles.qaSecondaryIcon, { backgroundColor: '#FDE68A' }]}>
                 <Feather name="plus" size={14} color="#D97706" />
               </View>
-              <Text style={styles.qaSecondaryText}>Post Project</Text>
+              <Text style={styles.qaSecondaryText}>
+                {currentUser?.role === 'Labour' ? 'Add Work' : 'Post Project'}
+              </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.qaSecondaryCard, { backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' }]}>
+            <TouchableOpacity 
+              style={[styles.qaSecondaryCard, { backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' }]}
+              onPress={() => router.push('/project-progress')}
+            >
               <View style={[styles.qaSecondaryIcon, { backgroundColor: '#E9D5FF' }]}>
                 <Feather name="clipboard" size={13} color="#7C3AED" />
               </View>
@@ -546,25 +804,52 @@ export default function DashboardScreen() {
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalCardsScroll}>
-            {currentUser?.role === 'Client' ? (
+            {currentUser?.role === 'Client' || currentUser?.role === 'Contractor' || currentUser?.role === 'Architect' || currentUser?.role === 'Labour' ? (
               clientRequests.length > 0 ? (
                 clientRequests.map((proj) => (
                   <TouchableOpacity 
                     key={proj._id} 
-                    style={styles.projectCard}
+                    style={[
+                      styles.projectCard,
+                      proj.status === 'Completed' && styles.completedProjectCard,
+                      proj.status === 'Cancelled' && styles.cancelledProjectCard
+                    ]}
                     activeOpacity={0.9}
-                    onPress={() => router.push({
-                      pathname: '/project-applications',
-                      params: {
-                        requestId: proj._id,
-                        title: proj.title,
-                        location: proj.location,
-                        budget: proj.budget,
-                        timeline: proj.timeline,
-                        requirements: (proj.requirements || []).join(','),
-                        description: proj.description
+                    onPress={() => {
+                      if (proj.status === 'Invitation') {
+                        router.push({
+                          pathname: '/project-detail',
+                          params: {
+                            clientId: proj.clientId || '',
+                            titleHint: proj.title
+                          }
+                        });
+                      } else if (proj.status === 'Hiring') {
+                        router.push({
+                          pathname: '/project-applications',
+                          params: {
+                            requestId: proj._id || '',
+                            title: proj.title,
+                            location: proj.location,
+                            budget: proj.budget || '',
+                            timeline: proj.timeline || '',
+                            description: proj.description || '',
+                            requirements: Array.isArray(proj.requirements) ? proj.requirements.join(',') : proj.requirements || '',
+                          }
+                        });
+                      } else {
+                        router.push({
+                          pathname: '/project-progress',
+                          params: {
+                            name: proj.title,
+                            location: proj.location,
+                            status: proj.status || 'Hiring',
+                            progress: (proj.status === 'Completed' ? '100' : '60'),
+                            workspaceId: proj.workspaceId || ''
+                          }
+                        });
                       }
-                    })}
+                    }}
                   >
                     {/* Cover Image Area */}
                     <View style={styles.projectImageWrapper}>
@@ -573,9 +858,33 @@ export default function DashboardScreen() {
                         style={styles.projectImage} 
                       />
                       {/* Status Overlay */}
-                      <View style={[styles.projectStatusBadge, { backgroundColor: '#FEF3C7' }]}>
-                        <Text style={[styles.projectStatusText, { color: '#D97706' }]}>{proj.status}</Text>
+                      <View style={[styles.projectStatusBadge, { 
+                        backgroundColor: proj.status === 'Completed' 
+                          ? '#DCFCE7' 
+                          : proj.status === 'Cancelled'
+                            ? '#FEF2F2'
+                            : proj.status === 'In Progress' 
+                              ? '#DBEAFE' 
+                              : '#FEF3C7' 
+                      }]}>
+                        <Text style={[styles.projectStatusText, { 
+                          color: proj.status === 'Completed' 
+                            ? '#15803D' 
+                            : proj.status === 'Cancelled'
+                              ? '#B91C1C'
+                              : proj.status === 'In Progress' 
+                                ? '#1D4ED8' 
+                                : '#D97706' 
+                        }]}>{proj.status || 'Hiring'}</Text>
                       </View>
+                      
+                      {/* NEW UPDATE BADGE OVER IMAGE */}
+                      {checkNewUpdates(proj.workspaceId, proj.updates) && (
+                        <View style={styles.newUpdateBadge}>
+                          <View style={styles.newUpdateDot} />
+                          <Text style={styles.newUpdateText}>New Update</Text>
+                        </View>
+                      )}
                     </View>
 
                     {/* Body Content */}
@@ -591,10 +900,6 @@ export default function DashboardScreen() {
                       {/* Statistics metrics */}
                       <View style={styles.projectMetricsRow}>
                         <View style={styles.metricItem}>
-                          <FontAwesome5 name="users" size={10} color={COLORS.blue} style={styles.metricIcon} />
-                          <Text style={[styles.metricText, { color: COLORS.blue, fontWeight: '700' }]}>12 Applications</Text>
-                        </View>
-                        <View style={styles.metricItem}>
                           <Feather name="clock" size={11} color={COLORS.textMuted} style={styles.metricIcon} />
                           <Text style={styles.metricText}>{proj.timeline || '90 Days'}</Text>
                         </View>
@@ -603,15 +908,23 @@ export default function DashboardScreen() {
                   </TouchableOpacity>
                 ))
               ) : (
-                <TouchableOpacity 
-                  style={[styles.projectCard, { justifyContent: 'center', alignItems: 'center', padding: 16 }]}
-                  activeOpacity={0.8}
-                  onPress={() => router.push('/(tabs)/post-project')}
-                >
-                  <Feather name="plus-circle" size={32} color={COLORS.green} style={{ marginBottom: 8 }} />
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>Post New Project</Text>
-                  <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>Get competitive contractor bids</Text>
-                </TouchableOpacity>
+                currentUser?.role === 'Client' ? (
+                  <TouchableOpacity 
+                    style={[styles.projectCard, { justifyContent: 'center', alignItems: 'center', padding: 16 }]}
+                    activeOpacity={0.8}
+                    onPress={() => router.push('/(tabs)/post-project')}
+                  >
+                    <Feather name="plus-circle" size={32} color={COLORS.green} style={{ marginBottom: 8 }} />
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>Post New Project</Text>
+                    <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>Get competitive contractor bids</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={[styles.projectCard, { justifyContent: 'center', alignItems: 'center', padding: 16 }]}>
+                    <Feather name="clipboard" size={32} color={COLORS.textLight} style={{ marginBottom: 8 }} />
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>No Active Projects</Text>
+                    <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>Assigned projects will appear here</Text>
+                  </View>
+                )
               )
             ) : (
               PROJECTS_DATA.map((proj) => (
@@ -676,7 +989,7 @@ export default function DashboardScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalCardsScroll}>
               {filteredProfessionals.map((prof, idx) => {
                 const profName = prof.fullName || prof.name || 'Unknown';
-                const profAvatar = prof.avatarUrl || prof.avatar || '';
+                const profAvatar = resolveAvatarUrl(prof.avatarUrl) || prof.avatar || '';
                 const profCity = prof.city || '';
                 const profRating = prof.rating || 0;
                 const profReviews = prof.reviews || 0;
@@ -843,27 +1156,55 @@ export default function DashboardScreen() {
         <View style={[styles.sectionContainer, { paddingBottom: 30 }]}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Recent Activity</Text>
-            <TouchableOpacity><Text style={styles.viewAllText}>View All</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/notifications')}>
+              <Text style={styles.viewAllText}>View All</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.activityList}>
-            {ACTIVITIES_DATA.map((act) => (
-              <TouchableOpacity key={act.id} style={styles.activityItem} activeOpacity={0.7}>
-                <View style={[styles.activityIconCircle, { backgroundColor: act.bgColor }]}>
-                  {renderActivityIcon(act.icon, act.color)}
-                </View>
-                <View style={styles.activityContent}>
-                  <Text style={styles.activityTitleText} numberOfLines={1}>{act.title}</Text>
-                  <Text style={styles.activityProjectText}>
-                    {act.detail ? `${act.detail} • ` : ''}{act.project}
-                  </Text>
-                </View>
-                <View style={styles.activityTimeCol}>
-                  <Text style={styles.activityTimeText}>{act.time}</Text>
-                  <Feather name="chevron-right" size={14} color={COLORS.textMuted} />
-                </View>
-              </TouchableOpacity>
-            ))}
+            {activitiesLoading ? (
+              <ActivityIndicator size="small" color={COLORS.blue} style={{ marginVertical: 20 }} />
+            ) : recentActivities.length > 0 ? (
+              recentActivities.map((act) => {
+                const handlePress = () => {
+                  router.push('/notifications');
+                };
+
+                const ItemComponent = act.isClickable ? TouchableOpacity : View;
+
+                return (
+                  <ItemComponent 
+                    key={act.id} 
+                    style={styles.activityItem} 
+                    activeOpacity={0.7}
+                    onPress={act.isClickable ? handlePress : undefined}
+                  >
+                    <View style={[styles.activityIconCircle, { backgroundColor: act.bgColor }]}>
+                      {renderActivityIcon(act.icon, act.color)}
+                    </View>
+                    <View style={styles.activityContent}>
+                      <Text style={styles.activityTitleText} numberOfLines={1}>{act.title}</Text>
+                      <Text style={styles.activityProjectText}>
+                        {act.project}
+                      </Text>
+                    </View>
+                    <View style={styles.activityTimeCol}>
+                      <Text style={styles.activityTimeText}>{act.time}</Text>
+                      {act.isClickable && (
+                        <Feather name="chevron-right" size={14} color={COLORS.textMuted} />
+                      )}
+                    </View>
+                  </ItemComponent>
+                );
+              })
+            ) : (
+              <View style={{ paddingVertical: 24, alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="activity" size={32} color="#94A3B8" style={{ marginBottom: 8 }} />
+                <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center', marginHorizontal: 16 }}>
+                  No recent activity yet. Updates will appear here as you explore the app!
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -1109,12 +1450,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   qaCardTitle: {
+    fontFamily: Fonts.sans,
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#111827',
     marginBottom: 3,
   },
   qaCardDesc: {
+    fontFamily: Fonts.sans,
     fontSize: 10,
     color: '#6B7280',
     lineHeight: 14,
@@ -1125,11 +1468,13 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   qaCount: {
+    fontFamily: Fonts.sans,
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '700',
     color: '#111827',
   },
   qaCountLabel: {
+    fontFamily: Fonts.sans,
     fontSize: 9,
     color: '#9CA3AF',
     fontWeight: '600',
@@ -1143,6 +1488,7 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   qaPillText: {
+    fontFamily: Fonts.sans,
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '700',
@@ -1191,6 +1537,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     overflow: 'hidden',
+  },
+  completedProjectCard: {
+    backgroundColor: '#F0FDF4', // Very light green background
+    borderColor: '#BBF7D0',     // Soft green border
+    borderWidth: 1.5,
+  },
+  cancelledProjectCard: {
+    backgroundColor: '#FEF2F2', // Very light red background
+    borderColor: '#FCA5A5',     // Soft red border
+    borderWidth: 1.5,
   },
   projectImageWrapper: {
     height: 120,
@@ -1541,5 +1897,35 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '500',
     color: COLORS.textDark,
+  },
+  newUpdateBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  newUpdateDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#3B82F6',
+  },
+  newUpdateText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#1D4ED8',
   },
 });

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Dimensions, Alert, Modal, Linking, ScrollView } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Dimensions, Alert, Modal, Linking, ScrollView, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { io } from 'socket.io-client';
 import * as ImagePicker from 'expo-image-picker';
+import { Audio } from 'expo-av';
 
 const { width } = Dimensions.get('window');
 
@@ -45,7 +46,8 @@ interface Message {
   attachment?: {
     name: string;
     url: string;
-    type: string; // 'image', 'file', 'pdf'
+    type: string; // 'image', 'file', 'pdf', 'voice'
+    duration?: number; // voice message duration in seconds
   };
   status?: 'sending' | 'sent' | 'delivered' | 'read';
   readBy?: string[];
@@ -82,6 +84,27 @@ export default function ChatRoomScreen() {
 
   const flatListRef = useRef<FlatList>(null);
   const typingTimeoutRef = useRef<any>(null);
+  const initialDesignSentRef = useRef(false);
+
+  // Voice recording state
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const recordingTimerRef = useRef<any>(null);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Voice playback state
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const [voiceProgress, setVoiceProgress] = useState(0);
+  const soundRef = useRef<Audio.Sound | null>(null);
+
+  // Sync conversationId to global state for push notification filtering
+  useEffect(() => {
+    (global as any).activeChatRoomId = conversationId;
+    return () => {
+      (global as any).activeChatRoomId = null;
+    };
+  }, [conversationId]);
 
   // 1. Load current user
   useEffect(() => {
@@ -102,35 +125,33 @@ export default function ChatRoomScreen() {
       setIsLoading(true);
       try {
         let convoId = conversationId;
-        if (!convoId && receiverId) {
-          if (!isValidObjectId(currentUser._id) || !isValidObjectId(receiverId)) {
-            Alert.alert('Cannot Message', 'This is a demo profile. Messaging is available only with real registered users.', [{ text: 'OK', onPress: () => router.back() }]);
-            setIsLoading(false);
-            return;
-          }
-          const res = await fetch(`${BACKEND_URL}/api/conversations`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ senderId: currentUser._id, receiverId })
-          });
-          const data = await res.json();
-          if (res.ok && data.conversation) {
-            convoId = data.conversation._id;
-            setConversationId(convoId);
-          } else {
-            Alert.alert('Error', data.message || 'Could not start conversation.');
-            setIsLoading(false);
-            return;
+        
+        // 1. Check if receiverId is a Workspace ID first
+        let isWorkspace = false;
+        let fetchedWorkspace = null;
+        if (isValidObjectId(receiverId)) {
+          try {
+            const workspaceRes = await fetch(`${BACKEND_URL}/api/project-workspaces/${receiverId}?userId=${currentUser._id}`);
+            if (workspaceRes.ok) {
+              const workspaceData = await workspaceRes.json();
+              if (workspaceData.workspace) {
+                isWorkspace = true;
+                fetchedWorkspace = workspaceData.workspace;
+              }
+            }
+          } catch (e) {
+            console.log('Error checking if workspace:', e);
           }
         }
-        if (convoId) {
-          const msgRes = await fetch(`${BACKEND_URL}/api/conversations/${convoId}/messages?userId=${currentUser._id}`);
-          const msgData = await msgRes.json();
-          if (msgRes.ok && msgData.messages) {
-            // Filter out duplicate message IDs to prevent FlatList crashes
+
+        if (isWorkspace && fetchedWorkspace) {
+          setWorkspace(fetchedWorkspace);
+          setConversationId(receiverId); // Use workspaceId as conversationId
+          
+          if (fetchedWorkspace.messages) {
             const uniqueMessages: Message[] = [];
             const seenIds = new Set<string>();
-            msgData.messages.forEach((m: any) => {
+            fetchedWorkspace.messages.forEach((m: any) => {
               if (m && (m._id || m.tempId)) {
                 const id = m._id || m.tempId;
                 if (!seenIds.has(id)) {
@@ -140,6 +161,48 @@ export default function ChatRoomScreen() {
               }
             });
             setMessages(uniqueMessages);
+          }
+        } else {
+          // Standard DM conversation initialization
+          if (!convoId && receiverId) {
+            if (!isValidObjectId(currentUser._id) || !isValidObjectId(receiverId)) {
+              Alert.alert('Cannot Message', 'This is a demo profile. Messaging is available only with real registered users.', [{ text: 'OK', onPress: () => router.back() }]);
+              setIsLoading(false);
+              return;
+            }
+            const res = await fetch(`${BACKEND_URL}/api/conversations`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ senderId: currentUser._id, receiverId })
+            });
+            const data = await res.json();
+            if (res.ok && data.conversation) {
+              convoId = data.conversation._id;
+              setConversationId(convoId);
+            } else {
+              Alert.alert('Error', data.message || 'Could not start conversation.');
+              setIsLoading(false);
+              return;
+            }
+          }
+          if (convoId) {
+            const msgRes = await fetch(`${BACKEND_URL}/api/conversations/${convoId}/messages?userId=${currentUser._id}`);
+            const msgData = await msgRes.json();
+            if (msgRes.ok && msgData.messages) {
+              // Filter out duplicate message IDs to prevent FlatList crashes
+              const uniqueMessages: Message[] = [];
+              const seenIds = new Set<string>();
+              msgData.messages.forEach((m: any) => {
+                if (m && (m._id || m.tempId)) {
+                  const id = m._id || m.tempId;
+                  if (!seenIds.has(id)) {
+                    seenIds.add(id);
+                    uniqueMessages.push(m);
+                  }
+                }
+              });
+              setMessages(uniqueMessages);
+            }
           }
         }
       } catch (err) {
@@ -158,6 +221,9 @@ export default function ChatRoomScreen() {
 
     const loadWorkspace = async () => {
       try {
+        // If this is a workspace chat (receiverId is the workspace ID), we already loaded it in initChat
+        if (workspace && workspace._id === receiverId) return;
+
         // Try fetching receiverId directly if it's a valid workspace ID
         if (isValidObjectId(receiverId)) {
           const res = await fetch(`${BACKEND_URL}/api/project-workspaces/${receiverId}?userId=${currentUser._id}`);
@@ -191,7 +257,7 @@ export default function ChatRoomScreen() {
       }
     };
     loadWorkspace();
-  }, [currentUser._id, receiverId]);
+  }, [currentUser._id, receiverId, workspace?._id]);
 
   // Track mapping of tempId → real MongoDB _id to prevent duplicates
   const sentMessageIdsRef = useRef<Set<string>>(new Set());
@@ -205,13 +271,21 @@ export default function ChatRoomScreen() {
     s.on('connect', () => {
       s.emit('join_room', { roomId: conversationId });
       s.emit('go_online', { userId: currentUser._id });
+      
+      // Query if the other user is online initially
+      s.emit('check_online', { userId: receiverId }, (res: any) => {
+        if (res && typeof res.isOnline === 'boolean') {
+          setOtherUserOnline(res.isOnline);
+        }
+      });
     });
 
     s.on('receive_message', (data) => {
       if (data.workspaceId === conversationId) {
-        const msgSenderId = typeof data.message.sender === 'object' 
-          ? data.message.sender._id 
-          : data.message.sender;
+        const msgSender = data.message?.sender;
+        const msgSenderId = msgSender && typeof msgSender === 'object' 
+          ? msgSender._id 
+          : msgSender;
         
         // Skip our own messages — we already added them optimistically
         // The REST response handler already updates tempId→realId correctly
@@ -257,6 +331,217 @@ export default function ChatRoomScreen() {
     }
   };
 
+  // ========== VOICE RECORDING ==========
+  const startPulseAnimation = () => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.3, duration: 600, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      ])
+    ).start();
+  };
+
+  const handleStartRecording = async () => {
+    try {
+      // Request permissions
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Needed', 'Microphone access is required to send voice messages.');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+
+      setRecording(newRecording);
+      setIsRecording(true);
+      setRecordingDuration(0);
+      startPulseAnimation();
+
+      // Start duration timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      Alert.alert('Recording Error', 'Could not start recording. Please try again.');
+    }
+  };
+
+  const handleCancelRecording = async () => {
+    try {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+      setIsRecording(false);
+      setRecordingDuration(0);
+
+      if (recording) {
+        await recording.stopAndUnloadAsync();
+        setRecording(null);
+      }
+    } catch (err) {
+      console.error('Error cancelling recording:', err);
+      setIsRecording(false);
+      setRecording(null);
+    }
+  };
+
+  const handleStopRecording = async () => {
+    if (!recording || !conversationId) return;
+
+    try {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+      setIsRecording(false);
+
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+      const duration = recordingDuration;
+      setRecordingDuration(0);
+
+      if (!uri) {
+        Alert.alert('Recording Error', 'No audio recorded.');
+        return;
+      }
+
+      // Don't send very short recordings (under 1 second)
+      if (duration < 1) {
+        return;
+      }
+
+      const fileName = `voice_${Date.now()}.m4a`;
+
+      // Optimistic UI
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      setMessages(prev => [...prev, {
+        _id: tempId,
+        tempId,
+        sender: { _id: currentUser._id, fullName: currentUser.fullName, role: currentUser.role },
+        text: '',
+        attachment: { name: fileName, url: '', type: 'voice', duration },
+        status: 'sending',
+        createdAt: new Date().toISOString(),
+      }]);
+      scrollToEnd();
+
+      // Upload the voice file
+      const cloudUrl = await uploadToCloudinary(uri, fileName);
+      if (!cloudUrl) {
+        Alert.alert('Upload Failed', 'Could not upload voice message. Please try again.');
+        setMessages(prev => prev.filter(m => m._id !== tempId));
+        return;
+      }
+
+      // Send message with voice attachment
+      const attachment = { name: fileName, url: cloudUrl, type: 'voice', duration };
+      try {
+        const isWorkspaceChat = workspace && workspace._id === conversationId;
+        const url = isWorkspaceChat 
+          ? `${BACKEND_URL}/api/project-workspaces/${conversationId}/messages`
+          : `${BACKEND_URL}/api/conversations/${conversationId}/messages`;
+
+        const body = isWorkspaceChat
+          ? JSON.stringify({ sender: currentUser._id, text: '', attachment })
+          : JSON.stringify({ senderId: currentUser._id, text: '', attachment });
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body
+        });
+        if (response.ok) {
+          const data = await response.json();
+          let realId;
+          if (isWorkspaceChat && data.workspace?.messages?.length > 0) {
+            const workspaceMessages = data.workspace.messages;
+            const savedMsg = workspaceMessages[workspaceMessages.length - 1];
+            realId = savedMsg?._id;
+          } else {
+            realId = data.message?._id;
+          }
+          if (realId) sentMessageIdsRef.current.add(realId);
+          setMessages(prev => prev.map(m =>
+            m._id === tempId ? { ...m, attachment, status: 'sent', _id: realId || m._id } : m
+          ));
+        }
+      } catch (err) {
+        console.error('Error sending voice message:', err);
+      }
+    } catch (err) {
+      setIsRecording(false);
+      setRecording(null);
+      setRecordingDuration(0);
+    }
+  };
+
+  // ========== PLAY VOICE MESSAGE ==========
+  const handlePlayVoice = async (msgId: string, voiceUrl: string) => {
+    try {
+      // If already playing this message, stop it
+      if (playingVoiceId === msgId) {
+        if (soundRef.current) {
+          await soundRef.current.stopAsync();
+          await soundRef.current.unloadAsync();
+          soundRef.current = null;
+        }
+        setPlayingVoiceId(null);
+        setVoiceProgress(0);
+        return;
+      }
+
+      // Stop any currently playing sound
+      if (soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: voiceUrl },
+        { shouldPlay: true },
+        (status) => {
+          if (status.isLoaded) {
+            if (status.durationMillis && status.positionMillis) {
+              setVoiceProgress(status.positionMillis / status.durationMillis);
+            }
+            if (status.didJustFinish) {
+              setPlayingVoiceId(null);
+              setVoiceProgress(0);
+              soundRef.current = null;
+            }
+          }
+        }
+      );
+
+      soundRef.current = sound;
+      setPlayingVoiceId(msgId);
+      setVoiceProgress(0);
+    } catch (err) {
+      console.error('Error playing voice:', err);
+      Alert.alert('Playback Error', 'Could not play voice message.');
+    }
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   // ========== SEND TEXT MESSAGE ==========
   const handleSend = async () => {
     if (!text.trim() || !conversationId) return;
@@ -277,14 +562,30 @@ export default function ChatRoomScreen() {
     scrollToEnd();
 
     try {
-      const response = await fetch(`${BACKEND_URL}/api/conversations/${conversationId}/messages`, {
+      const isWorkspaceChat = workspace && workspace._id === conversationId;
+      const url = isWorkspaceChat 
+        ? `${BACKEND_URL}/api/project-workspaces/${conversationId}/messages`
+        : `${BACKEND_URL}/api/conversations/${conversationId}/messages`;
+
+      const body = isWorkspaceChat
+        ? JSON.stringify({ sender: currentUser._id, text: messageText, tempId })
+        : JSON.stringify({ senderId: currentUser._id, text: messageText, tempId });
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ senderId: currentUser._id, text: messageText, tempId })
+        body
       });
       if (response.ok) {
         const data = await response.json();
-        const realId = data.message?._id;
+        let realId;
+        if (isWorkspaceChat && data.workspace?.messages?.length > 0) {
+          const workspaceMessages = data.workspace.messages;
+          const savedMsg = workspaceMessages[workspaceMessages.length - 1];
+          realId = savedMsg?._id;
+        } else {
+          realId = data.message?._id;
+        }
         // Track the real ID to prevent socket duplicate
         if (realId) sentMessageIdsRef.current.add(realId);
         // Mark as sent and update _id to the real MongoDB _id
@@ -297,7 +598,80 @@ export default function ChatRoomScreen() {
     }
   };
 
-  // ========== UPLOAD VIA BACKEND (server-side Cloudinary with proper credentials) ==========
+  const sendDesignMessage = async (designId: string, title: string, imageUrl: string, location?: string) => {
+    if (!conversationId) return;
+
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const locStr = location ? ` (Location: ${location})` : '';
+    const textMsg = `Hello! I want to hire you to build this design: "${title}"${locStr}.`;
+    
+    const isRemoteUrl = imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'));
+    const cleanLocation = location ? location.replace(/__/g, ' ') : '';
+    const cleanTitle = title ? title.replace(/__/g, ' ') : '';
+    const attachment = isRemoteUrl ? { name: `design_${designId}__${cleanTitle}__${cleanLocation}.jpg`, url: imageUrl, type: 'image' } : undefined;
+
+    setMessages(prev => [...prev, {
+      _id: tempId,
+      tempId,
+      sender: { _id: currentUser._id, fullName: currentUser.fullName, role: currentUser.role },
+      text: textMsg,
+      attachment,
+      status: 'sending',
+      createdAt: new Date().toISOString(),
+    }]);
+    scrollToEnd();
+
+    try {
+      const isWorkspaceChat = workspace && workspace._id === conversationId;
+      const url = isWorkspaceChat 
+        ? `${BACKEND_URL}/api/project-workspaces/${conversationId}/messages`
+        : `${BACKEND_URL}/api/conversations/${conversationId}/messages`;
+
+      const body = isWorkspaceChat
+        ? JSON.stringify({ sender: currentUser._id, text: textMsg, attachment })
+        : JSON.stringify({ senderId: currentUser._id, text: textMsg, attachment });
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body
+      });
+      if (response.ok) {
+        const data = await response.json();
+        let realId;
+        if (isWorkspaceChat && data.workspace?.messages?.length > 0) {
+          const workspaceMessages = data.workspace.messages;
+          const savedMsg = workspaceMessages[workspaceMessages.length - 1];
+          realId = savedMsg?._id;
+        } else {
+          realId = data.message?._id;
+        }
+        if (realId) sentMessageIdsRef.current.add(realId);
+        setMessages(prev => prev.map(m =>
+          m.tempId === tempId ? { ...m, status: 'sent', _id: realId || m._id } : m
+        ));
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        Alert.alert('Send Error', errorData.message || 'Failed to send hiring invitation.');
+      }
+    } catch (err) {
+      console.error('Error sending auto design message:', err);
+      Alert.alert('Network Error', 'Could not send the hiring invitation due to connection issues.');
+    }
+  };
+
+  useEffect(() => {
+    if (conversationId && !isLoading && currentUser?._id && currentUser._id !== 'default-user-id' && params.designId && !initialDesignSentRef.current) {
+      initialDesignSentRef.current = true;
+      sendDesignMessage(
+        params.designId as string,
+        params.designTitle as string,
+        params.designImage as string,
+        params.designLocation as string
+      );
+    }
+  }, [conversationId, isLoading, currentUser?._id, params.designId]);
+
   const uploadToCloudinary = async (uri: string, fileName: string): Promise<string | null> => {
     try {
       const formData = new FormData();
@@ -430,18 +804,33 @@ export default function ChatRoomScreen() {
       setMessages(prev => prev.filter(m => m._id !== tempId));
       return;
     }
-
     // Send message with the Cloudinary URL (never a local file:// URI)
     const attachment = { name: fileName, url: cloudUrl, type: fileType };
     try {
-      const response = await fetch(`${BACKEND_URL}/api/conversations/${conversationId}/messages`, {
+      const isWorkspaceChat = workspace && workspace._id === conversationId;
+      const url = isWorkspaceChat 
+        ? `${BACKEND_URL}/api/project-workspaces/${conversationId}/messages`
+        : `${BACKEND_URL}/api/conversations/${conversationId}/messages`;
+
+      const body = isWorkspaceChat
+        ? JSON.stringify({ sender: currentUser._id, text: '', attachment })
+        : JSON.stringify({ senderId: currentUser._id, text: '', attachment });
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ senderId: currentUser._id, text: '', attachment })
+        body
       });
       if (response.ok) {
         const data = await response.json();
-        const realId = data.message?._id;
+        let realId;
+        if (isWorkspaceChat && data.workspace?.messages?.length > 0) {
+          const workspaceMessages = data.workspace.messages;
+          const savedMsg = workspaceMessages[workspaceMessages.length - 1];
+          realId = savedMsg?._id;
+        } else {
+          realId = data.message?._id;
+        }
         if (realId) sentMessageIdsRef.current.add(realId);
         setMessages(prev => prev.map(m =>
           m._id === tempId ? { ...m, attachment, status: 'sent', _id: realId || m._id } : m
@@ -449,7 +838,6 @@ export default function ChatRoomScreen() {
       }
     } catch (err) { console.error('Error sending attachment:', err); }
   };
-
   // ========== SEND FILE MESSAGE ==========
   const sendFileMessage = async (dataUrl: string, fileName: string) => {
     if (!conversationId) return;
@@ -463,16 +851,31 @@ export default function ChatRoomScreen() {
       createdAt: new Date().toISOString(),
     }]);
     scrollToEnd();
-
     try {
-      const response = await fetch(`${BACKEND_URL}/api/conversations/${conversationId}/messages`, {
+      const isWorkspaceChat = workspace && workspace._id === conversationId;
+      const url = isWorkspaceChat 
+        ? `${BACKEND_URL}/api/project-workspaces/${conversationId}/messages`
+        : `${BACKEND_URL}/api/conversations/${conversationId}/messages`;
+
+      const body = isWorkspaceChat
+        ? JSON.stringify({ sender: currentUser._id, text: '', attachment })
+        : JSON.stringify({ senderId: currentUser._id, text: '', attachment });
+
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ senderId: currentUser._id, text: '', attachment })
+        body
       });
       if (response.ok) {
         const data = await response.json();
-        const realId = data.message?._id;
+        let realId;
+        if (isWorkspaceChat && data.workspace?.messages?.length > 0) {
+          const workspaceMessages = data.workspace.messages;
+          const savedMsg = workspaceMessages[workspaceMessages.length - 1];
+          realId = savedMsg?._id;
+        } else {
+          realId = data.message?._id;
+        }
         if (realId) sentMessageIdsRef.current.add(realId);
         setMessages(prev => prev.map(m => m.tempId === tempId ? { ...m, status: 'sent', _id: realId || m._id } : m));
       }
@@ -568,7 +971,7 @@ export default function ChatRoomScreen() {
       chatText += `=========================================\n\n`;
       
       messages.forEach(msg => {
-        const sender = typeof msg.sender === 'object' ? msg.sender.fullName : (msg.sender === currentUser._id ? currentUser.fullName : receiverName);
+        const sender = msg.sender && typeof msg.sender === 'object' ? msg.sender.fullName : (msg.sender === currentUser._id ? currentUser.fullName : receiverName);
         const dt = new Date(msg.createdAt).toLocaleString();
         chatText += `[${dt}] ${sender}: ${msg.text || '[Attachment]'}\n`;
       });
@@ -734,7 +1137,7 @@ export default function ChatRoomScreen() {
     const sender = item.sender;
     const senderId = sender && typeof sender === 'object' ? sender._id : sender;
     const isOutgoing = senderId === currentUser._id;
-    const senderAvatar = typeof item.sender === 'object' ? (item.sender as any).avatarUrl : undefined;
+    const senderAvatar = item.sender && typeof item.sender === 'object' ? (item.sender as any).avatarUrl : undefined;
     const isImage = item.attachment?.type === 'image' && !!item.attachment?.url;
     const isFile = item.attachment && !!item.attachment.url && (item.attachment.type === 'file' || item.attachment.name?.endsWith('.pdf'));
 
@@ -763,13 +1166,52 @@ export default function ChatRoomScreen() {
             if (!imgUrl || (!imgUrl.startsWith('http://') && !imgUrl.startsWith('https://') && !imgUrl.startsWith('blob:'))) {
               return null;
             }
+            const designMatch = item.attachment.name?.match(/^design_([a-fA-F0-9]{24})__(.+)__(.*)\.jpg$/);
+            const handlePress = () => {
+              if (designMatch) {
+                router.push({
+                  pathname: '/design-detail',
+                  params: {
+                    id: designMatch[1],
+                    title: designMatch[2],
+                    image: imgUrl,
+                    location: designMatch[3]
+                  }
+                });
+              } else {
+                setPreviewImage(imgUrl);
+              }
+            };
             return (
-              <TouchableOpacity activeOpacity={0.9} onPress={() => setPreviewImage(imgUrl)}>
+              <TouchableOpacity 
+                activeOpacity={0.9} 
+                onPress={handlePress}
+                style={{ position: 'relative', overflow: 'hidden', borderRadius: 10 }}
+              >
                 <Image
                   source={{ uri: imgUrl }}
                   style={styles.imageAttachment}
                   contentFit="cover"
                 />
+                {designMatch && (
+                  <View style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    backgroundColor: 'rgba(22, 163, 74, 0.9)',
+                    paddingVertical: 8,
+                    paddingHorizontal: 12,
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}>
+                    <Text style={{ color: COLORS.white, fontSize: 11, fontWeight: '700' }}>
+                      View Design Plan
+                    </Text>
+                    <Feather name="arrow-right" size={12} color={COLORS.white} />
+                  </View>
+                )}
               </TouchableOpacity>
             );
           })()}
@@ -798,6 +1240,59 @@ export default function ChatRoomScreen() {
             <Text style={[styles.messageText, isOutgoing && { color: COLORS.outgoingText }]}>{item.text}</Text>
           )}
 
+          {/* ===== VOICE MESSAGE ===== */}
+          {item.attachment?.type === 'voice' && (() => {
+            const isPlaying = playingVoiceId === item._id;
+            const voiceDuration = (item.attachment as any)?.duration || 0;
+            const hasUrl = item.attachment?.url && (item.attachment.url.startsWith('http://') || item.attachment.url.startsWith('https://'));
+            
+            return (
+              <View style={styles.voiceMessageContainer}>
+                <TouchableOpacity
+                  style={[styles.voicePlayBtn, isPlaying && styles.voicePlayBtnActive]}
+                  onPress={() => hasUrl ? handlePlayVoice(item._id, item.attachment!.url) : null}
+                  disabled={item.status === 'sending'}
+                >
+                  {item.status === 'sending' ? (
+                    <Text style={{ color: '#fff', fontSize: 10 }}>...</Text>
+                  ) : (
+                    <Ionicons
+                      name={isPlaying ? 'pause' : 'play'}
+                      size={18}
+                      color="#FFFFFF"
+                    />
+                  )}
+                </TouchableOpacity>
+                <View style={styles.voiceWaveformArea}>
+                  <View style={styles.voiceWaveformTrack}>
+                    <View style={[
+                      styles.voiceWaveformFill,
+                      { width: isPlaying ? `${voiceProgress * 100}%` : '0%' }
+                    ]} />
+                    {/* Waveform bars */}
+                    <View style={styles.voiceWaveformBars}>
+                      {[0.4, 0.7, 0.5, 0.9, 0.3, 0.8, 0.6, 0.4, 0.7, 0.5, 0.8, 0.3, 0.6, 0.9, 0.4, 0.7, 0.5, 0.3, 0.8, 0.6].map((h, i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.voiceBar,
+                            { height: h * 18 },
+                            isOutgoing
+                              ? { backgroundColor: isPlaying && (i / 20) < voiceProgress ? '#D97706' : '#E5C07B' }
+                              : { backgroundColor: isPlaying && (i / 20) < voiceProgress ? '#2563EB' : '#94A3B8' }
+                          ]}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                  <Text style={[styles.voiceDurationText, isOutgoing && { color: '#92400E' }]}>
+                    {formatDuration(voiceDuration)}
+                  </Text>
+                </View>
+              </View>
+            );
+          })()}
+
           {/* ===== TIME + TICKS ===== */}
           <View style={styles.timeContainer}>
             <Text style={[styles.messageTime, isImage && !item.text && { color: '#fff' }]}>
@@ -816,7 +1311,16 @@ export default function ChatRoomScreen() {
       {/* ===== HEADER ===== */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity 
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(tabs)');
+              }
+            }} 
+            style={styles.backBtn}
+          >
             <Feather name="chevron-left" size={24} color={COLORS.textDark} />
           </TouchableOpacity>
           <View style={styles.avatarWrapper}>
@@ -846,8 +1350,13 @@ export default function ChatRoomScreen() {
         </View>
       </View>
 
-      {/* ===== CHAT AREA ===== */}
-      <View style={styles.chatArea}>
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        {/* ===== CHAT AREA ===== */}
+        <View style={styles.chatArea}>
         {isLoading ? (
           <View style={styles.centerWrap}>
             <Text style={{ color: COLORS.textMuted }}>Loading messages...</Text>
@@ -1042,6 +1551,20 @@ export default function ChatRoomScreen() {
                           <View style={{ flex: 1 }}>
                             <Text style={styles.attendanceWorkerName}>{workerName}</Text>
                             <Text style={styles.attendanceWorkerRole}>{workerRole}</Text>
+                            {record.latitude && record.longitude && (
+                              <TouchableOpacity 
+                                style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 4 }}
+                                onPress={() => {
+                                  const url = `https://www.google.com/maps/search/?api=1&query=${record.latitude},${record.longitude}`;
+                                  Linking.openURL(url).catch(err => console.error("Couldn't load map", err));
+                                }}
+                              >
+                                <Feather name="map-pin" size={10} color="#3B82F6" />
+                                <Text style={{ fontSize: 10, color: '#3B82F6', fontWeight: '600', textDecorationLine: 'underline' }}>
+                                  GPS Stamped
+                                </Text>
+                              </TouchableOpacity>
+                            )}
                           </View>
                           <View style={[styles.statusBadge, { backgroundColor: statusColor + '15' }]}>
                             <Text style={{ color: statusColor, fontSize: 11, fontWeight: '700' }}>
@@ -1204,37 +1727,63 @@ export default function ChatRoomScreen() {
       </Modal>
 
       {/* ===== INPUT FOOTER ===== */}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
-        <View style={styles.inputContainer}>
-          <View style={styles.inputRow}>
-            <TouchableOpacity style={styles.inputIconBtn} onPress={() => setShowAttachMenu(true)}>
-              <Feather name="plus" size={24} color={COLORS.textMuted} />
+      <View>
+        {isRecording ? (
+          /* ===== RECORDING UI ===== */
+          <View style={styles.recordingContainer}>
+            <TouchableOpacity style={styles.recordCancelBtn} onPress={handleCancelRecording}>
+              <Feather name="trash-2" size={20} color="#EF4444" />
             </TouchableOpacity>
 
-            <TextInput
-              style={styles.textInput}
-              placeholder="Message"
-              placeholderTextColor="#8696A0"
-              value={text}
-              onChangeText={handleTextChange}
-              onSubmitEditing={handleSend}
-              blurOnSubmit={false}
-              multiline
-            />
+            <View style={styles.recordingInfo}>
+              <Animated.View style={[
+                styles.recordingDot,
+                { transform: [{ scale: pulseAnim }] }
+              ]} />
+              <Text style={styles.recordingTimeText}>
+                {formatDuration(recordingDuration)}
+              </Text>
+              <Text style={styles.recordingLabel}>Recording...</Text>
+            </View>
 
-            <TouchableOpacity style={styles.inputIconBtn} onPress={handleTakePhoto}>
-              <Feather name="camera" size={20} color={COLORS.textMuted} />
+            <TouchableOpacity style={styles.recordSendBtn} onPress={handleStopRecording}>
+              <Feather name="send" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
+        ) : (
+          /* ===== NORMAL INPUT ===== */
+          <View style={styles.inputContainer}>
+            <View style={styles.inputRow}>
+              <TouchableOpacity style={styles.inputIconBtn} onPress={() => setShowAttachMenu(true)}>
+                <Feather name="plus" size={24} color={COLORS.textMuted} />
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.sendBtn, !text.trim() && styles.sendBtnMic]}
-            onPress={text.trim() ? handleSend : undefined}
-            activeOpacity={0.8}
-          >
-            <Feather name={text.trim() ? 'send' : 'mic'} size={20} color={COLORS.white} />
-          </TouchableOpacity>
-        </View>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Message"
+                placeholderTextColor="#8696A0"
+                value={text}
+                onChangeText={handleTextChange}
+                onSubmitEditing={handleSend}
+                blurOnSubmit={false}
+                multiline
+              />
+
+              <TouchableOpacity style={styles.inputIconBtn} onPress={handleTakePhoto}>
+                <Feather name="camera" size={20} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.sendBtn, !text.trim() && styles.sendBtnMic]}
+              onPress={text.trim() ? handleSend : handleStartRecording}
+              activeOpacity={0.8}
+            >
+              <Feather name={text.trim() ? 'send' : 'mic'} size={20} color={COLORS.white} />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
       </KeyboardAvoidingView>
 
     </SafeAreaView>
@@ -1371,6 +1920,107 @@ const styles = StyleSheet.create({
     backgroundColor: '#F59E0B', alignItems: 'center', justifyContent: 'center',
   },
   sendBtnMic: { backgroundColor: '#F59E0B' },
+
+  /* RECORDING UI */
+  recordingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 12,
+    backgroundColor: '#FFF7ED',
+    borderTopWidth: 1,
+    borderTopColor: '#FDE68A',
+  },
+  recordCancelBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordingInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  recordingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+  },
+  recordingTimeText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    fontVariant: ['tabular-nums'],
+  },
+  recordingLabel: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  recordSendBtn: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#F59E0B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* VOICE MESSAGE */
+  voiceMessageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    width: width * 0.55,
+    gap: 8,
+  },
+  voicePlayBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voicePlayBtnActive: {
+    backgroundColor: '#F59E0B',
+  },
+  voiceWaveformArea: {
+    flex: 1,
+  },
+  voiceWaveformTrack: {
+    height: 24,
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  voiceWaveformFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+  },
+  voiceWaveformBars: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  voiceBar: {
+    width: 2.5,
+    borderRadius: 1.5,
+    minHeight: 3,
+  },
+  voiceDurationText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
 
   /* ATTACHMENT MENU */
   attachOverlay: {

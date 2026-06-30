@@ -43,6 +43,16 @@ const ARCHITECT_SPECS = [
   'Vastu Planning', 'Smart Homes', 'Heritage Restoration', 'Luxury Residential'
 ];
 
+const LABOUR_SPECS = [
+  'Mason', 'Electrician', 'Plumber', 'Painter',
+  'Carpenter', 'Welder', 'Tile Fitter', 'Helper'
+];
+
+const CONTRACTOR_SPECS = [
+  'General Contracting', 'Civil Construction', 'Renovation', 'Interior Fitouts',
+  'Electrical Works', 'Plumbing Works', 'Masonry Works', 'HVAC Installation'
+];
+
 const PRESET_COVERS = [
   'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
   'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
@@ -54,7 +64,7 @@ const PRESET_AVATARS = [
   'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80',
 ];
 
-import { BACKEND_URL } from '../constants/Config';
+import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -127,8 +137,8 @@ export default function EditProfileScreen() {
     setState(user.state || '');
     setCity(user.city || '');
     setArea(user.area || '');
-    setProfilePhoto(user.avatarUrl || '');
-    setCoverPhoto(user.cover || '');
+    setProfilePhoto(resolveAvatarUrl(user.avatarUrl) || '');
+    setCoverPhoto(resolveAvatarUrl(user.cover) || '');
     setSpecialization(user.specialization || []);
   }, []);
 
@@ -233,29 +243,46 @@ export default function EditProfileScreen() {
 
   const uploadMobileImage = async (uri: string, type: 'cover' | 'avatar') => {
     setUploading(prev => ({ ...prev, [type]: true }));
-    const formData = new FormData();
-    const filename = uri.split('/').pop() || 'image.jpg';
-    const match = /\.(\w+)$/.exec(filename);
-    const fileType = match ? `image/${match[1]}` : `image`;
-
-    formData.append('image', { uri, name: filename, type: fileType } as any);
-
     try {
+      // 1. Get clean filename
+      let filename = uri.split('/').pop() || 'image.jpg';
+      filename = filename.split('?')[0].split('#')[0]; // strip query string or hashes if any
+
+      // 2. Get clean mime type
+      const match = /\.(\w+)$/.exec(filename);
+      const ext = match ? match[1].toLowerCase() : 'jpg';
+      const fileType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+
+      // 3. Clean up the URI (decode percent-encoding for React Native fetch file resolution)
+      const cleanUri = Platform.OS === 'ios' ? uri : decodeURIComponent(uri);
+
+      const formData = new FormData();
+      formData.append('image', { uri: uri, name: filename, type: fileType } as any);
+
       const res = await fetch(`${BACKEND_URL}/api/upload`, {
         method: 'POST',
-        headers: { 'Content-Type': 'multipart/form-data' },
         body: formData,
       });
-      const data = await res.json();
+
       if (res.ok) {
+        const data = await res.json();
         if (type === 'cover') setCoverPhoto(data.url);
         else setProfilePhoto(data.url);
       } else {
-        showAlert('Upload Failed', data.message || 'Image upload failed.');
+        let errMsg = 'Image upload failed.';
+        try {
+          const err = await res.json();
+          errMsg = err.message || errMsg;
+        } catch (_) {
+          try {
+            errMsg = await res.text();
+          } catch (__) {}
+        }
+        showAlert('Upload Failed', errMsg);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      showAlert('Upload Error', 'Could not connect to the upload server.');
+      showAlert('Upload Error', err.message || 'Could not connect to the upload server.');
     } finally {
       setUploading(prev => ({ ...prev, [type]: false }));
     }
@@ -321,6 +348,55 @@ export default function EditProfileScreen() {
     }
   };
 
+  const performDeleteAccount = async () => {
+    if (!currentUser?._id) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/user/${currentUser._id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          localStorage.removeItem('currentUser');
+        }
+        (global as any).currentUser = null;
+        showAlert('Account Deleted', 'Your account has been deleted successfully.', [
+          { text: 'OK', onPress: () => router.replace('/login') }
+        ]);
+      } else {
+        const data = await res.json();
+        showAlert('Error', data.message || 'Failed to delete account.');
+      }
+    } catch (err: any) {
+      console.error('Delete account error:', err);
+      showAlert('Error', 'Network error. Failed to delete account.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    if (Platform.OS === 'web') {
+      const confirmDelete = window.confirm("Are you sure you want to permanently delete your account? All your profile details, posts, notifications, and connections will be permanently removed. This action cannot be undone.");
+      if (confirmDelete) {
+        performDeleteAccount();
+      }
+    } else {
+      Alert.alert(
+        "Delete Account",
+        "Are you sure you want to permanently delete your account? All your profile details, posts, notifications, and connections will be permanently removed. This action cannot be undone.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { 
+            text: "Delete", 
+            style: "destructive", 
+            onPress: performDeleteAccount 
+          }
+        ]
+      );
+    }
+  };
+
   const initials = fullName
     ? fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
     : 'RC';
@@ -362,45 +438,47 @@ export default function EditProfileScreen() {
             <View style={styles.leftCol}>
               
               {/* Cover Photo */}
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}><Feather name="image" size={14} /> COVER PHOTO</Text>
-                <View style={styles.coverPreviewContainer}>
-                  {coverPhoto ? (
-                    <Image source={{ uri: coverPhoto }} style={styles.coverPreviewImage} contentFit="cover" />
-                  ) : (
-                    <View style={styles.coverPlaceholder} />
-                  )}
-                  
-                  <TouchableOpacity 
-                    style={styles.changeCoverBtn}
-                    onPress={() => pickImage('cover')}
-                    disabled={uploading.cover}
-                  >
-                    {uploading.cover ? (
-                      <ActivityIndicator size="small" color={COLORS.textDark} />
+              {currentUser?.role !== 'Client' && (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}><Feather name="image" size={14} /> COVER PHOTO</Text>
+                  <View style={styles.coverPreviewContainer}>
+                    {coverPhoto ? (
+                      <Image source={{ uri: coverPhoto }} style={styles.coverPreviewImage} contentFit="cover" />
                     ) : (
-                      <>
-                        <Feather name="camera" size={16} color={COLORS.textDark} style={{ marginRight: 6 }} />
-                        <Text style={styles.changeCoverBtnText}>Change Cover</Text>
-                      </>
+                      <View style={styles.coverPlaceholder} />
                     )}
-                  </TouchableOpacity>
-
-                  {coverPhoto ? (
-                    <TouchableOpacity style={styles.clearCoverBtn} onPress={() => setCoverPhoto('')}>
-                      <Feather name="x" size={14} color={COLORS.white} />
+                    
+                    <TouchableOpacity 
+                      style={styles.changeCoverBtn}
+                      onPress={() => pickImage('cover')}
+                      disabled={uploading.cover}
+                    >
+                      {uploading.cover ? (
+                        <ActivityIndicator size="small" color={COLORS.textDark} />
+                      ) : (
+                        <>
+                          <Feather name="camera" size={16} color={COLORS.textDark} style={{ marginRight: 6 }} />
+                          <Text style={styles.changeCoverBtnText}>Change Cover</Text>
+                        </>
+                      )}
                     </TouchableOpacity>
-                  ) : null}
-                </View>
 
-                {Platform.OS === 'web' && React.createElement('input', {
-                  type: 'file',
-                  accept: 'image/*',
-                  ref: coverInputRef,
-                  style: { display: 'none' },
-                  onChange: (e: any) => handleWebUpload(e, 'cover'),
-                })}
-              </View>
+                    {coverPhoto ? (
+                      <TouchableOpacity style={styles.clearCoverBtn} onPress={() => setCoverPhoto('')}>
+                        <Feather name="x" size={14} color={COLORS.white} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+
+                  {Platform.OS === 'web' && React.createElement('input', {
+                    type: 'file',
+                    accept: 'image/*',
+                    ref: coverInputRef,
+                    style: { display: 'none' },
+                    onChange: (e: any) => handleWebUpload(e, 'cover'),
+                  })}
+                </View>
+              )}
 
               {/* Profile Photo */}
               <View style={styles.card}>
@@ -410,7 +488,9 @@ export default function EditProfileScreen() {
                     {profilePhoto ? (
                       <Image source={{ uri: profilePhoto }} style={styles.avatarImage} contentFit="cover" />
                     ) : (
-                      <Image source={require('@/assets/images/app-icon.png')} style={styles.avatarImage} contentFit="contain" />
+                      <View style={[styles.avatarImage, { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }]}>
+                        <Feather name="user" size={36} color="#94A3B8" />
+                      </View>
                     )}
                     <TouchableOpacity 
                       style={styles.avatarCamIcon}
@@ -459,10 +539,12 @@ export default function EditProfileScreen() {
 
               {/* Bio About */}
               <View style={styles.card}>
-                <Text style={styles.cardTitle}><Feather name="file-text" size={14} /> ABOUT / BIO</Text>
+                <Text style={styles.cardTitle}>
+                  <Feather name="file-text" size={14} /> {currentUser?.role === 'Client' ? 'SHORT BIO (OPTIONAL)' : 'ABOUT / BIO'}
+                </Text>
                 <TextInput
                   style={styles.bioTextInput}
-                  placeholder="Write a short professional bio about yourself or your firm…"
+                  placeholder={currentUser?.role === 'Client' ? "Write a short bio about yourself…" : "Write a short professional bio about yourself or your firm…"}
                   placeholderTextColor={COLORS.textMuted}
                   multiline={true}
                   numberOfLines={5}
@@ -496,129 +578,103 @@ export default function EditProfileScreen() {
                   </View>
                 </View>
 
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>COMPANY / FIRM NAME</Text>
-                  <View style={styles.inputContainer}>
-                    <Feather name="briefcase" size={14} color={COLORS.textMuted} style={styles.fieldIcon} />
-                    <TextInput
-                      style={styles.textInput}
-                      placeholder="e.g. Sharma Architects & Associates"
-                      placeholderTextColor={COLORS.textMuted}
-                      value={firmName}
-                      onChangeText={setFirmName}
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.rowFields}>
-                  <View style={[styles.fieldGroup, { flex: 1, marginRight: 10 }]}>
-                    <Text style={styles.fieldLabel}>PROFESSION / ROLE</Text>
-                    <View style={styles.readOnlyBadge}>
-                      <Text style={styles.readOnlyBadgeText}>{currentUser?.role || 'Architect'}</Text>
+                {currentUser?.role !== 'Client' && (
+                  <>
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>COMPANY / FIRM NAME</Text>
+                      <View style={styles.inputContainer}>
+                        <Feather name="briefcase" size={14} color={COLORS.textMuted} style={styles.fieldIcon} />
+                        <TextInput
+                          style={styles.textInput}
+                          placeholder="e.g. Sharma Architects & Associates"
+                          placeholderTextColor={COLORS.textMuted}
+                          value={firmName}
+                          onChangeText={setFirmName}
+                        />
+                      </View>
                     </View>
-                  </View>
 
-                  <View style={[styles.fieldGroup, { flex: 1 }]}>
-                    <Text style={styles.fieldLabel}>EXPERIENCE</Text>
-                    <TouchableOpacity style={styles.dropdownTrigger} onPress={() => setExperienceModalVisible(true)}>
-                      <Text style={experience ? styles.dropdownTriggerTextSelected : styles.dropdownTriggerText}>
-                        {experience || 'Select experience'}
-                      </Text>
-                      <Feather name="chevron-down" size={16} color={COLORS.textMuted} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                    <View style={styles.rowFields}>
+                      <View style={[styles.fieldGroup, { flex: 1, marginRight: 10 }]}>
+                        <Text style={styles.fieldLabel}>PROFESSION / ROLE</Text>
+                        <View style={styles.readOnlyBadge}>
+                          <Text style={styles.readOnlyBadgeText}>{currentUser?.role || 'Architect'}</Text>
+                        </View>
+                      </View>
+
+                      <View style={[styles.fieldGroup, { flex: 1 }]}>
+                        <Text style={styles.fieldLabel}>EXPERIENCE</Text>
+                        <TouchableOpacity style={styles.dropdownTrigger} onPress={() => setExperienceModalVisible(true)}>
+                          <Text style={experience ? styles.dropdownTriggerTextSelected : styles.dropdownTriggerText}>
+                            {experience || 'Select experience'}
+                          </Text>
+                          <Feather name="chevron-down" size={16} color={COLORS.textMuted} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </>
+                )}
 
               </View>
 
               {/* Specializations */}
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}><Feather name="award" size={14} /> SPECIALIZATIONS</Text>
-                
-                {/* Chip display */}
-                <View style={styles.chipsContainer}>
-                  {specialization.map((tag) => (
-                    <View key={tag} style={styles.chipTag}>
-                      <Text style={styles.chipTagText}>{tag}</Text>
-                      <TouchableOpacity onPress={() => handleRemoveTag(tag)} style={styles.chipTagRemoveBtn}>
-                        <Feather name="x" size={10} color={COLORS.green} />
+              {currentUser?.role !== 'Client' && (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}><Feather name="award" size={14} /> SPECIALIZATIONS</Text>
+                  
+                  {/* Chip display */}
+                  <View style={styles.chipsContainer}>
+                    {specialization.map((tag) => (
+                      <View key={tag} style={styles.chipTag}>
+                        <Text style={styles.chipTagText}>{tag}</Text>
+                        <TouchableOpacity onPress={() => handleRemoveTag(tag)} style={styles.chipTagRemoveBtn}>
+                          <Feather name="x" size={10} color={COLORS.green} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                    {specialization.length === 0 && (
+                      <Text style={styles.chipsEmptyText}>No specializations added yet</Text>
+                    )}
+                  </View>
+
+                  {/* Add Input */}
+                  <View style={styles.tagInputWrapper}>
+                    <Feather name="plus" size={14} color={COLORS.textMuted} style={styles.tagInputIcon} />
+                    <TextInput
+                      style={styles.tagInput}
+                      placeholder="Type & press Enter to add..."
+                      placeholderTextColor={COLORS.textMuted}
+                      value={tagInput}
+                      onChangeText={setTagInput}
+                      onSubmitEditing={handleAddTag}
+                    />
+                    {tagInput ? (
+                      <TouchableOpacity style={styles.tagAddButton} onPress={handleAddTag}>
+                        <Text style={styles.tagAddButtonText}>Add</Text>
                       </TouchableOpacity>
-                    </View>
-                  ))}
-                  {specialization.length === 0 && (
-                    <Text style={styles.chipsEmptyText}>No specializations added yet</Text>
-                  )}
-                </View>
+                    ) : null}
+                  </View>
 
-                {/* Add Input */}
-                <View style={styles.tagInputWrapper}>
-                  <Feather name="plus" size={14} color={COLORS.textMuted} style={styles.tagInputIcon} />
-                  <TextInput
-                    style={styles.tagInput}
-                    placeholder="Type & press Enter to add..."
-                    placeholderTextColor={COLORS.textMuted}
-                    value={tagInput}
-                    onChangeText={setTagInput}
-                    onSubmitEditing={handleAddTag}
-                  />
-                  {tagInput ? (
-                    <TouchableOpacity style={styles.tagAddButton} onPress={handleAddTag}>
-                      <Text style={styles.tagAddButtonText}>Add</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
+                  {/* Suggestions */}
+                  <Text style={styles.suggestionsHeader}>Quick add suggestions:</Text>
+                  <View style={styles.suggestionsWrapper}>
+                    {((currentUser?.role === 'Labour') ? LABOUR_SPECS : (currentUser?.role === 'Contractor' ? CONTRACTOR_SPECS : ARCHITECT_SPECS)).filter(tag => !specialization.includes(tag)).map((tag) => (
+                      <TouchableOpacity key={tag} style={styles.suggestionChip} onPress={() => setSpecialization([...specialization, tag])}>
+                        <Feather name="plus" size={10} color={COLORS.textMuted} style={{ marginRight: 3 }} />
+                        <Text style={styles.suggestionChipText}>{tag}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
 
-                {/* Suggestions */}
-                <Text style={styles.suggestionsHeader}>Quick add suggestions:</Text>
-                <View style={styles.suggestionsWrapper}>
-                  {ARCHITECT_SPECS.filter(tag => !specialization.includes(tag)).map((tag) => (
-                    <TouchableOpacity key={tag} style={styles.suggestionChip} onPress={() => setSpecialization([...specialization, tag])}>
-                      <Feather name="plus" size={10} color={COLORS.textMuted} style={{ marginRight: 3 }} />
-                      <Text style={styles.suggestionChipText}>{tag}</Text>
-                    </TouchableOpacity>
-                  ))}
                 </View>
-
-              </View>
+              )}
 
               {/* Location */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}><Feather name="map-pin" size={14} /> LOCATION</Text>
                 
-                <View style={styles.rowFields}>
-                  <View style={[styles.fieldGroup, { flex: 1, marginRight: 10 }]}>
-                    <Text style={styles.fieldLabel}>COUNTRY</Text>
-                    <TouchableOpacity style={styles.dropdownTrigger} onPress={() => setCountryModalVisible(true)}>
-                      <Text style={styles.dropdownTriggerTextSelected}>{country}</Text>
-                      <Feather name="chevron-down" size={16} color={COLORS.textMuted} />
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={[styles.fieldGroup, { flex: 1 }]}>
-                    <Text style={styles.fieldLabel}>STATE / PROVINCE</Text>
-                    {country === 'India' ? (
-                      <TouchableOpacity style={styles.dropdownTrigger} onPress={() => setStateModalVisible(true)}>
-                        <Text style={state ? styles.dropdownTriggerTextSelected : styles.dropdownTriggerText}>
-                          {state || 'Select state'}
-                        </Text>
-                        <Feather name="chevron-down" size={16} color={COLORS.textMuted} />
-                      </TouchableOpacity>
-                    ) : (
-                      <View style={styles.inputContainer}>
-                        <TextInput
-                          style={styles.textInput}
-                          placeholder="State / Province"
-                          placeholderTextColor={COLORS.textMuted}
-                          value={state}
-                          onChangeText={setState}
-                        />
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                <View style={styles.rowFields}>
-                  <View style={[styles.fieldGroup, { flex: 1, marginRight: 10 }]}>
+                {currentUser?.role === 'Client' ? (
+                  <View style={styles.fieldGroup}>
                     <Text style={styles.fieldLabel}>CITY</Text>
                     <View style={styles.inputContainer}>
                       <TextInput
@@ -630,20 +686,69 @@ export default function EditProfileScreen() {
                       />
                     </View>
                   </View>
+                ) : (
+                  <>
+                    <View style={styles.rowFields}>
+                      <View style={[styles.fieldGroup, { flex: 1, marginRight: 10 }]}>
+                        <Text style={styles.fieldLabel}>COUNTRY</Text>
+                        <TouchableOpacity style={styles.dropdownTrigger} onPress={() => setCountryModalVisible(true)}>
+                          <Text style={styles.dropdownTriggerTextSelected}>{country}</Text>
+                          <Feather name="chevron-down" size={16} color={COLORS.textMuted} />
+                        </TouchableOpacity>
+                      </View>
 
-                  <View style={[styles.fieldGroup, { flex: 1 }]}>
-                    <Text style={styles.fieldLabel}>AREA / LOCALITY</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        style={styles.textInput}
-                        placeholder="e.g. Bandra West"
-                        placeholderTextColor={COLORS.textMuted}
-                        value={area}
-                        onChangeText={setArea}
-                      />
+                      <View style={[styles.fieldGroup, { flex: 1 }]}>
+                        <Text style={styles.fieldLabel}>STATE / PROVINCE</Text>
+                        {country === 'India' ? (
+                          <TouchableOpacity style={styles.dropdownTrigger} onPress={() => setStateModalVisible(true)}>
+                            <Text style={state ? styles.dropdownTriggerTextSelected : styles.dropdownTriggerText}>
+                              {state || 'Select state'}
+                            </Text>
+                            <Feather name="chevron-down" size={16} color={COLORS.textMuted} />
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={styles.inputContainer}>
+                            <TextInput
+                              style={styles.textInput}
+                              placeholder="State / Province"
+                              placeholderTextColor={COLORS.textMuted}
+                              value={state}
+                              onChangeText={setState}
+                            />
+                          </View>
+                        )}
+                      </View>
                     </View>
-                  </View>
-                </View>
+
+                    <View style={styles.rowFields}>
+                      <View style={[styles.fieldGroup, { flex: 1, marginRight: 10 }]}>
+                        <Text style={styles.fieldLabel}>CITY</Text>
+                        <View style={styles.inputContainer}>
+                          <TextInput
+                            style={styles.textInput}
+                            placeholder="Kalwa"
+                            placeholderTextColor={COLORS.textMuted}
+                            value={city}
+                            onChangeText={setCity}
+                          />
+                        </View>
+                      </View>
+
+                      <View style={[styles.fieldGroup, { flex: 1 }]}>
+                        <Text style={styles.fieldLabel}>AREA / LOCALITY</Text>
+                        <View style={styles.inputContainer}>
+                          <TextInput
+                            style={styles.textInput}
+                            placeholder="e.g. Bandra West"
+                            placeholderTextColor={COLORS.textMuted}
+                            value={area}
+                            onChangeText={setArea}
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  </>
+                )}
 
               </View>
 
@@ -653,7 +758,7 @@ export default function EditProfileScreen() {
                 
                 <View style={styles.rowFields}>
                   
-                  <View style={[styles.fieldGroup, { flex: 1, marginRight: 10 }]}>
+                  <View style={[styles.fieldGroup, { flex: 1, marginRight: currentUser?.role === 'Client' ? 0 : 10 }]}>
                     <Text style={styles.fieldLabel}>PHONE NUMBER</Text>
                     <View style={styles.phoneInputBox}>
                       <View style={styles.phonePrefix}>
@@ -670,25 +775,42 @@ export default function EditProfileScreen() {
                     </View>
                   </View>
 
-                  <View style={[styles.fieldGroup, { flex: 1 }]}>
-                    <Text style={styles.fieldLabel}>WHATSAPP NUMBER</Text>
-                    <View style={styles.phoneInputBox}>
-                      <View style={styles.phonePrefix}>
-                        <Feather name="message-circle" size={14} color="#25D366" />
+                  {currentUser?.role !== 'Client' && (
+                    <View style={[styles.fieldGroup, { flex: 1 }]}>
+                      <Text style={styles.fieldLabel}>WHATSAPP NUMBER</Text>
+                      <View style={styles.phoneInputBox}>
+                        <View style={styles.phonePrefix}>
+                          <Feather name="message-circle" size={14} color="#25D366" />
+                        </View>
+                        <TextInput
+                          style={styles.phoneInput}
+                          placeholder="Same or different"
+                          placeholderTextColor={COLORS.textMuted}
+                          keyboardType="phone-pad"
+                          value={whatsappNumber}
+                          onChangeText={setWhatsappNumber}
+                        />
                       </View>
-                      <TextInput
-                        style={styles.phoneInput}
-                        placeholder="Same or different"
-                        placeholderTextColor={COLORS.textMuted}
-                        keyboardType="phone-pad"
-                        value={whatsappNumber}
-                        onChangeText={setWhatsappNumber}
-                      />
                     </View>
-                  </View>
+                  )}
 
                 </View>
                 <Text style={styles.phoneFieldHint}>This will appear on your public profile for client contact.</Text>
+              </View>
+
+              {/* Danger Zone */}
+              <View style={[styles.card, { borderColor: '#FEE2E2', borderTopWidth: 1, borderBottomWidth: 1, borderLeftWidth: 0, borderRightWidth: 0, backgroundColor: '#FFF5F5', marginTop: 15 }]}>
+                <Text style={[styles.cardTitle, { color: '#EF4444' }]}><Feather name="alert-triangle" size={14} color="#EF4444" style={{ marginRight: 6 }} /> DANGER ZONE</Text>
+                <Text style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 12, lineHeight: 18 }}>
+                  Deleting your account will permanently remove all your projects, profile data, follows, and messages. This action cannot be undone.
+                </Text>
+                <TouchableOpacity 
+                  style={{ backgroundColor: '#EF4444', borderRadius: 8, paddingVertical: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' }}
+                  onPress={handleDeleteAccount}
+                >
+                  <Feather name="trash-2" size={14} color={COLORS.white} style={{ marginRight: 6 }} />
+                  <Text style={{ color: COLORS.white, fontSize: 13, fontWeight: '700' }}>Delete Account</Text>
+                </TouchableOpacity>
               </View>
 
               {/* Bottom Actions */}
@@ -896,7 +1018,7 @@ const styles = StyleSheet.create({
 
   /* LAYOUT */
   formContainer: {
-    padding: 20,
+    padding: 0,
     flexDirection: width > 768 ? 'row' : 'column',
     gap: 20,
   },
@@ -912,8 +1034,11 @@ const styles = StyleSheet.create({
   /* CARDS */
   card: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
-    borderWidth: 1,
+    borderRadius: 0,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
     borderColor: COLORS.border,
     padding: 20,
     shadowColor: '#0F172A',

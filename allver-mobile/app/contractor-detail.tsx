@@ -1,18 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking, Alert, Modal } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking, Alert, Modal, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { BACKEND_URL } from '../constants/Config';
+import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 
 const { width } = Dimensions.get('window');
+
+const PROJECT_TYPE_IMAGES: Record<string, string> = {
+  'Residential': 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=300&q=80',
+  'Commercial': 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=300&q=80',
+  'Interior': 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=300&q=80',
+  'Renovation': 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=300&q=80',
+  'General': 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=300&q=80',
+};
 
 const COLORS = {
   blue: '#3B82F6',
   blueLight: '#EFF6FF',
   green: '#16A34A',
   greenLight: '#F0FDF4',
+  greenDark: '#16A34A',
+  purple: '#6366F1',
+  purpleLight: '#EEF2FF',
+  navy: '#0F172A',
   textDark: '#111827',
   textMuted: '#6B7280',
   border: '#E5E7EB',
@@ -38,8 +50,8 @@ export default function ContractorDetailScreen() {
   // Load params with fallbacks
   const id = (params.id as string) || '60c72b2f9b1d8a2a4c8b0010';
   const name = (params.name as string) || 'Raj Construction Services';
-  const avatar = (params.avatar as string) || '';
-  const coverImage = (params.coverImage as string) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
+  const avatar = resolveAvatarUrl(params.avatar as string) || '';
+  const coverImage = resolveAvatarUrl(params.coverImage as string) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
   const rating = (params.rating as string) || '4.8';
   const reviews = (params.reviews as string) || '124';
   const location = (params.location as string) || 'Mumbai, Maharashtra';
@@ -62,6 +74,165 @@ export default function ContractorDetailScreen() {
   const [followerCountVal, setFollowerCountVal] = useState<number>(parseInt(followers, 10) || 0);
   const [showUnfollowModal, setShowUnfollowModal] = useState(false);
   const [labours, setLabours] = useState<any[]>([]);
+  const [reviewsList, setReviewsList] = useState<any[]>([]);
+  const [realProjects, setRealProjects] = useState<any[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [professionalData, setProfessionalData] = useState<any>(null);
+  const [portfolioProjects, setPortfolioProjects] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (id) {
+      fetch(`${BACKEND_URL}/api/professional/${id}/portfolio-highlights`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.portfolioHighlights) {
+            setPortfolioProjects(data.portfolioHighlights);
+          }
+        })
+        .catch(err => console.error("Error fetching portfolio highlights:", err));
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (id) {
+      setIsLoadingProjects(true);
+      fetch(`${BACKEND_URL}/api/project-workspaces/user/${id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.workspaces) {
+            setRealProjects(data.workspaces);
+          }
+          setIsLoadingProjects(false);
+        })
+        .catch(err => {
+          console.error("Error fetching contractor projects:", err);
+          setIsLoadingProjects(false);
+        });
+    }
+  }, [id]);
+
+  // Direct Hire Modal states
+  const [isHireModalVisible, setIsHireModalVisible] = useState(false);
+  const [projectName, setProjectName] = useState('');
+  const [projectCategory, setProjectCategory] = useState('Residential');
+  const [projectLocation, setProjectLocation] = useState('');
+  const [projectBudget, setProjectBudget] = useState('');
+  const [projectTimeline, setProjectTimeline] = useState('');
+  const [projectDetails, setProjectDetails] = useState('');
+  const [isHiring, setIsHiring] = useState(false);
+
+  // Set default location when professional location becomes available
+  useEffect(() => {
+    if (location) {
+      setProjectLocation(location);
+    }
+  }, [location]);
+
+  const handleHireSubmit = async () => {
+    if (!projectName.trim()) {
+      Alert.alert('Required', 'Please enter a project name.');
+      return;
+    }
+    if (!projectCategory.trim()) {
+      Alert.alert('Required', 'Please select a project category.');
+      return;
+    }
+    if (!projectLocation.trim()) {
+      Alert.alert('Required', 'Please enter project location.');
+      return;
+    }
+    if (!projectBudget.trim()) {
+      Alert.alert('Required', 'Please enter estimated budget.');
+      return;
+    }
+    if (!projectTimeline.trim()) {
+      Alert.alert('Required', 'Please enter project timeline.');
+      return;
+    }
+    if (!currentUser?._id) {
+      Alert.alert('Login Required', 'Please log in to hire this professional.');
+      return;
+    }
+
+    setIsHiring(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/contract-requests`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client: currentUser._id,
+          professional: id,
+          title: projectName.trim(),
+          projectType: projectCategory,
+          location: projectLocation.trim(),
+          budget: projectBudget.trim(),
+          timeline: projectTimeline.trim(),
+          description: projectDetails.trim(),
+          senderId: currentUser._id,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Error sending hire request');
+      }
+
+      setIsHireModalVisible(false);
+      setProjectName('');
+      setProjectCategory('Residential');
+      setProjectLocation(location || '');
+      setProjectBudget('');
+      setProjectTimeline('');
+      setProjectDetails('');
+      Alert.alert(
+        'Request Sent!',
+        `Your hire request has been sent to ${name}. You will be notified once they accept it.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => router.push('/(tabs)')
+          }
+        ]
+      );
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Could not send the hire request.');
+    } finally {
+      setIsHiring(false);
+    }
+  };
+
+  const fetchReviews = async (userId: string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/user/reviews/${userId}`);
+      const data = await res.json();
+      if (data.reviews) {
+        setReviewsList(data.reviews);
+      }
+    } catch (err) {
+      console.error('Error fetching reviews:', err);
+    }
+  };
+
+  const formatDate = (dateStr: any) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) { const w = Math.floor(diffDays / 7); return `${w} week${w > 1 ? 's' : ''} ago`; }
+    const m = Math.floor(diffDays / 30); return `${m} month${m > 1 ? 's' : ''} ago`;
+  };
+
+  const getLatestReviewByRole = (targetRole: 'Client' | 'Contractor' | 'Architect') => {
+    const realReview = reviewsList.find(r => r.from && r.from.role === targetRole);
+    if (realReview) {
+      return { name: realReview.from.fullName, role: realReview.from.role, rating: realReview.rating, comment: realReview.reviewText, avatar: resolveAvatarUrl(realReview.from.avatarUrl) || 'https://i.pravatar.cc/100?img=32', date: formatDate(realReview.createdAt) };
+    }
+    return null;
+  };
 
   useEffect(() => {
     let user = (global as any).currentUser;
@@ -78,17 +249,35 @@ export default function ContractorDetailScreen() {
     if (user) {
       setCurrentUser(user);
     }
-
-    // Fetch live labours list to display in the Team tab
-    fetch(`${BACKEND_URL}/api/professionals/Labour`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.professionals && data.professionals.length > 0) {
-          setLabours(data.professionals);
-        }
-      })
-      .catch(err => console.error("Error fetching labours:", err));
   }, []);
+
+  useEffect(() => {
+    if (id) {
+      // Fetch live user info (followers count and profile detail for media etc.)
+      fetch(`${BACKEND_URL}/api/professional/${id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.professional) {
+            setProfessionalData(data.professional);
+            setFollowerCountVal(data.professional.followersCount || 0);
+          }
+        })
+        .catch(err => console.error("Error fetching professional info:", err));
+
+      // Fetch team members
+      fetch(`${BACKEND_URL}/api/professional/${id}/team`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.team) {
+            setLabours(data.team);
+          }
+        })
+        .catch(err => console.error("Error fetching professional team:", err));
+
+      // Fetch reviews
+      fetchReviews(id);
+    }
+  }, [id]);
 
   useEffect(() => {
     if (currentUser?._id && id) {
@@ -99,18 +288,40 @@ export default function ContractorDetailScreen() {
           setIsFollowing(!!data.isFollowing);
         })
         .catch(err => console.error("Error fetching follow status:", err));
-
-      // Fetch live user info (followers count)
-      fetch(`${BACKEND_URL}/api/professional/${id}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.professional) {
-            setFollowerCountVal(data.professional.followersCount || 0);
-          }
-        })
-        .catch(err => console.error("Error fetching professional info:", err));
     }
   }, [currentUser, id]);
+
+  const getCombinedMedia = () => {
+    const list: { type: 'image' | 'video'; url: string; source: 'portfolio' | 'project' }[] = [];
+
+    if (professionalData?.portfolioImages && Array.isArray(professionalData.portfolioImages)) {
+      professionalData.portfolioImages.forEach((img: string) => {
+        if (img) {
+          list.push({ type: 'image', url: resolveAvatarUrl(img), source: 'portfolio' });
+        }
+      });
+    }
+
+    if (realProjects && Array.isArray(realProjects)) {
+      realProjects.forEach((w: any) => {
+        if (w.updates && Array.isArray(w.updates)) {
+          w.updates.forEach((up: any) => {
+            if (up.img) {
+              const imgs = up.img.split(',').map((s: string) => s.trim()).filter(Boolean);
+              imgs.forEach((img: string) => {
+                list.push({ type: 'image', url: resolveAvatarUrl(img), source: 'project' });
+              });
+            }
+            if (up.video) {
+              list.push({ type: 'video', url: resolveAvatarUrl(up.video), source: 'project' });
+            }
+          });
+        }
+      });
+    }
+
+    return list;
+  };
 
   const handleFollowPress = () => {
     if (!currentUser) {
@@ -219,7 +430,16 @@ export default function ContractorDetailScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Top Header Row over Cover */}
       <View style={styles.navHeader}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.circleHeaderBtn}>
+        <TouchableOpacity 
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)');
+            }
+          }} 
+          style={styles.circleHeaderBtn}
+        >
           <Feather name="arrow-left" size={20} color={COLORS.textDark} />
         </TouchableOpacity>
         
@@ -242,7 +462,7 @@ export default function ContractorDetailScreen() {
         <View style={styles.coverContainer}>
           <Image source={{ uri: coverImage }} style={styles.coverImage} contentFit="cover" />
           <View style={styles.avatarWrapper}>
-            <Image source={avatar ? { uri: avatar } : require('@/assets/images/app-icon.png')} style={styles.avatarImage} contentFit={avatar ? "cover" : "contain"} />
+            <Image source={avatar ? { uri: avatar } : require('../assets/android-icon-foreground.png')} style={styles.avatarImage} contentFit={avatar ? "cover" : "contain"} />
             <View style={styles.verifiedBadge}>
               <Feather name="check" size={12} color={COLORS.white} />
             </View>
@@ -263,7 +483,7 @@ export default function ContractorDetailScreen() {
               }}
             >
               <Feather name="users" size={14} color={COLORS.textMuted} />
-              <Text style={styles.followersText}>{followerCountVal} Followers</Text>
+              <Text style={styles.followersText}>{followerCountVal} Networks</Text>
             </TouchableOpacity>
           </View>
           
@@ -312,16 +532,26 @@ export default function ContractorDetailScreen() {
                 style={[styles.followBtn, isFollowing && styles.followingBtn]} 
                 onPress={handleFollowPress}
               >
-                <Feather name={isFollowing ? "check" : "user-plus"} size={16} color={isFollowing ? COLORS.textDark : COLORS.white} style={{ marginRight: 6 }} />
+                <Feather name={isFollowing ? "check" : "user-plus"} size={12} color={isFollowing ? COLORS.textDark : COLORS.white} style={{ marginRight: 4 }} />
                 <Text style={[styles.followBtnText, isFollowing && { color: COLORS.textDark }]}>
-                  {isFollowing ? 'Following \u2713' : 'Follow'}
+                  {isFollowing ? 'In Network' : 'Add to Network'}
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.outlineActionBtn} onPress={handleWhatsApp}>
-                <FontAwesome5 name="whatsapp" size={16} color={COLORS.green} style={{ marginRight: 6 }} />
-                <Text style={styles.outlineActionText}>Chat</Text>
-              </TouchableOpacity>
+              {currentUser?.role === 'Client' ? (
+                <TouchableOpacity 
+                  style={[styles.outlineActionBtn, { borderColor: COLORS.green, backgroundColor: COLORS.greenLight }]} 
+                  onPress={() => setIsHireModalVisible(true)}
+                >
+                  <Feather name="briefcase" size={12} color={COLORS.green} style={{ marginRight: 4 }} />
+                  <Text style={[styles.outlineActionText, { color: COLORS.green, fontWeight: '700' }]}>Hire</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.outlineActionBtn} onPress={handleWhatsApp}>
+                  <FontAwesome5 name="whatsapp" size={12} color={COLORS.green} style={{ marginRight: 4 }} />
+                  <Text style={styles.outlineActionText}>Chat</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity 
                 style={[styles.outlineActionBtn, { borderColor: COLORS.blue, backgroundColor: '#EFF6FF' }]} 
@@ -341,7 +571,7 @@ export default function ContractorDetailScreen() {
                   });
                 }}
               >
-                <Feather name="message-circle" size={16} color={COLORS.blue} style={{ marginRight: 6 }} />
+                <Feather name="message-circle" size={12} color={COLORS.blue} style={{ marginRight: 4 }} />
                 <Text style={[styles.outlineActionText, { color: COLORS.blue }]}>Message</Text>
               </TouchableOpacity>
             </View>
@@ -369,6 +599,52 @@ export default function ContractorDetailScreen() {
               ))}
             </View>
           </View>
+
+          {/* ================= PORTFOLIO HIGHLIGHTS ================= */}
+          {portfolioProjects.length > 0 && (
+            <View style={{ marginBottom: 20 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark }}>Portfolio Highlights</Text>
+                <TouchableOpacity onPress={() => router.push({ pathname: '/portfolio-highlights', params: { userId: id } })}>
+                  <Text style={{ fontSize: 13, color: COLORS.gold, fontWeight: '700' }}>View All ›</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 16 }}>
+                {portfolioProjects.map((item, index) => {
+                  const image = (item.mediaUrls && item.mediaUrls.length > 0) ? item.mediaUrls[0] : (PROJECT_TYPE_IMAGES[item.projectType] || PROJECT_TYPE_IMAGES['General']);
+                  return (
+                    <View key={item._id || index} style={{ alignItems: 'center', width: 72 }}>
+                      <TouchableOpacity 
+                        style={{
+                          width: 70,
+                          height: 70,
+                          borderRadius: 14,
+                          borderWidth: 2.5,
+                          borderColor: '#F59E0B',
+                          padding: 2,
+                          backgroundColor: '#FFFFFF',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.08,
+                          shadowRadius: 4,
+                          elevation: 2,
+                        }}
+                        onPress={() => router.push({ pathname: '/portfolio-highlights', params: { userId: id } })}
+                        activeOpacity={0.85}
+                      >
+                        <Image source={{ uri: image }} style={{ width: '100%', height: '100%', borderRadius: 10 }} contentFit="cover" />
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 10, fontWeight: '600', color: '#334155', marginTop: 6, textAlign: 'center', width: '100%' }} numberOfLines={1}>
+                        {item.title}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
 
           {/* Sub-Tabs Navigation Segment Control */}
           <View style={styles.tabSegmentContainer}>
@@ -411,87 +687,105 @@ export default function ContractorDetailScreen() {
             {/* PROJECTS TAB */}
             {activeTab === 'projects' && (
               <View style={styles.projectsListCol}>
-                {[
-                  { name: '2BHK Residential Construction', location: 'Navi Mumbai', status: 'Ongoing', progress: 0.6, image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=200&q=80' },
-                  { name: '3BHK Villa Project', location: 'Panvel, Navi Mumbai', status: 'Completed', progress: 1.0, image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=200&q=80' },
-                  { name: 'Interior Work', location: 'Kharghar, Navi Mumbai', status: 'Ongoing', progress: 0.4, image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=200&q=80' },
-                  { name: 'Renovation Project', location: 'Belapur, Navi Mumbai', status: 'Ongoing', progress: 0.3, image: 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=200&q=80' }
-                ].map((item, idx) => (
-                  <View key={idx} style={styles.projectListItem}>
-                    <Image source={{ uri: item.image }} style={styles.projectListImg} contentFit="cover" />
-                    <View style={styles.projectListDetails}>
-                      <Text style={styles.projectListName}>{item.name}</Text>
-                      <Text style={styles.projectListLoc}>{item.location}</Text>
-                      
-                      {/* Progress bar container */}
-                      <View style={styles.progressRow}>
-                        <View style={styles.progressBarBg}>
-                          <View style={[styles.progressBarFill, { width: `${item.progress * 100}%` }]} />
-                        </View>
-                        <Text style={styles.progressText}>{item.progress * 100}%</Text>
-                      </View>
+                {isLoadingProjects ? (
+                  <ActivityIndicator size="small" color={COLORS.blue} style={{ padding: 20 }} />
+                ) : realProjects.length === 0 ? (
+                  <Text style={{ textAlign: 'center', padding: 20, color: COLORS.textMuted }}>No performed projects yet.</Text>
+                ) : (
+                  realProjects.map((w: any, idx) => {
+                    const isCompleted = w.status === 'Completed';
+                    const isCancelled = w.status === 'Cancelled';
+                    const statusText = isCompleted ? 'Completed' : isCancelled ? 'Cancelled' : 'Ongoing';
+                    const image = w.projectType === 'Interior' 
+                      ? 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=200&q=80' 
+                      : 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=200&q=80';
 
-                      <View style={[styles.statusBadge, item.status === 'Completed' ? styles.statusCompleted : styles.statusProgress]}>
-                        <View style={[styles.statusDot, { backgroundColor: item.status === 'Completed' ? COLORS.green : '#F59E0B' }]} />
-                        <Text style={[styles.statusBadgeText, item.status === 'Completed' ? { color: COLORS.green } : { color: '#F59E0B' }]}>
-                          {item.status}
-                        </Text>
+                    return (
+                      <View key={w._id || idx} style={styles.projectListItem}>
+                        <Image source={{ uri: image }} style={styles.projectListImg} contentFit="cover" />
+                        <View style={styles.projectListDetails}>
+                          <Text style={styles.projectListName}>{w.title}</Text>
+                          <Text style={styles.projectListLoc}>{w.contractRequest?.location || 'Thane'}</Text>
+                          
+                          <View style={[
+                            styles.statusBadge, 
+                            isCompleted ? styles.statusCompleted : isCancelled ? styles.statusCancelled : styles.statusProgress
+                          ]}>
+                            <View style={[
+                              styles.statusDot, 
+                              { backgroundColor: isCompleted ? COLORS.green : isCancelled ? '#EF4444' : '#F59E0B' }
+                            ]} />
+                            <Text style={[
+                              styles.statusBadgeText, 
+                              isCompleted ? { color: COLORS.green } : isCancelled ? { color: '#EF4444' } : { color: '#F59E0B' }
+                            ]}>
+                              {statusText}
+                            </Text>
+                          </View>
+                        </View>
                       </View>
-                    </View>
-                  </View>
-                ))}
+                    );
+                  })
+                )}
               </View>
             )}
 
             {/* MEDIA TAB */}
             {activeTab === 'media' && (
               <View style={styles.mediaGrid}>
-                {[
-                  'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=200&auto=format&fit=crop',
-                  'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=200&auto=format&fit=crop',
-                  'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?q=80&w=200&auto=format&fit=crop',
-                  'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=200&auto=format&fit=crop',
-                  'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=200&auto=format&fit=crop',
-                  'https://images.unsplash.com/photo-1581094288338-2314dddb7ecc?q=80&w=200&auto=format&fit=crop'
-                ].map((uri, idx) => (
-                  <View key={idx} style={styles.mediaCard}>
-                    <Image source={{ uri }} style={styles.mediaThumbnail} contentFit="cover" />
-                    {idx === 1 && (
-                      <View style={styles.videoPlayOverlay}>
-                        <Feather name="play" size={24} color={COLORS.white} />
-                      </View>
-                    )}
-                  </View>
-                ))}
+                {getCombinedMedia().length === 0 ? (
+                  <Text style={{ textAlign: 'center', width: '100%', padding: 20, color: COLORS.textMuted }}>No media uploaded yet.</Text>
+                ) : (
+                  getCombinedMedia().map((item, idx) => (
+                    <TouchableOpacity 
+                      key={idx} 
+                      style={styles.mediaCard}
+                      onPress={() => {
+                        Linking.openURL(item.url).catch(err => console.error("Couldn't open URL", err));
+                      }}
+                    >
+                      <Image source={{ uri: item.url }} style={styles.mediaThumbnail} contentFit="cover" />
+                      {item.type === 'video' && (
+                        <View style={styles.videoPlayOverlay}>
+                          <Feather name="play" size={24} color={COLORS.white} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))
+                )}
               </View>
             )}
 
             {/* TEAM TAB */}
             {activeTab === 'team' && (
               <View style={styles.teamListCol}>
-                {(labours.length > 0 ? labours : TEAM_MEMBERS).map((worker, idx) => {
-                  const workerName = worker.fullName || worker.name;
-                  const workerRole = worker.skillType || worker.role;
-                  const workerAvatar = worker.avatarUrl || worker.avatar;
-                  const workerExp = worker.experience;
-                  return (
-                    <TouchableOpacity 
-                      key={idx} 
-                      style={styles.teamListItem} 
-                      activeOpacity={0.8}
-                      onPress={() => handleLabourClick(worker)}
-                    >
-                      <Image source={{ uri: workerAvatar }} style={styles.teamMemberAvatar} contentFit="cover" />
-                      <View style={styles.teamMemberDetails}>
-                        <Text style={styles.teamMemberName}>{workerName}</Text>
-                        <Text style={styles.teamMemberRole}>{workerRole} • {workerExp} Exp</Text>
-                      </View>
-                      <View style={styles.availabilityBadge}>
-                        <Text style={styles.availabilityText}>{worker.availability || 'Available'}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
+                {labours.length === 0 ? (
+                  <Text style={{ textAlign: 'center', padding: 20, color: COLORS.textMuted }}>No team members available.</Text>
+                ) : (
+                  labours.map((worker, idx) => {
+                    const workerName = worker.fullName || worker.name;
+                    const workerRole = worker.skillType || worker.role;
+                    const workerAvatar = resolveAvatarUrl(worker.avatarUrl || worker.avatar) || 'https://i.pravatar.cc/100?img=32';
+                    const workerExp = worker.experience || 'No';
+                    return (
+                      <TouchableOpacity 
+                        key={idx} 
+                        style={styles.teamListItem} 
+                        activeOpacity={0.8}
+                        onPress={() => handleLabourClick(worker)}
+                      >
+                        <Image source={{ uri: workerAvatar }} style={styles.teamMemberAvatar} contentFit="cover" />
+                        <View style={styles.teamMemberDetails}>
+                          <Text style={styles.teamMemberName}>{workerName}</Text>
+                          <Text style={styles.teamMemberRole}>{workerRole} • {workerExp} Exp</Text>
+                        </View>
+                        <View style={styles.availabilityBadge}>
+                          <Text style={styles.availabilityText}>{worker.availability || 'Available'}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                )}
               </View>
             )}
 
@@ -500,57 +794,115 @@ export default function ContractorDetailScreen() {
               <View style={styles.reviewsListCol}>
                 <View style={styles.ratingBreakdownBox}>
                   <View style={styles.ratingOverallCol}>
-                    <Text style={styles.overallRatingValue}>{rating}</Text>
+                    <Text style={styles.overallRatingValue}>{reviewsList.length > 0 ? (reviewsList.reduce((sum: number, r: any) => sum + r.rating, 0) / reviewsList.length).toFixed(1) : '0.0'}</Text>
                     <View style={styles.overallStarsRow}>
-                      {[1, 2, 3, 4, 5].map((s) => (
-                        <Feather key={s} name="star" size={14} color={s <= Math.floor(parseFloat(rating)) ? COLORS.gold : COLORS.border} style={{ marginRight: 2 }} />
-                      ))}
+                      {[1, 2, 3, 4, 5].map((s) => {
+                        const avg = reviewsList.length > 0 ? reviewsList.reduce((sum: number, r: any) => sum + r.rating, 0) / reviewsList.length : 0;
+                        return (
+                          <Feather key={s} name="star" size={14} color={s <= Math.floor(avg) ? COLORS.gold : COLORS.border} style={{ marginRight: 2 }} />
+                        );
+                      })}
                     </View>
-                    <Text style={styles.overallRatingReviews}>{reviews} Reviews</Text>
+                    <Text style={styles.overallRatingReviews}>{reviewsList.length} Reviews</Text>
                   </View>
                   <View style={styles.ratingProgressCol}>
-                    {[
-                      { stars: '5', count: '98' },
-                      { stars: '4', count: '18' },
-                      { stars: '3', count: '5' },
-                      { stars: '2', count: '2' },
-                      { stars: '1', count: '1' }
-                    ].map((row) => {
-                      const percentage = (parseInt(row.count) / parseInt(reviews)) * 100;
-                      return (
-                        <View key={row.stars} style={styles.ratingProgressRow}>
-                          <Text style={styles.rowStarText}>{row.stars}★</Text>
-                          <View style={styles.rowProgressBarBg}>
-                            <View style={[styles.rowProgressBarFill, { width: `${percentage}%` }]} />
+                    {(() => {
+                      const starCounts: Record<string, number> = { '5': 0, '4': 0, '3': 0, '2': 0, '1': 0 };
+                      reviewsList.forEach((r: any) => {
+                        const s = Math.round(r.rating).toString();
+                        if (s in starCounts) starCounts[s] += 1;
+                      });
+                      const totalCount = reviewsList.length || 1;
+                      return ['5', '4', '3', '2', '1'].map((stars) => {
+                        const count = starCounts[stars];
+                        const percentage = (count / totalCount) * 100;
+                        return (
+                          <View key={stars} style={styles.ratingProgressRow}>
+                            <Text style={styles.rowStarText}>{stars}★</Text>
+                            <View style={styles.rowProgressBarBg}>
+                              <View style={[styles.rowProgressBarFill, { width: `${percentage}%` }]} />
+                            </View>
+                            <Text style={styles.rowStarCount}>{count}</Text>
                           </View>
-                          <Text style={styles.rowStarCount}>{row.count}</Text>
-                        </View>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                   </View>
                 </View>
 
-                {/* Review Items */}
-                {[
-                  { name: 'Karan Chaubey', date: 'Yesterday', rating: 5, comment: 'BuildWell did a phenomenal job constructing our independent villa in Panvel. Outstanding materials and construction schedule maintenance.', avatar: 'https://i.pravatar.cc/100?img=11' },
-                  { name: 'Rita Desai', date: '2 weeks ago', rating: 4, comment: 'Great supervisor team. Very clear communication and workers finished RCC slab exactly on time.', avatar: 'https://i.pravatar.cc/100?img=12' }
-                ].map((item, idx) => (
-                  <View key={idx} style={styles.reviewItemCard}>
-                    <View style={styles.reviewHeaderRow}>
-                      <Image source={{ uri: item.avatar }} style={styles.reviewerAvatar} contentFit="cover" />
-                      <View style={styles.reviewerMeta}>
-                        <Text style={styles.reviewerName}>{item.name}</Text>
-                        <Text style={styles.reviewDate}>{item.date}</Text>
+                {/* Role Reviews Highlight */}
+                {reviewsList.length > 0 && (
+                  <>
+                    <Text style={styles.roleSectionTitle}>Role Reviews Highlight</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.roleHighlightsContainer} style={{ marginBottom: 8 }}>
+                      {['Client', 'Contractor', 'Architect'].map((r) => {
+                        const item = getLatestReviewByRole(r as any);
+                        if (!item) return null;
+                        let badgeBg = COLORS.greenLight;
+                        let badgeText = COLORS.green;
+                        if (r === 'Contractor') { badgeBg = COLORS.blueLight; badgeText = COLORS.blue; }
+                        else if (r === 'Architect') { badgeBg = COLORS.purpleLight; badgeText = COLORS.purple; }
+                        return (
+                          <View key={r} style={styles.roleHighlightCard}>
+                            <View style={styles.roleCardHeader}>
+                              <View style={[styles.roleBadge, { backgroundColor: badgeBg }]}>
+                                <Text style={[styles.roleBadgeText, { color: badgeText }]}>{r}</Text>
+                              </View>
+                              <View style={styles.reviewStarsRow}>
+                                {[1,2,3,4,5].map((s) => (
+                                  <FontAwesome5 key={s} name="star" solid={s <= item.rating} size={10} color={s <= item.rating ? COLORS.gold : COLORS.border} style={{ marginRight: 1 }} />
+                                ))}
+                              </View>
+                            </View>
+                            <View style={styles.roleCardUserRow}>
+                              <Image source={{ uri: item.avatar }} style={styles.roleCardAvatar} contentFit="cover" />
+                              <View style={styles.roleCardUserMeta}>
+                                <Text style={styles.roleCardUserName} numberOfLines={1}>{item.name}</Text>
+                                <Text style={styles.roleCardDate}>{item.date}</Text>
+                              </View>
+                            </View>
+                            <Text style={styles.roleCardComment} numberOfLines={3}>{item.comment}</Text>
+                          </View>
+                        );
+                      })}
+                    </ScrollView>
+                  </>
+                )}
+
+                {/* All Reviews */}
+                <Text style={styles.roleSectionTitle}>All Reviews</Text>
+                {reviewsList.length > 0 ? reviewsList.map((r: any, idx: number) => {
+                  const item = {
+                    name: r.from?.fullName || 'Anonymous',
+                    date: formatDate(r.createdAt),
+                    rating: r.rating,
+                    comment: r.reviewText,
+                    avatar: resolveAvatarUrl(r.from?.avatarUrl) || 'https://i.pravatar.cc/100?img=32'
+                  };
+                  return (
+                    <View key={idx} style={styles.reviewItemCard}>
+                      <View style={styles.reviewHeaderRow}>
+                        <Image source={{ uri: item.avatar }} style={styles.reviewerAvatar} contentFit="cover" />
+                        <View style={styles.reviewerMeta}>
+                          <Text style={styles.reviewerName}>{item.name}</Text>
+                          <Text style={styles.reviewDate}>{item.date}</Text>
+                        </View>
+                        <View style={styles.reviewStarsRow}>
+                          {[1, 2, 3, 4, 5].map((s) => (
+                            <Feather key={s} name="star" size={11} color={s <= item.rating ? COLORS.gold : COLORS.border} />
+                          ))}
+                        </View>
                       </View>
-                      <View style={styles.reviewStarsRow}>
-                        {[1, 2, 3, 4, 5].map((s) => (
-                          <Feather key={s} name="star" size={11} color={s <= item.rating ? COLORS.gold : COLORS.border} />
-                        ))}
-                      </View>
+                      <Text style={styles.reviewText}>{item.comment}</Text>
                     </View>
-                    <Text style={styles.reviewText}>{item.comment}</Text>
+                  );
+                }) : (
+                  <View style={{ padding: 30, alignItems: 'center' }}>
+                    <Feather name="star" size={32} color={COLORS.textMuted} style={{ marginBottom: 8 }} />
+                    <Text style={{ color: COLORS.textMuted, fontSize: 14, fontWeight: '600' }}>No reviews yet</Text>
+                    <Text style={{ color: COLORS.textMuted, fontSize: 12, marginTop: 4, textAlign: 'center' }}>Reviews will appear here once clients collaborate on projects.</Text>
                   </View>
-                ))}
+                )}
               </View>
             )}
 
@@ -569,7 +921,7 @@ export default function ContractorDetailScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
             <Image source={{ uri: avatar }} style={styles.modalAvatar} />
-            <Text style={styles.modalTitle}>Unfollow {name}?</Text>
+            <Text style={styles.modalTitle}>Remove {name} from Network?</Text>
             <Text style={styles.modalSubtitle}>You will stop seeing their updates in your feed.</Text>
             
             <View style={styles.modalBtnRow}>
@@ -584,7 +936,125 @@ export default function ContractorDetailScreen() {
                 style={styles.modalConfirmBtn} 
                 onPress={executeUnfollow}
               >
-                <Text style={styles.modalConfirmBtnText}>Unfollow</Text>
+                <Text style={styles.modalConfirmBtnText}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Direct Hire Confirmation Modal */}
+      <Modal
+        visible={isHireModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setIsHireModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { width: width * 0.9, maxHeight: '80%' }]}>
+            <Text style={[styles.modalTitle, { marginBottom: 4 }]}>Hire {name}</Text>
+            <Text style={[styles.modalSubtitle, { marginBottom: 16 }]}>Specify project details to start a workspace.</Text>
+
+            <ScrollView 
+              style={{ width: '100%', marginBottom: 16 }}
+              contentContainerStyle={{ alignItems: 'stretch' }}
+              showsVerticalScrollIndicator={true}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 6 }}>Project Name</Text>
+              <TextInput
+                style={styles.hireModalInput}
+                placeholder="e.g., Panvel Villa Construction"
+                placeholderTextColor={COLORS.textMuted}
+                value={projectName}
+                onChangeText={setProjectName}
+              />
+
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 6 }}>Category</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                {['Residential', 'Commercial', 'Renovation', 'Interior', 'Electrical', 'Plumbing', 'General'].map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 15,
+                      borderWidth: 1,
+                      borderColor: projectCategory === cat ? COLORS.green : COLORS.border,
+                      backgroundColor: projectCategory === cat ? '#E8F5E9' : COLORS.bgLight,
+                    }}
+                    onPress={() => setProjectCategory(cat)}
+                  >
+                    <Text style={{ fontSize: 12, color: projectCategory === cat ? COLORS.green : COLORS.textDark, fontWeight: projectCategory === cat ? '700' : 'normal' }}>{cat}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 6 }}>Location</Text>
+              <TextInput
+                style={styles.hireModalInput}
+                placeholder="e.g., Panvel, Maharashtra"
+                placeholderTextColor={COLORS.textMuted}
+                value={projectLocation}
+                onChangeText={setProjectLocation}
+              />
+
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 6 }}>Estimated Budget</Text>
+              <TextInput
+                style={styles.hireModalInput}
+                placeholder="e.g., ₹5,00,000"
+                placeholderTextColor={COLORS.textMuted}
+                value={projectBudget}
+                onChangeText={setProjectBudget}
+              />
+
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 6 }}>Timeline</Text>
+              <TextInput
+                style={styles.hireModalInput}
+                placeholder="e.g., 3 Months or Immediate"
+                placeholderTextColor={COLORS.textMuted}
+                value={projectTimeline}
+                onChangeText={setProjectTimeline}
+              />
+
+              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, marginBottom: 6 }}>Project Description (Optional)</Text>
+              <TextInput
+                style={[styles.hireModalInput, styles.hireModalInputMultiline]}
+                placeholder="Describe requirements, scope of work, etc."
+                placeholderTextColor={COLORS.textMuted}
+                value={projectDetails}
+                onChangeText={setProjectDetails}
+                multiline={true}
+                numberOfLines={4}
+              />
+            </ScrollView>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity 
+                style={styles.modalCancelBtn} 
+                onPress={() => {
+                  setIsHireModalVisible(false);
+                  setProjectName('');
+                  setProjectCategory('Residential');
+                  setProjectLocation(location || '');
+                  setProjectBudget('');
+                  setProjectTimeline('');
+                  setProjectDetails('');
+                }}
+                disabled={isHiring}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.modalConfirmBtn, styles.hireModalSubmitBtn, isHiring && { opacity: 0.7 }]} 
+                onPress={handleHireSubmit}
+                disabled={isHiring}
+              >
+                {isHiring ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Text style={[styles.modalConfirmBtnText, styles.hireModalSubmitBtnText]}>Hire</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -680,9 +1150,9 @@ const styles = StyleSheet.create({
   actionButtonsRow: { flexDirection: 'row', gap: 10, marginBottom: 25 },
   followBtn: {
     flex: 1.5,
-    height: 44,
+    height: 32,
     backgroundColor: '#1BC47D', // Premium green accent
-    borderRadius: 22, // Rounded buttons
+    borderRadius: 16, // Curved borders
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -692,19 +1162,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
   },
-  followBtnText: { color: COLORS.white, fontSize: 14, fontWeight: '700' },
+  followBtnText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
   outlineActionBtn: {
     flex: 1,
-    height: 44,
+    height: 32,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 8,
+    borderRadius: 16,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORS.white,
   },
-  outlineActionText: { color: COLORS.textDark, fontSize: 14, fontWeight: '600' },
+  outlineActionText: { color: COLORS.textDark, fontSize: 12, fontWeight: '600' },
 
   /* ABOUT SECTION */
   aboutSection: { marginBottom: 20 },
@@ -742,6 +1212,7 @@ const styles = StyleSheet.create({
   statusDot: { width: 6, height: 6, borderRadius: 3 },
   statusCompleted: { backgroundColor: COLORS.greenLight },
   statusProgress: { backgroundColor: '#FFEDD5' },
+  statusCancelled: { backgroundColor: '#FEF2F2' },
   statusBadgeText: { fontSize: 10, fontWeight: '700' },
 
   /* MEDIA TAB */
@@ -852,6 +1323,101 @@ const styles = StyleSheet.create({
   modalConfirmBtnText: {
     fontSize: 14,
     fontWeight: '600',
+    color: COLORS.white,
+  },
+  roleSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginTop: 20,
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  roleHighlightsContainer: {
+    paddingRight: 16,
+    paddingBottom: 8,
+    gap: 12,
+  },
+  roleHighlightCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 12,
+    width: 250,
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  roleCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  roleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  roleBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  roleCardUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  roleCardAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+  },
+  roleCardUserMeta: {
+    flex: 1,
+  },
+  roleCardUserName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.textDark,
+  },
+  roleCardDate: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+  },
+  roleCardComment: {
+    fontSize: 12,
+    color: COLORS.textDark,
+    lineHeight: 16,
+    fontStyle: 'italic',
+  },
+  hireModalInput: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: COLORS.textDark,
+    backgroundColor: COLORS.bgLight,
+    marginBottom: 16,
+  },
+  hireModalInputMultiline: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  hireModalSubmitBtn: {
+    backgroundColor: COLORS.green,
+  },
+  hireModalSubmitBtnText: {
     color: COLORS.white,
   },
 });

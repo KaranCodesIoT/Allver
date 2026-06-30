@@ -31,10 +31,23 @@ export default function NotificationBell({ size = 20, color = '#111827', style }
 
     if (user?._id) {
       try {
-        const response = await fetch(`${BACKEND_URL}/api/notifications/unread-count/${user._id}`);
-        const data = await response.json();
-        if (data.success) {
-          setUnreadCount(data.unreadCount || 0);
+        if (user.role === 'Labour') {
+          const response = await fetch(`${BACKEND_URL}/api/notifications/${user._id}`);
+          const data = await response.json();
+          if (data.success && data.notifications) {
+            const filtered = data.notifications.filter((n: any) => {
+              const isNewProject = n.text && (n.text.includes('New Project') || n.text.includes('New Project Posted'));
+              return !isNewProject;
+            });
+            const unread = filtered.filter((n: any) => !n.isRead).length;
+            setUnreadCount(unread);
+          }
+        } else {
+          const response = await fetch(`${BACKEND_URL}/api/notifications/unread-count/${user._id}`);
+          const data = await response.json();
+          if (data.success) {
+            setUnreadCount(data.unreadCount || 0);
+          }
         }
       } catch (error) {
         console.error('Error fetching unread count:', error);

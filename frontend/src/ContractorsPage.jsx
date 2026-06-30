@@ -139,7 +139,7 @@ const ContractorsPage = () => {
 
                     <div className="llc-stats">
                       <div className="llc-stat-item">
-                        <Building2 size={14} /> {prof.projects || Math.floor(Math.random() * 100 + 50)} Projects
+                        <Building2 size={14} /> {prof.projects || 0} Projects
                       </div>
                       <div className="llc-stat-item">
                         <Users size={14} /> {prof.followers || Math.floor(Math.random() * 300 + 100)} Followers

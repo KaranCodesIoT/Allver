@@ -10,11 +10,17 @@ const fs = require('fs');
 const crypto = require('crypto');
 require('dotenv').config();
 
+
+// Trim environment variables to prevent CRLF or whitespace issues on Windows / Render
+const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
+const apiKey = (process.env.CLOUDINARY_API_KEY || '').trim();
+const apiSecret = (process.env.CLOUDINARY_API_SECRET || '').trim();
+
 // Configure Cloudinary
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
+  cloud_name: cloudName,
+  api_key: apiKey,
+  api_secret: apiSecret
 });
 
 // Configure Multer memory storage
@@ -157,8 +163,24 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(async () => {
     console.log('MongoDB connected successfully');
     
-
-
+    try {
+      const User = require('./models/User');
+      const Post = mongoose.model('Post');
+      const fs = require('fs');
+      
+      const allUsers = await User.find({}, 'fullName email role');
+      const allDesigns = await Post.find({ type: 'design' }).populate('creator', 'fullName role');
+      
+      const output = {
+        users: allUsers,
+        designs: allDesigns.map(d => ({ id: d._id, title: d.title, creator: d.creator }))
+      };
+      fs.writeFileSync('db_contents.txt', JSON.stringify(output, null, 2));
+      console.log('--- DB CONTENTS WRITTEN TO db_contents.txt ---');
+    } catch (err) {
+      console.error('Error logging DB to file:', err);
+    }
+    
 
     // Seed mock recent activity notifications for all users if they have none
     try {
@@ -173,18 +195,21 @@ mongoose.connect(process.env.MONGODB_URI)
           if (u.role === 'Architect' || u.role === 'Contractor') {
             notifs.push({
               recipientId: u._id,
+              senderId: u._id,
               text: `Invitation to bid received for project "Modern Residential Villa"`,
               isRead: false,
               createdAt: new Date(Date.now() - 1000 * 60 * 30) // 30 mins ago
             });
             notifs.push({
               recipientId: u._id,
+              senderId: u._id,
               text: `Milestone 1 payment of ₹25,000 released successfully`,
               isRead: false,
               createdAt: new Date(Date.now() - 1000 * 60 * 60 * 4) // 4 hours ago
             });
             notifs.push({
               recipientId: u._id,
+              senderId: u._id,
               text: `Attendance marked successfully for today's shifts`,
               isRead: true,
               createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24) // 1 day ago
@@ -192,12 +217,14 @@ mongoose.connect(process.env.MONGODB_URI)
           } else if (u.role === 'Labour') {
             notifs.push({
               recipientId: u._id,
+              senderId: u._id,
               text: `Attendance marked present by Contractor Suraj Sharma`,
               isRead: false,
               createdAt: new Date(Date.now() - 1000 * 60 * 45) // 45 mins ago
             });
             notifs.push({
               recipientId: u._id,
+              senderId: u._id,
               text: `Daily wage payment of ₹800 credited to wallet`,
               isRead: false,
               createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6) // 6 hours ago
@@ -206,12 +233,14 @@ mongoose.connect(process.env.MONGODB_URI)
             // Client / default
             notifs.push({
               recipientId: u._id,
+              senderId: u._id,
               text: `Quotation updated by Ar. Rohit Chaudhari for project "Duplex Renovation"`,
               isRead: false,
               createdAt: new Date(Date.now() - 1000 * 60 * 15) // 15 mins ago
             });
             notifs.push({
               recipientId: u._id,
+              senderId: u._id,
               text: `Contract agreement signed and finalized successfully`,
               isRead: true,
               createdAt: new Date(Date.now() - 1000 * 60 * 60 * 12) // 12 hours ago
@@ -221,6 +250,7 @@ mongoose.connect(process.env.MONGODB_URI)
           // Welcome notification
           notifs.push({
             recipientId: u._id,
+            senderId: u._id,
             text: `Welcome to Allver! Start building, connecting, and growing.`,
             isRead: true,
             createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48) // 2 days ago
@@ -718,6 +748,32 @@ app.put('/api/user/profile/:id', async (req, res) => {
   }
 });
 
+// Save or Update User Expo Push Token
+app.post('/api/user/push-token', async (req, res) => {
+  try {
+    const { userId, token } = req.body;
+    if (!userId || !token) {
+      return res.status(400).json({ message: 'userId and token are required' });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: { expoPushToken: token } },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    console.log(`[Push Token] Saved for user ${updatedUser.fullName}: ${token}`);
+    res.status(200).json({ message: 'Push token updated successfully', user: updatedUser });
+  } catch (error) {
+    console.error('[Push Token] Error saving token:', error);
+    res.status(500).json({ message: 'Error saving push token: ' + error.message });
+  }
+});
+
 // Get all reviews/ratings for a user from all project workspaces
 app.get('/api/user/reviews/:userId', async (req, res) => {
   try {
@@ -1193,23 +1249,10 @@ app.get('/api/featured-professionals/:userId', async (req, res) => {
   }
 });
 
-// Cloudinary Image Upload Route (with local fallback)
-app.post('/api/upload', (req, res, next) => {
-  const logFile = path.join(uploadsDir, '../upload_debug.log');
-  try {
-    fs.appendFileSync(logFile, `[${new Date().toISOString()}] Incoming upload request. Headers: ${JSON.stringify(req.headers)}\n`);
-  } catch (err) {}
-  next();
-}, upload.single('image'), (req, res) => {
-  const logFile = path.join(uploadsDir, '../upload_debug.log');
-  try {
-    fs.appendFileSync(logFile, `[${new Date().toISOString()}] Multer finished. file: ${req.file ? JSON.stringify({ originalname: req.file.originalname, mimetype: req.file.mimetype, size: req.file.size }) : 'undefined'}\n`);
-  } catch (err) {}
 
+
+app.post('/api/upload', upload.single('image'), (req, res) => {
   if (!req.file) {
-    try {
-      fs.appendFileSync(logFile, `[${new Date().toISOString()}] Error: No file uploaded\n`);
-    } catch (err) {}
     return res.status(400).json({ message: 'No file uploaded' });
   }
 
@@ -1219,72 +1262,22 @@ app.post('/api/upload', (req, res, next) => {
     process.env.CLOUDINARY_API_KEY && 
     process.env.CLOUDINARY_API_SECRET;
 
-  const getExtensionFromMimeType = (mimetype, originalname) => {
-    if (mimetype === 'video/mp4') return '.mp4';
-    if (mimetype === 'video/quicktime') return '.mov';
-    if (mimetype === 'video/3gpp') return '.3gp';
-    if (mimetype === 'video/x-msvideo') return '.avi';
-    if (mimetype === 'image/png') return '.png';
-    if (mimetype === 'image/gif') return '.gif';
-    if (mimetype === 'image/webp') return '.webp';
-    if (mimetype === 'image/jpeg' || mimetype === 'image/jpg') return '.jpg';
-    
-    const ext = path.extname(originalname);
-    if (ext) return ext.toLowerCase();
-    
-    if (mimetype && mimetype.startsWith('video/')) return '.mp4';
-    return '.jpg';
-  };
-
-  const saveLocal = () => {
-    try {
-      const ext = getExtensionFromMimeType(req.file.mimetype, req.file.originalname);
-      const filename = `${crypto.randomBytes(16).toString('hex')}${ext}`;
-      const filePath = path.join(uploadsDir, filename);
-
-      fs.writeFileSync(filePath, req.file.buffer);
-      const host = req.get('host') || `localhost:${PORT}`;
-      const fileUrl = `${req.protocol}://${host}/uploads/${filename}`;
-      try {
-        fs.appendFileSync(logFile, `[${new Date().toISOString()}] saveLocal success: ${fileUrl}\n`);
-      } catch (e) {}
-      return res.status(200).json({ url: fileUrl });
-    } catch (err) {
-      console.error('Local upload fallback error:', err);
-      try {
-        fs.appendFileSync(logFile, `[${new Date().toISOString()}] saveLocal error: ${err.message}\n`);
-      } catch (e) {}
-      return res.status(500).json({ message: 'Image upload failed locally' });
-    }
-  };
-
-  if (isCloudinaryConfigured) {
-    try {
-      fs.appendFileSync(logFile, `[${new Date().toISOString()}] Cloudinary is configured. Starting stream...\n`);
-    } catch (e) {}
-    const uploadStream = cloudinary.uploader.upload_stream(
-      { folder: 'allverhq', resource_type: 'auto' },
-      (error, result) => {
-        if (error) {
-          console.error('Cloudinary upload error:', error);
-          try {
-            fs.appendFileSync(logFile, `[${new Date().toISOString()}] Cloudinary upload error: ${JSON.stringify(error)}. Falling back to local...\n`);
-          } catch (e) {}
-          return saveLocal();
-        }
-        try {
-          fs.appendFileSync(logFile, `[${new Date().toISOString()}] Cloudinary success: ${result.secure_url}\n`);
-        } catch (e) {}
-        return res.status(200).json({ url: result.secure_url });
-      }
-    );
-    uploadStream.end(req.file.buffer);
-  } else {
-    try {
-      fs.appendFileSync(logFile, `[${new Date().toISOString()}] Cloudinary NOT configured. Saving locally...\n`);
-    } catch (e) {}
-    return saveLocal();
+  if (!isCloudinaryConfigured) {
+    console.error('Cloudinary is not configured. Local fallback is disabled.');
+    return res.status(500).json({ message: 'Cloud storage is not configured.' });
   }
+
+  const uploadStream = cloudinary.uploader.upload_stream(
+    { folder: 'allverhq', resource_type: 'auto' },
+    (error, result) => {
+      if (error) {
+        console.error('Cloudinary upload error:', error);
+        return res.status(500).json({ message: 'Cloud upload failed: ' + error.message });
+      }
+      return res.status(200).json({ url: result.secure_url });
+    }
+  );
+  uploadStream.end(req.file.buffer);
 });
 
 // --- Contract Request and Project Workspace Endpoints ---
@@ -2010,27 +2003,43 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
 
       const io = req.app.get('io');
       for (const recipientId of members) {
-        const notification = new Notification({
-          recipientId,
-          senderId: sender,
-          text: notificationText
-        });
-        await notification.save();
-
+        let isRecipientInRoom = false;
         if (io) {
-          io.to(recipientId).emit('new_notification', {
-            _id: notification._id,
+          const roomSockets = io.sockets.adapter.rooms.get(id.toString());
+          if (roomSockets) {
+            for (const socketId of roomSockets) {
+              const sock = io.sockets.sockets.get(socketId);
+              if (sock && sock.userId === recipientId) {
+                isRecipientInRoom = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!isRecipientInRoom) {
+          const notification = new Notification({
             recipientId,
-            senderId: {
-              _id: senderUser._id,
-              fullName: senderUser.fullName,
-              avatarUrl: senderUser.avatarUrl,
-              role: senderUser.role
-            },
-            text: notification.text,
-            isRead: false,
-            createdAt: notification.createdAt
+            senderId: sender,
+            text: notificationText
           });
+          await notification.save();
+
+          if (io) {
+            io.to(recipientId).emit('new_notification', {
+              _id: notification._id,
+              recipientId,
+              senderId: {
+                _id: senderUser._id,
+                fullName: senderUser.fullName,
+                avatarUrl: senderUser.avatarUrl,
+                role: senderUser.role
+              },
+              text: notification.text,
+              isRead: false,
+              createdAt: notification.createdAt
+            });
+          }
         }
       }
     } catch (notifErr) {
@@ -3652,27 +3661,6 @@ app.post('/api/chat/upload', upload.single('file'), async (req, res) => {
     const mimeType = req.file.mimetype || 'application/octet-stream';
     const fileType = mimeType.startsWith('image/') ? 'image' : 'file';
 
-    // Local save fallback function
-    const saveLocal = () => {
-      try {
-        const ext = path.extname(req.file.originalname) || '.jpg';
-        const filename = `${crypto.randomBytes(16).toString('hex')}${ext}`;
-        const filePath = path.join(uploadsDir, filename);
-        fs.writeFileSync(filePath, req.file.buffer);
-        const host = req.get('host') || `localhost:${PORT}`;
-        const fileUrl = `${req.protocol}://${host}/uploads/${filename}`;
-        return res.status(200).json({
-          url: fileUrl,
-          name: req.file.originalname || `file_${Date.now()}`,
-          type: fileType,
-          size: req.file.size,
-        });
-      } catch (err) {
-        console.error('Local chat upload fallback error:', err);
-        return res.status(500).json({ message: 'Upload failed locally: ' + err.message });
-      }
-    };
-
     const isCloudinaryConfigured = 
       process.env.CLOUDINARY_CLOUD_NAME && 
       process.env.CLOUDINARY_CLOUD_NAME !== 'Root' &&
@@ -3680,8 +3668,8 @@ app.post('/api/chat/upload', upload.single('file'), async (req, res) => {
       process.env.CLOUDINARY_API_SECRET;
 
     if (!isCloudinaryConfigured) {
-      console.log('Cloudinary not configured for chat upload, saving locally...');
-      return saveLocal();
+      console.error('Cloudinary is not configured for chat upload.');
+      return res.status(500).json({ message: 'Cloud storage is not configured.' });
     }
 
     // Try Cloudinary upload
@@ -3708,8 +3696,8 @@ app.post('/api/chat/upload', upload.single('file'), async (req, res) => {
         size: req.file.size,
       });
     } catch (cloudErr) {
-      console.error('Cloudinary chat upload failed, falling back to local:', cloudErr.message);
-      return saveLocal();
+      console.error('Cloudinary chat upload failed:', cloudErr.message);
+      return res.status(500).json({ message: 'Cloud upload failed: ' + cloudErr.message });
     }
   } catch (error) {
     console.error('Chat upload error:', error);
@@ -3936,28 +3924,44 @@ app.post('/api/conversations/:conversationId/messages', async (req, res) => {
       conversation.participants.forEach(async (pId) => {
         const receiverId = pId.toString();
         if (receiverId !== senderId) {
-          const notification = new Notification({
-            recipientId: receiverId,
-            senderId: senderId,
-            text: notificationText
-          });
-          await notification.save();
-
           const io = req.app.get('io');
+          let isReceiverInRoom = false;
           if (io) {
-            io.to(receiverId).emit('new_notification', {
-              _id: notification._id,
+            const roomSockets = io.sockets.adapter.rooms.get(conversationId.toString());
+            if (roomSockets) {
+              for (const socketId of roomSockets) {
+                const sock = io.sockets.sockets.get(socketId);
+                if (sock && sock.userId === receiverId) {
+                  isReceiverInRoom = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (!isReceiverInRoom) {
+            const notification = new Notification({
               recipientId: receiverId,
-              senderId: {
-                _id: senderUser._id,
-                fullName: senderUser.fullName,
-                avatarUrl: senderUser.avatarUrl,
-                role: senderUser.role
-              },
-              text: notification.text,
-              isRead: false,
-              createdAt: notification.createdAt
+              senderId: senderId,
+              text: notificationText
             });
+            await notification.save();
+
+            if (io) {
+              io.to(receiverId).emit('new_notification', {
+                _id: notification._id,
+                recipientId: receiverId,
+                senderId: {
+                  _id: senderUser._id,
+                  fullName: senderUser.fullName,
+                  avatarUrl: senderUser.avatarUrl,
+                  role: senderUser.role
+                },
+                text: notification.text,
+                isRead: false,
+                createdAt: notification.createdAt
+              });
+            }
           }
         }
       });

@@ -3,8 +3,8 @@ import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimens
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import { BACKEND_URL } from '../constants/Config';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import NotificationBell from '../components/NotificationBell';
 
 const { width } = Dimensions.get('window');
@@ -21,72 +21,12 @@ const COLORS = {
 };
 
 // Mock data based on the user's second screenshot
-const ARCHITECTS_DATA = [
-  {
-    id: '60c72b2f9b1d8a2a4c8b0001',
-    name: 'Ar. Neha Sharma',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
-    coverImage: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-    rating: 4.8,
-    reviews: 124,
-    location: 'Mumbai, Maharashtra',
-    experience: '8+ Years',
-    specialization: 'Specializes in modern, sustainable and luxury architecture.',
-    projects: 128,
-    followers: 256,
-    firmName: 'Design Space Architects',
-    phone: '+91 98765 43210'
-  },
-  {
-    id: '60c72b2f9b1d8a2a4c8b0002',
-    name: 'Ar. Rohit Mehta',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-    coverImage: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
-    rating: 4.7,
-    reviews: 98,
-    location: 'Pune, Maharashtra',
-    experience: '10+ Years',
-    specialization: 'Expert in residential and commercial architecture.',
-    projects: 96,
-    followers: 189,
-    firmName: 'RM Design Studios',
-    phone: '+91 98765 43211'
-  },
-  {
-    id: '60c72b2f9b1d8a2a4c8b0003',
-    name: 'Ar. Priya Nair',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-    coverImage: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=800&q=80',
-    rating: 4.9,
-    reviews: 156,
-    location: 'Bengaluru, Karnataka',
-    experience: '7+ Years',
-    specialization: 'Specializes in interior architecture and space planning.',
-    projects: 156,
-    followers: 218,
-    firmName: 'Studio Priya Architects',
-    phone: '+91 98765 43212'
-  },
-  {
-    id: '60c72b2f9b1d8a2a4c8b0011',
-    name: 'Ar. Karan Patel',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80',
-    coverImage: 'https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=800&q=80',
-    rating: 4.6,
-    reviews: 72,
-    location: 'Hyderabad, Telangana',
-    experience: '6+ Years',
-    specialization: 'Focus on innovative and cost-effective designs.',
-    projects: 84,
-    followers: 132,
-    firmName: 'KP Architectural Group',
-    phone: '+91 98765 43213'
-  }
-];
+const ARCHITECTS_DATA: any[] = [];
 
 export default function ArchitectsScreen() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
+  const params = useLocalSearchParams();
+  const [searchQuery, setSearchQuery] = useState((params.searchQuery as string) || '');
   const [locationQuery, setLocationQuery] = useState('');
   const [ratingQuery, setRatingQuery] = useState('');
   const [architects, setArchitects] = useState<any[]>([]);
@@ -140,15 +80,15 @@ export default function ArchitectsScreen() {
       params: {
         id: architect._id,
         name: architect.fullName,
-        avatar: architect.avatarUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
-        coverImage: architect.cover || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
+        avatar: resolveAvatarUrl(architect.avatarUrl) || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
+        coverImage: resolveAvatarUrl(architect.cover) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
         rating: (architect.rating || 4.5).toString(),
         reviews: (architect.reviews || 0).toString(),
         location: architect.city,
         experience: architect.experience || 'Entry Level',
         specialization: Array.isArray(architect.specialization) ? architect.specialization.join(', ') : (architect.specialization || 'General Architecture'),
         projects: (architect.projects || 0).toString(),
-        followers: '150',
+        followers: (architect.followersCount || 0).toString(),
         firmName: architect.firmName || 'Independent Architect',
         phone: architect.phoneNumber || architect.whatsappNumber || ''
       }
@@ -225,9 +165,9 @@ export default function ArchitectsScreen() {
         ) : (
           <ScrollView bounces={true} contentContainerStyle={styles.scrollContent}>
             {filteredArchitects.map((item) => {
-              const avatar = item.avatarUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80';
+              const avatar = resolveAvatarUrl(item.avatarUrl) || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80';
               const specialization = Array.isArray(item.specialization) ? item.specialization.join(', ') : (item.specialization || 'General Architecture');
-              const followers = 150;
+              const followers = item.followersCount || 0;
               return (
                 <View key={item._id} style={styles.architectCard}>
                   <View style={styles.cardTopRow}>
@@ -271,7 +211,7 @@ export default function ArchitectsScreen() {
                     </View>
                     <View style={styles.statItem}>
                       <FontAwesome5 name="users" size={12} color={COLORS.textMuted} style={styles.statIcon} />
-                      <Text style={styles.statText}>{followers} Followers</Text>
+                      <Text style={styles.statText}>{followers} Networks</Text>
                     </View>
                   </View>
                 </View>

@@ -853,35 +853,69 @@ const ProjectDetailsPage = () => {
         <div className="pdb-image" style={{ backgroundImage: `url(${project.img})` }}>
           <div className="pdb-overlay" />
           <div className="pdb-content">
-            {isProjectMember ? (
-              <select
-                value={project.status}
-                onChange={(e) => handleStatusChange(e.target.value)}
-                className={`pdb-status ${project.status.toLowerCase().replace(' ', '-')}`}
-                style={{
-                  border: 'none',
-                  borderRadius: '1rem',
-                  padding: '0.25rem 0.75rem',
-                  fontSize: '0.75rem',
-                  fontWeight: 'bold',
-                  cursor: 'pointer',
-                  outline: 'none',
-                  boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
-                  display: 'inline-block',
-                  color: 'white',
-                  textTransform: 'uppercase',
-                  appearance: 'none',
-                  textAlign: 'center'
-                }}
-              >
-                <option value="Discussion" style={{ color: '#000', textTransform: 'none' }}>Discussion</option>
-                <option value="Active" style={{ color: '#000', textTransform: 'none' }}>Active</option>
-                <option value="Completed" style={{ color: '#000', textTransform: 'none' }}>Completed</option>
-              </select>
-            ) : (
+            {(project.status === 'Completed' || project.status === 'Cancelled') ? (
               <span className={`pdb-status ${project.status.toLowerCase().replace(' ', '-')}`}>
                 {project.status}
               </span>
+            ) : (
+              isProjectMember ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                  <select
+                    value={project.status}
+                    onChange={(e) => handleStatusChange(e.target.value)}
+                    className={`pdb-status ${project.status.toLowerCase().replace(' ', '-')}`}
+                    style={{
+                      border: 'none',
+                      borderRadius: '1rem',
+                      padding: '0.25rem 0.75rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 'bold',
+                      cursor: 'pointer',
+                      outline: 'none',
+                      boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+                      display: 'inline-block',
+                      color: 'white',
+                      textTransform: 'uppercase',
+                      appearance: 'none',
+                      textAlign: 'center',
+                      marginBottom: 0
+                    }}
+                  >
+                    <option value="Discussion" style={{ color: '#000', textTransform: 'none' }}>Discussion</option>
+                    <option value="Active" style={{ color: '#000', textTransform: 'none' }}>Active</option>
+                    <option value="Completed" style={{ color: '#000', textTransform: 'none' }}>Completed</option>
+                  </select>
+                  {isAssignedClient && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm("Are you sure you want to cancel this project due to inconvenience? This will put the project into read-only mode for all members and cannot be undone.")) {
+                          handleStatusChange('Cancelled');
+                        }
+                      }}
+                      style={{
+                        padding: '0.35rem 0.85rem',
+                        background: '#ef4444',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '2rem',
+                        fontSize: '0.75rem',
+                        fontWeight: '800',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        cursor: 'pointer',
+                        boxShadow: '0 4px 6px -1px rgba(239,68,68,0.3)',
+                        display: 'inline-block'
+                      }}
+                    >
+                      Cancel Project
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <span className={`pdb-status ${project.status.toLowerCase().replace(' ', '-')}`}>
+                  {project.status}
+                </span>
+              )
             )}
             <h1>{project.name}</h1>
             <p className="pdb-meta">
@@ -890,6 +924,26 @@ const ProjectDetailsPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Cancelled Banner */}
+      {project.status === 'Cancelled' && (
+        <div style={{
+          background: '#fef2f2',
+          color: '#b91c1c',
+          padding: '0.75rem 1.25rem',
+          border: '1px solid #fecaca',
+          borderRadius: '0.5rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: '0.85rem',
+          fontWeight: 'bold',
+          marginTop: '1.5rem',
+          marginBottom: '-0.5rem'
+        }}>
+          ❌ This project has been cancelled by the Client. All content and tabs are now read-only.
+        </div>
+      )}
 
       {/* Desktop Dashboard Area */}
       <div className="pd-dashboard-wrapper">
@@ -1611,7 +1665,7 @@ const ProjectDetailsPage = () => {
                 </div>
 
                 {/* Message input */}
-                {isProjectMember ? (
+                {isProjectMember && project.status !== 'Cancelled' ? (
                   <form className="chat-footer-input" onSubmit={handleSendMessage}>
                     <input 
                       type="text" 
@@ -1625,7 +1679,7 @@ const ProjectDetailsPage = () => {
                   </form>
                 ) : (
                   <div className="chat-footer-locked">
-                    <span>🔒 Chat is read-only for guests</span>
+                    <span>{project.status === 'Cancelled' ? '🚫 Project is cancelled. Chat is read-only.' : '🔒 Chat is read-only for guests'}</span>
                   </div>
                 )}
               </div>
