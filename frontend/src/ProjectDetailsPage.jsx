@@ -7,6 +7,7 @@ import {
   Layers, Grid, Droplet, Wrench, BellRing, Receipt, IndianRupee, X
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
+import { io } from 'socket.io-client';
 
 
 const ProjectDetailsPage = () => {
@@ -16,6 +17,90 @@ const ProjectDetailsPage = () => {
 
   // Tab State: 'updates' | 'payments' | 'chats'
   const [activeTab, setActiveTab] = useState('updates');
+
+  // Real contract request state (loaded when id is a MongoDB ObjectId)
+  const [liveRequest, setLiveRequest] = useState(null);
+  const [loadingRequest, setLoadingRequest] = useState(false);
+
+  const isMongoId = id && /^[a-f\d]{24}$/i.test(id);
+
+  // Detect current user and role
+  const currentUser = (() => {
+    try {
+      const u = localStorage.getItem('currentUser');
+      return u ? JSON.parse(u) : null;
+    } catch { return null; }
+  })();
+
+  // Live project workspace state
+  const [workspace, setWorkspace] = useState(null);
+  const workspaceRef = useRef(null);
+
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
+
+  // Fetch workspace and set up polling
+  useEffect(() => {
+    if (!isMongoId) return;
+    
+    const pollWorkspace = () => {
+      fetch(`http://localhost:5000/api/project-workspaces/request/${id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.workspace) {
+            setWorkspace(data.workspace);
+          }
+        })
+        .catch(err => console.error("Error polling workspace:", err));
+    };
+
+    pollWorkspace();
+    const interval = setInterval(pollWorkspace, 4000);
+    return () => clearInterval(interval);
+  }, [id, isMongoId]);
+
+  // Connect to Socket.IO and listen to live chat messages
+  useEffect(() => {
+    if (!currentUser) return;
+    const socket = io('http://localhost:5000', { transports: ['websocket'] });
+
+    socket.on('connect', () => {
+      socket.emit('join', { userId: currentUser._id });
+    });
+
+    socket.on('workspace_message_received', ({ workspaceId, workspace: updatedWorkspace }) => {
+      if (workspaceRef.current && workspaceRef.current._id === workspaceId) {
+        setWorkspace(updatedWorkspace);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!isMongoId) return;
+    setLoadingRequest(true);
+    fetch(`http://localhost:5000/api/contract-requests/user/${id}`)
+      .then(res => res.json())
+      .then(data => {
+        // Try fetching as a single request by checking all user requests
+        setLoadingRequest(false);
+      })
+      .catch(() => setLoadingRequest(false));
+
+    // Fetch the specific contract request directly
+    fetch(`http://localhost:5000/api/contract-requests/${id}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.contractRequest || data._id) {
+          setLiveRequest(data.contractRequest || data);
+        }
+      })
+      .catch(() => {});
+  }, [id, isMongoId]);
 
   // Load project meta
   const getProjectMeta = (projId) => {
@@ -49,6 +134,23 @@ const ProjectDetailsPage = () => {
     };
   };
 
+  // Build project display object: live data takes priority over mock
+  const project = liveRequest
+    ? {
+        name: liveRequest.title,
+        location: liveRequest.location,
+        status: 'In Progress',
+        year: liveRequest.startDate ? new Date(liveRequest.startDate).getFullYear() : 2026,
+        img: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
+        budget: liveRequest.budget,
+        clientName: liveRequest.client?.fullName,
+        professionalName: liveRequest.professional?.fullName || liveRequest.professional?.fullName,
+        projectType: liveRequest.projectType,
+        endDate: liveRequest.expectedCompletionDate,
+        description: liveRequest.description
+      }
+    : getProjectMeta(id);
+
   const getArchitectInfo = () => {
     const userStr = localStorage.getItem('currentUser');
     if (userStr) {
@@ -76,16 +178,9 @@ const ProjectDetailsPage = () => {
     };
   };
 
-  const project = getProjectMeta(id);
   const architect = getArchitectInfo();
 
-  // Detect current user and role
-  const currentUser = (() => {
-    try {
-      const u = localStorage.getItem('currentUser');
-      return u ? JSON.parse(u) : null;
-    } catch { return null; }
-  })();
+  // Detect current user and role (already declared above)
 
   const currentUserRole = currentUser?.role || null;
 
@@ -139,7 +234,7 @@ const ProjectDetailsPage = () => {
   const isAssignedArchitect = currentUser && currentUser.role === 'Architect' && projectMembers.architectId === currentUser._id;
   
   const isProjectMember = isAssignedContractor || isAssignedClient || isAssignedArchitect;
-  const canPostUpdates = isAssignedContractor || isAssignedClient;
+  const canPostUpdates = isAssignedContractor || isAssignedArchitect;
 
   // --- STATE PERSISTENCE KEYS ---
   const KEY_UPDATES = `allver_proj_upd_${id}`;
@@ -280,6 +375,29 @@ const ProjectDetailsPage = () => {
     ];
   });
 
+  const displayMessages = workspace
+    ? workspace.messages.map((msg, idx) => {
+        const senderIdVal = msg.sender?._id || msg.sender;
+        const isMe = currentUser && (senderIdVal === currentUser._id);
+        const formattedTime = new Date(msg.createdAt).toLocaleTimeString('en-IN', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        return {
+          id: msg._id || idx,
+          sender: isMe ? 'client' : 'architect',
+          name: msg.sender?.fullName || (isMe ? currentUser.fullName : 'Other'),
+          text: msg.text,
+          time: formattedTime,
+          type: 'text'
+        };
+      })
+    : chatMessages;
+
+  const otherParty = workspace
+    ? (currentUser?.role === 'Client' ? workspace.professional : workspace.client)
+    : null;
+
   // Sync to local storage
   useEffect(() => {
     localStorage.setItem(KEY_UPDATES, JSON.stringify(updates));
@@ -298,7 +416,7 @@ const ProjectDetailsPage = () => {
     if (activeTab === 'chats') {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [chatMessages, activeTab]);
+  }, [displayMessages, activeTab]);
 
   // --- STATE FOR INTERACTIVE INTERACTIONS ---
   // Updates State
@@ -658,7 +776,7 @@ const ProjectDetailsPage = () => {
   };
 
   // Send message
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     if (e) e.preventDefault();
     if (!isProjectMember) {
       alert("Only project members can send messages.");
@@ -666,49 +784,74 @@ const ProjectDetailsPage = () => {
     }
     if (!chatInput.trim()) return;
 
-    const senderName = currentUser ? `${currentUser.fullName} (${currentUser.role})` : 'Client';
-
-    const clientMsg = {
-      id: Date.now(),
-      sender: 'client', // Align user's own messages to the right side
-      name: senderName,
-      text: chatInput.trim(),
-      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-      type: 'text'
-    };
-
-    setChatMessages(prev => [...prev, clientMsg]);
-    const inputVal = chatInput.toLowerCase();
+    const textToSend = chatInput.trim();
     setChatInput('');
 
-    // Trigger architect reply
-    setIsTyping(true);
-    setTimeout(() => {
-      setIsTyping(false);
-      let replyText = "Understood! I will check on this and get back to you shortly.";
-      
-      if (inputVal.includes('payment') || inputVal.includes('pay') || inputVal.includes('money')) {
-        replyText = `Thank you! I will verify the payment sheet in our system and let you know if the ledger updates. Feel free to use the Payments tab to process milestones.`;
-      } else if (inputVal.includes('update') || inputVal.includes('photo') || inputVal.includes('progress') || inputVal.includes('image')) {
-        replyText = "Yes, I will ask our site engineer Amit to upload the latest pictures directly to the Project Updates timeline today.";
-      } else if (inputVal.includes('visit') || inputVal.includes('meeting') || inputVal.includes('meet')) {
-        replyText = "Sure, I am visiting the site on Wednesday at 11:30 AM. Let me know if that works for you, and we can discuss the material approvals on-site.";
-      } else if (inputVal.includes('drawing') || inputVal.includes('plan') || inputVal.includes('design')) {
-        replyText = "The revised floor plans and kitchen drawings are ready. I can send them via WhatsApp or upload them to the documents drive.";
-      }
-
-      setChatMessages(prev => [
-        ...prev,
-        {
-          id: Date.now() + 1,
-          sender: 'architect',
-          name: projectMembers.architectName || 'Neha (Architect)',
-          text: replyText,
-          time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-          type: 'text'
+    if (workspace) {
+      try {
+        const response = await fetch(`http://localhost:5000/api/project-workspaces/${workspace._id}/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            sender: currentUser._id,
+            text: textToSend
+          })
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setWorkspace(data.workspace);
+        } else {
+          alert(data.message || 'Failed to send message');
         }
-      ]);
-    }, 1500);
+      } catch (err) {
+        console.error("Error sending chat message:", err);
+      }
+    } else {
+      // Fallback to legacy mock chat
+      const senderName = currentUser ? `${currentUser.fullName} (${currentUser.role})` : 'Client';
+      const clientMsg = {
+        id: Date.now(),
+        sender: 'client',
+        name: senderName,
+        text: textToSend,
+        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        type: 'text'
+      };
+
+      setChatMessages(prev => [...prev, clientMsg]);
+
+      // Trigger architect reply
+      setIsTyping(true);
+      setTimeout(() => {
+        setIsTyping(false);
+        const inputVal = textToSend.toLowerCase();
+        let replyText = "Understood! I will check on this and get back to you shortly.";
+        
+        if (inputVal.includes('payment') || inputVal.includes('pay') || inputVal.includes('money')) {
+          replyText = `Thank you! I will verify the payment sheet in our system and let you know if the ledger updates. Feel free to use the Payments tab to process milestones.`;
+        } else if (inputVal.includes('update') || inputVal.includes('photo') || inputVal.includes('progress') || inputVal.includes('image')) {
+          replyText = "Yes, I will ask our site engineer Amit to upload the latest pictures directly to the Project Updates timeline today.";
+        } else if (inputVal.includes('visit') || inputVal.includes('meeting') || inputVal.includes('meet')) {
+          replyText = "Sure, I am visiting the site on Wednesday at 11:30 AM. Let me know if that works for you, and we can discuss the material approvals on-site.";
+        } else if (inputVal.includes('drawing') || inputVal.includes('plan') || inputVal.includes('design')) {
+          replyText = "The revised floor plans and kitchen drawings are ready. I can send them via WhatsApp or upload them to the documents drive.";
+        }
+
+        setChatMessages(prev => [
+          ...prev,
+          {
+            id: Date.now() + 1,
+            sender: 'architect',
+            name: projectMembers.architectName || 'Neha (Architect)',
+            text: replyText,
+            time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+            type: 'text'
+          }
+        ]);
+      }, 1500);
+    }
   };
 
   const handleReplyToChat = (upd) => {
@@ -747,6 +890,54 @@ const ProjectDetailsPage = () => {
     const matchesCategory = updateCategoryFilter === 'All' || upd.category === updateCategoryFilter;
     return matchesSearch && matchesCategory;
   });
+
+  if (liveRequest && liveRequest.status !== 'Accepted') {
+    return (
+      <DashboardLayout
+        pageTitle="Project Not Active"
+        pageSubtitle="Project Management Portal"
+        accentColor="#ef4444"
+      >
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '4rem 2rem',
+          textAlign: 'center',
+          background: 'white',
+          borderRadius: '1rem',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+          maxWidth: '600px',
+          margin: '2rem auto'
+        }}>
+          <AlertCircle size={48} style={{ color: '#ef4444', marginBottom: '1rem' }} />
+          <h2 style={{ fontSize: '1.5rem', fontWeight: '800', color: '#0f172a', margin: '0 0 0.5rem' }}>Access Denied / Project Not Active</h2>
+          <p style={{ color: '#64748b', fontSize: '0.95rem', lineHeight: '1.5', margin: '0 0 1.5rem' }}>
+            This project has a status of <strong style={{ color: '#ef4444' }}>{liveRequest.status}</strong>. Only accepted project requests are available as active project portals.
+          </p>
+          <button 
+            onClick={() => navigate('/')}
+            style={{
+              padding: '0.6rem 1.5rem',
+              background: '#f1f5f9',
+              color: '#334155',
+              border: 'none',
+              borderRadius: '0.5rem',
+              fontWeight: '700',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <ArrowLeft size={16} /> Back to Dashboard
+          </button>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout 
@@ -827,49 +1018,81 @@ const ProjectDetailsPage = () => {
                   <div className="feed-header-card">
                     <div className="feed-header-top">
                       <div className="title-area">
-                        <h2 className="project-title-label">2BHK Interior Project</h2>
-                        <span className="project-id-label">Project ID: PRJ12345</span>
+                        <h2 className="project-title-label">{project.name}</h2>
+                        <span className="project-id-label">Project ID: {isMongoId ? `PRJ-${id.slice(-6).toUpperCase()}` : 'PRJ12345'}</span>
                       </div>
                       <div className="status-area">
-                        <span className="status-badge-progress">In Progress</span>
+                        <span className="status-badge-progress">{project.status}</span>
                       </div>
                     </div>
 
-                    {/* Contractor profile card */}
-                    <div className="contractor-widget-row">
-                      <img 
-                        src={architect.avatarUrl} 
-                        alt="Architect" 
-                        className="contractor-avatar" 
-                      />
-                      <div className="contractor-info-block">
-                        <span className="role-lbl">Architect</span>
-                        <h3>{architect.fullName}</h3>
-                        <p className="rating-desc">⭐ {architect.rating} ({architect.reviews} Reviews)</p>
+                    {/* Professional profile card */}
+                    {liveRequest ? (
+                      <div className="contractor-widget-row">
+                        {liveRequest.professional?.avatarUrl ? (
+                          <img 
+                            src={liveRequest.professional.avatarUrl} 
+                            alt={project.professionalName} 
+                            className="contractor-avatar" 
+                            style={{ objectFit: 'cover' }}
+                          />
+                        ) : (
+                          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '1.2rem' }}>
+                            {(project.professionalName || 'P').charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="contractor-info-block">
+                          <span className="role-lbl">{liveRequest.professionalRole || liveRequest.professional?.role || 'Professional'}</span>
+                          <h3>{project.professionalName || 'Professional'}</h3>
+                          <p className="rating-desc">⭐ {liveRequest.professional?.rating || 4.8} ({liveRequest.professional?.reviews || 24} Reviews)</p>
+                        </div>
+                        <div className="contractor-actions-block">
+                          <button className="btn-widget-profile" onClick={() => navigate(`/architect/${liveRequest.professional?._id || liveRequest.professional}`)}>
+                            View Profile
+                          </button>
+                          {(liveRequest.professional?.phoneNumber || liveRequest.professional?.phone) && (
+                            <a href={`tel:${liveRequest.professional.phoneNumber || liveRequest.professional.phone}`} className="btn-widget-call" title="Call Professional">
+                              📞
+                            </a>
+                          )}
+                        </div>
                       </div>
-                      <div className="contractor-actions-block">
-                        <button className="btn-widget-profile" onClick={() => navigate('/profile')}>
-                          View Profile
-                        </button>
-                        <a href={`tel:${architect.phone}`} className="btn-widget-call" title="Call Architect">
-                          📞
-                        </a>
+                    ) : (
+                      <div className="contractor-widget-row">
+                        <img 
+                          src={architect.avatarUrl} 
+                          alt="Architect" 
+                          className="contractor-avatar" 
+                        />
+                        <div className="contractor-info-block">
+                          <span className="role-lbl">Architect</span>
+                          <h3>{architect.fullName}</h3>
+                          <p className="rating-desc">⭐ {architect.rating} ({architect.reviews} Reviews)</p>
+                        </div>
+                        <div className="contractor-actions-block">
+                          <button className="btn-widget-profile" onClick={() => navigate('/profile')}>
+                            View Profile
+                          </button>
+                          <a href={`tel:${architect.phone}`} className="btn-widget-call" title="Call Architect">
+                            📞
+                          </a>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Dates & Amount Summary Row */}
                     <div className="progress-dates-summary-row">
                       <div className="summary-date-box">
                         <span className="lbl">Start Date</span>
-                        <strong>10 Apr 2024</strong>
+                        <strong>{liveRequest && liveRequest.startDate ? new Date(liveRequest.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '10 Apr 2024'}</strong>
                       </div>
                       <div className="summary-date-box">
                         <span className="lbl">End Date (Est.)</span>
-                        <strong>10 Jul 2024</strong>
+                        <strong>{liveRequest && liveRequest.expectedCompletionDate ? new Date(liveRequest.expectedCompletionDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '10 Jul 2024'}</strong>
                       </div>
                       <div className="summary-date-box">
                         <span className="lbl">Total Amount</span>
-                        <strong className="amount-highlight">₹8,50,000</strong>
+                        <strong className="amount-highlight">{project.budget ? (project.budget.includes('₹') || project.budget.toLowerCase().includes('l') ? project.budget : `₹${project.budget}`) : '₹8,50,000'}</strong>
                       </div>
                     </div>
                   </div>
@@ -1050,23 +1273,36 @@ const ProjectDetailsPage = () => {
                 {/* Right Column: Actions Available Sidebar */}
                 <div className="pd-actions-sidebar">
                   
-                  {/* Project Members Widget */}
+                   {/* Project Members Widget */}
                   <div className="sidebar-section-card green-border">
                     <h3>Project Members</h3>
-                    <div className="member-list-mini">
-                      <div className="member-list-item">
-                        <span className="role">👷 Contractor:</span>
-                        <span className="name">{projectMembers.contractorName || 'Not Assigned'}</span>
+                    {liveRequest ? (
+                      <div className="member-list-mini">
+                        <div className="member-list-item">
+                          <span className="role">👤 Client:</span>
+                          <span className="name">{liveRequest.client?.fullName || 'Client'}</span>
+                        </div>
+                        <div className="member-list-item">
+                          <span className="role">📐 {liveRequest.professionalRole || liveRequest.professional?.role || 'Professional'}:</span>
+                          <span className="name">{project.professionalName || 'Professional'}</span>
+                        </div>
                       </div>
-                      <div className="member-list-item">
-                        <span className="role">👤 Client:</span>
-                        <span className="name">{projectMembers.clientName || 'Not Assigned'}</span>
+                    ) : (
+                      <div className="member-list-mini">
+                        <div className="member-list-item">
+                          <span className="role">👷 Contractor:</span>
+                          <span className="name">{projectMembers.contractorName || 'Not Assigned'}</span>
+                        </div>
+                        <div className="member-list-item">
+                          <span className="role">👤 Client:</span>
+                          <span className="name">{projectMembers.clientName || 'Not Assigned'}</span>
+                        </div>
+                        <div className="member-list-item">
+                          <span className="role">📐 Architect:</span>
+                          <span className="name">{projectMembers.architectName || 'Not Assigned'}</span>
+                        </div>
                       </div>
-                      <div className="member-list-item">
-                        <span className="role">📐 Architect:</span>
-                        <span className="name">{projectMembers.architectName || 'Not Assigned'}</span>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   <div className="sidebar-section-card purple-shadow">
@@ -1315,9 +1551,11 @@ const ProjectDetailsPage = () => {
               <div className="chat-members-sidebar">
                 <h3>Project Space</h3>
                 <div className="member-row active">
-                  <div className="member-avatar">NS</div>
+                  <div className="member-avatar">
+                    {otherParty ? otherParty.fullName.charAt(0).toUpperCase() : 'NS'}
+                  </div>
                   <div className="member-info">
-                    <strong>Neha Sharma (Architect)</strong>
+                    <strong>{otherParty ? `${otherParty.fullName} (${otherParty.role})` : 'Neha Sharma (Architect)'}</strong>
                     <span className="status-online">Online</span>
                   </div>
                 </div>
@@ -1349,7 +1587,7 @@ const ProjectDetailsPage = () => {
 
                 {/* Messages stream */}
                 <div className="chat-messages-stream">
-                  {chatMessages.map((msg) => (
+                  {displayMessages.map((msg) => (
                     <div key={msg.id} className={`message-bubble-row ${msg.sender}`}>
                       <div className="msg-avatar" style={msg.sender === 'client' ? { background: '#3b82f6' } : { background: '#10b981' }}>
                         {msg.name ? msg.name.charAt(0).toUpperCase() : 'U'}

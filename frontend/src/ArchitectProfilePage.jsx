@@ -124,7 +124,6 @@ const ArchitectProfilePage = () => {
   const [submitError, setSubmitError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Team states
   const [teamMembers, setTeamMembers] = useState([]);
   const [loadingTeam, setLoadingTeam] = useState(true);
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
@@ -135,6 +134,10 @@ const ArchitectProfilePage = () => {
   const [addingMember, setAddingMember] = useState(null); // memberId being added
   const [removingMember, setRemovingMember] = useState(null); // memberId being removed
   const [teamActionMsg, setTeamActionMsg] = useState('');
+
+  // Accepted contract requests (live projects from clients)
+  const [acceptedRequests, setAcceptedRequests] = useState([]);
+  const [loadingAcceptedReqs, setLoadingAcceptedReqs] = useState(false);
 
   const handleReviewImageUpload = async (e) => {
     const file = e.target.files[0];
@@ -355,6 +358,29 @@ const ArchitectProfilePage = () => {
         setLoadingTeam(false);
       });
 
+    // Fetch accepted contract requests for this user (live projects)
+    const fetchAcceptedRequests = () => {
+      fetch(`http://localhost:5000/api/contract-requests/user/${profileId}`)
+        .then(res => res.json())
+        .then(data => {
+          const accepted = (data.requests || []).filter(r => {
+            const profId = r.professional?._id || r.professional;
+            const clientId = r.client?._id || r.client;
+            return (profId?.toString() === profileId || clientId?.toString() === profileId) && r.status === 'Accepted';
+          });
+          setAcceptedRequests(accepted);
+          setLoadingAcceptedReqs(false);
+        })
+        .catch(err => {
+          console.error('Error loading accepted requests:', err);
+          setLoadingAcceptedReqs(false);
+        });
+    };
+
+    setLoadingAcceptedReqs(true);
+    fetchAcceptedRequests();
+    const interval = setInterval(fetchAcceptedRequests, 7000);
+
     if (profileId === currUser?._id) {
       setIsOwnProfile(true);
     }
@@ -391,6 +417,7 @@ const ArchitectProfilePage = () => {
         }
         setLoading(false);
       });
+    return () => clearInterval(interval);
   }, [id]);
 
   const getDefaultHireForm = (user) => ({
@@ -958,7 +985,17 @@ const ArchitectProfilePage = () => {
                       </a>
                     ) : null}
 
-                    <button className="pwbc-btn message-btn">
+                    <button 
+                      className="pwbc-btn message-btn"
+                      onClick={() => {
+                        if (!currentUser) {
+                          alert('Please login to send messages.');
+                          navigate('/login');
+                          return;
+                        }
+                        navigate('/', { state: { activeTab: 'chats', chatUser: profile } });
+                      }}
+                    >
                       <MessageCircle size={16} />
                       <span>Message</span>
                     </button>
@@ -1091,6 +1128,62 @@ const ArchitectProfilePage = () => {
             <div className="pw-tab-content-panel">
               {activeTab === 'projects' && (
                 <div className="tab-pane-fade">
+                  {/* Live accepted client projects */}
+                  {(acceptedRequests.length > 0 || loadingAcceptedReqs) && (
+                    <div style={{ marginBottom: '1.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem', padding: '0.6rem 0.85rem', background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', borderRadius: '0.6rem', border: '1px solid #bbf7d0' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: '800', color: '#15803d' }}>🟢 Active Projects</span>
+                        <span style={{ marginLeft: 'auto', background: '#10b981', color: 'white', fontSize: '0.65rem', fontWeight: '800', padding: '0.15rem 0.5rem', borderRadius: '1rem' }}>{acceptedRequests.length}</span>
+                      </div>
+                      <div className="tab-projects-list">
+                        {acceptedRequests.map(req => {
+                          const statusColor = accentColor;
+                          const isClient = profile.role === 'Client';
+                          const otherParty = isClient ? req.professional : req.client;
+                          const rolePrefix = otherParty?.role === 'Architect' ? 'Ar. ' : '';
+                          return (
+                            <div
+                              key={req._id}
+                              className="tab-project-row clickable-row"
+                              style={{ cursor: 'pointer', borderLeft: `3px solid ${statusColor}`, paddingLeft: '0.75rem', transition: 'all 0.15s' }}
+                              onClick={() => navigate(`/project/${req._id}`)}
+                              onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.transform = 'translateX(3px)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = ''; e.currentTarget.style.transform = ''; }}
+                            >
+                              <div style={{ width: '44px', height: '44px', borderRadius: '0.5rem', background: `linear-gradient(135deg, ${statusColor}22, ${statusColor}44)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '1.3rem' }}>
+                                🏗
+                              </div>
+                              <div className="tpr-details" style={{ flex: 1 }}>
+                                <div className="tpr-title-row">
+                                  <h3 style={{ fontSize: '0.92rem', fontWeight: '700', color: '#0f172a', margin: 0 }}>{req.title}</h3>
+                                  <span className="tpr-status-badge" style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', fontSize: '0.68rem', fontWeight: '800' }}>Active</span>
+                                </div>
+                                <p className="tpr-location-year" style={{ fontSize: '0.76rem', color: '#64748b', margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <MapPin size={11} /> {req.location}
+                                  <span className="sep">•</span>
+                                  {isClient ? 'Professional' : 'Client'}: <strong style={{ color: '#0f172a' }}>{rolePrefix}{otherParty?.fullName || 'N/A'}</strong>
+                                  <span className="sep">•</span>
+                                  Budget: <strong style={{ color: '#10b981' }}>{req.budget}</strong>
+                                </p>
+                              </div>
+                              <span style={{ color: '#94a3b8', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>Open →</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Portfolio projects divider */}
+                  {acceptedRequests.length > 0 && projectsList.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.85rem' }}>
+                      <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+                      <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: '700', whiteSpace: 'nowrap' }}>Portfolio Projects</span>
+                      <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+                    </div>
+                  )}
+
+                  {/* Portfolio projects */}
                   <div className="tab-projects-list">
                     {projectsList.map(proj => (
                       <div 
@@ -1116,7 +1209,6 @@ const ArchitectProfilePage = () => {
                           title="Save Project"
                           onClick={(e) => {
                             e.stopPropagation();
-                            // bookmark logic if any
                           }}
                         >
                           <Heart size={16} />
@@ -1853,6 +1945,51 @@ const ArchitectProfilePage = () => {
           </div>
         ) : (
           <div className="pw-right-column">
+            {/* Active Client Projects */}
+            {(acceptedRequests.length > 0 || loadingAcceptedReqs) && (
+              <div className="pw-section-card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem', padding: '0.6rem 0.85rem', background: 'linear-gradient(135deg, #f0fdf4, #dcfce7)', borderRadius: '0.6rem', border: '1px solid #bbf7d0' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: '800', color: '#15803d' }}>🟢 Active Projects</span>
+                  <span style={{ marginLeft: 'auto', background: '#10b981', color: 'white', fontSize: '0.65rem', fontWeight: '800', padding: '0.15rem 0.5rem', borderRadius: '1rem' }}>{acceptedRequests.length}</span>
+                </div>
+                <div className="tab-projects-list">
+                  {acceptedRequests.map(req => {
+                    const statusColor = accentColor;
+                    const otherParty = req.professional;
+                    const rolePrefix = otherParty?.role === 'Architect' ? 'Ar. ' : '';
+                    return (
+                      <div
+                        key={req._id}
+                        className="tab-project-row clickable-row"
+                        style={{ cursor: 'pointer', borderLeft: `3px solid ${statusColor}`, paddingLeft: '0.75rem', transition: 'all 0.15s' }}
+                        onClick={() => navigate(`/project/${req._id}`)}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.transform = 'translateX(3px)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = ''; e.currentTarget.style.transform = ''; }}
+                      >
+                        <div style={{ width: '44px', height: '44px', borderRadius: '0.5rem', background: `linear-gradient(135deg, ${statusColor}22, ${statusColor}44)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '1.3rem' }}>
+                          🏗
+                        </div>
+                        <div className="tpr-details" style={{ flex: 1 }}>
+                          <div className="tpr-title-row">
+                            <h3 style={{ fontSize: '0.92rem', fontWeight: '700', color: '#0f172a', margin: 0 }}>{req.title}</h3>
+                            <span className="tpr-status-badge" style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', fontSize: '0.68rem', fontWeight: '800' }}>Active</span>
+                          </div>
+                          <p className="tpr-location-year" style={{ fontSize: '0.76rem', color: '#64748b', margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <MapPin size={11} /> {req.location}
+                            <span className="sep">•</span>
+                            Professional: <strong style={{ color: '#0f172a' }}>{rolePrefix}{otherParty?.fullName || 'N/A'}</strong>
+                            <span className="sep">•</span>
+                            Budget: <strong style={{ color: '#10b981' }}>{req.budget}</strong>
+                          </p>
+                        </div>
+                        <span style={{ color: '#94a3b8', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '3px', flexShrink: 0 }}>Open →</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="pw-section-card" style={{ padding: '2rem', textAlign: 'center' }}>
               <Users size={48} style={{ color: accentColor, margin: '0 auto 1rem' }} />
               <h3>Client Account Dashboard</h3>
@@ -1862,7 +1999,7 @@ const ArchitectProfilePage = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1.5rem' }}>
                 <button className="pwbc-btn primary-hire-btn" style={{ width: '100%', justifyContent: 'center', background: accentColor }} onClick={() => navigate('/architects')}>
                   Browse Architects
-</button>
+                </button>
                 <button className="pwbc-btn message-btn" style={{ width: '100%', justifyContent: 'center' }} onClick={() => navigate('/contractors')}>
                   Browse Contractors
                 </button>

@@ -2289,6 +2289,8 @@ body {
 .password-toggle-eye {
   position: absolute;
   right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
   border: none;
   background: transparent;
   cursor: pointer;
@@ -2296,6 +2298,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 10;
+  pointer-events: auto;
 }
 
 .password-toggle-eye:hover {
@@ -9968,6 +9972,37 @@ body {
   margin: 0;
   line-height: 1.4;
   font-weight: 500;
+  flex: 1;
+}
+
+/* Post Design CTA button — Architect only */
+.post-design-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0.5rem 1.1rem;
+  background: linear-gradient(135deg, #016a3e, #10b981);
+  color: white;
+  border: none;
+  border-radius: 2rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(1, 106, 62, 0.3);
+  font-family: inherit;
+}
+
+.post-design-cta-btn:hover {
+  background: linear-gradient(135deg, #015533, #059669);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(1, 106, 62, 0.4);
+}
+
+.post-design-cta-btn:active {
+  transform: translateY(0);
 }
 
 .design-search-row {
@@ -10017,21 +10052,22 @@ body {
 .design-showcase-list {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.75rem;
 }
 
 .design-showcase-card {
   background: white;
   border-radius: 1rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #f1f5f9;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03), 0 2px 4px rgba(0, 0, 0, 0.01);
   cursor: pointer;
-  transition: transform 0.2s;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease;
 }
 
 .design-showcase-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.07), 0 4px 8px rgba(0, 0, 0, 0.02);
 }
 
 .design-card-img-wrapper {
@@ -10039,41 +10075,48 @@ body {
   aspect-ratio: 16/9;
   width: 100%;
   overflow: hidden;
-  background: #f1f5f9;
+  background: #f8fafc;
 }
 
 .design-card-img-wrapper img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 0.5s ease;
+}
+
+.design-showcase-card:hover .design-card-img-wrapper img {
+  transform: scale(1.02);
 }
 
 .design-card-img-indicator {
   position: absolute;
   bottom: 12px;
   right: 12px;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(15, 23, 42, 0.75);
   color: white;
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 3px 9px;
+  border-radius: 6px;
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.5px;
+  backdrop-filter: blur(4px);
 }
 
 .design-card-body {
-  padding: 1rem 1.25rem;
+  padding: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 .design-card-title-row h4 {
-  font-size: 1.05rem;
-  font-weight: 750;
+  font-size: 1.15rem;
+  font-weight: 800;
   color: #0f172a;
   margin: 0;
   line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
 .design-card-location {
@@ -10082,6 +10125,7 @@ body {
   gap: 4px;
   font-size: 0.82rem;
   color: #64748b;
+  margin-bottom: 0.6rem;
 }
 
 .design-card-location svg {
@@ -10092,32 +10136,41 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-top: 1px solid #f1f5f9;
-  padding-top: 0.75rem;
+  padding-top: 0.25rem;
   margin-top: 0.25rem;
 }
 
 .design-card-stats {
   display: flex;
-  gap: 1rem;
-  font-size: 0.82rem;
-  color: #64748b;
+  gap: 1.25rem;
+  align-items: center;
 }
 
 .design-card-stat {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   cursor: pointer;
   background: none;
   border: none;
   font-family: inherit;
-  font-weight: 500;
+  font-weight: 600;
   color: #64748b;
+  font-size: 0.85rem;
+  padding: 4px 0;
+  transition: color 0.2s;
+}
+
+.design-card-stat:hover {
+  color: #0f172a;
 }
 
 .design-card-stat.liked {
   color: #ef4444;
+}
+
+.design-card-stat.liked:hover {
+  color: #dc2626;
 }
 
 .design-card-author {
@@ -10129,28 +10182,34 @@ body {
 }
 
 .design-card-author img {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   object-fit: cover;
+  border: 1px solid #e2e8f0;
 }
 
 .design-card-author .name {
   font-weight: 700;
   color: #334155;
+  font-size: 0.85rem;
 }
 
 .design-card-author .rating {
   display: flex;
   align-items: center;
-  gap: 2px;
-  font-size: 0.8rem;
+  gap: 3px;
+  font-size: 0.85rem;
   font-weight: 700;
-  color: #0f172a;
+  color: #475569;
+  border-left: 1px solid #e2e8f0;
+  padding-left: 8px;
+  margin-left: 2px;
 }
 
 .design-card-author .rating svg {
   color: #f59e0b;
+  fill: #f59e0b;
 }
 
 /* ========== DESIGN DETAIL PAGE STYLING ========== */

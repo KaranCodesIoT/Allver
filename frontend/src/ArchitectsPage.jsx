@@ -17,106 +17,10 @@ const ArchitectsPage = () => {
   const [showRatingDrop, setShowRatingDrop] = useState(false);
 
   useEffect(() => {
-    // Fetch and seed if needed
     fetch('http://localhost:5000/api/professionals/Architect')
       .then(r => r.json())
-      .then(async (d) => {
-        let list = d.professionals || [];
-        // Seed if there are fewer than 4 architects
-        if (list.length < 4) {
-          console.log('Seeding designers...');
-          const seedData = [
-            {
-              fullName: 'Neha Sharma',
-              email: 'neha.sharma@example.com',
-              phoneNumber: '9876543212',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Mumbai, Maharashtra',
-              experience: '5+ Years',
-              shortDesc: 'Specializes in modern, minimal and luxury interior design.',
-              rating: 4.8,
-              reviews: 124,
-              projects: 128,
-              avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'
-            },
-            {
-              fullName: 'Rohit Mehta',
-              email: 'rohit.mehta@example.com',
-              phoneNumber: '9876543213',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Pune, Maharashtra',
-              experience: '7+ Years',
-              shortDesc: 'Expert in space planning, modular kitchen and smart homes.',
-              rating: 4.7,
-              reviews: 98,
-              projects: 96,
-              avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'
-            },
-            {
-              fullName: 'Priya Nair',
-              email: 'priya.nair@example.com',
-              phoneNumber: '9876543214',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Bengaluru, Karnataka',
-              experience: '6+ Years',
-              shortDesc: 'Specializes in contemporary and luxury apartment interiors.',
-              rating: 4.9,
-              reviews: 156,
-              projects: 156,
-              avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'
-            },
-            {
-              fullName: 'Karan Patel',
-              email: 'karan.patel@example.com',
-              phoneNumber: '9876543215',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Hyderabad, Telangana',
-              experience: '4+ Years',
-              shortDesc: 'Modern, minimalist and cost-effective design solutions.',
-              rating: 4.6,
-              reviews: 72,
-              projects: 72,
-              avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80'
-            }
-          ];
-
-          for (const item of seedData) {
-            const exists = list.some(u => u.email === item.email);
-            if (!exists) {
-              const regRes = await fetch('http://localhost:5000/api/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(item)
-              });
-              if (regRes.ok) {
-                const regData = await regRes.json();
-                await fetch(`http://localhost:5000/api/user/profile/${regData.user._id}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    rating: item.rating,
-                    reviews: item.reviews,
-                    projects: item.projects,
-                    experience: item.experience,
-                    shortDesc: item.shortDesc,
-                    avatarUrl: item.avatarUrl,
-                    firmName: item.fullName === 'Neha Sharma' ? 'Neha Sharma Designs' : 'Freelance Architect'
-                  })
-                });
-              }
-            }
-          }
-
-          const refetchRes = await fetch('http://localhost:5000/api/professionals/Architect');
-          const refetchData = await refetchRes.json();
-          setArchitects(refetchData.professionals || []);
-        } else {
-          setArchitects(list);
-        }
+      .then((d) => {
+        setArchitects(d.professionals || []);
         setLoading(false);
       })
       .catch(() => {

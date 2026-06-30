@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Compass, 
   HardHat, 
@@ -31,6 +31,12 @@ import {
   Wrench,
   Recycle,
   Leaf,
+  ClipboardList,
+  Clock,
+  DollarSign,
+  Eye,
+  CheckCircle,
+  XCircle,
 
   Phone,
   X,
@@ -48,9 +54,14 @@ import {
   ArrowLeft,
   ChevronUp,
   FileText,
-  Home as HomeIcon
+  Home as HomeIcon,
+  Plus,
+  PenLine,
+  Upload,
+  AlertTriangle
 } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { io } from 'socket.io-client';
 
 // Import Assets for Public Landing Page
 import welcomeHero from './assets/welcome_hero.png';
@@ -67,6 +78,16 @@ const Home = () => {
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState('home'); // 'home', 'feed', 'design', 'chats', 'profile', 'workspaces'
   const [stats, setStats] = useState(null);
+  const [chatLastInteracted, setChatLastInteracted] = useState({});
+
+  // Socket.IO ref and real-time chat state
+  const socketRef = useRef(null);
+  const [unreadCounts, setUnreadCounts] = useState({}); // { userId: number }
+  const [contactLastMessages, setContactLastMessages] = useState({}); // { userId: { text, createdAt, fromMe } }
+  const [allChatUsers, setAllChatUsers] = useState([]); // all registered users for discovery
+  const [chatContactsSearch, setChatContactsSearch] = useState('');
+  const [chatContactsFilter, setChatContactsFilter] = useState('All'); // 'All', 'Architect', 'Contractor', 'Labour', 'Client'
+  const messagesEndRef = useRef(null);
 
   // New contract requests / workspace states
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
@@ -79,6 +100,8 @@ const Home = () => {
   const [attName, setAttName] = useState('');
   const [attType, setAttType] = useState('file'); // 'file' or 'drawing'
   const [showAttModal, setShowAttModal] = useState(false);
+  // Project request detail modal
+  const [viewDetailRequest, setViewDetailRequest] = useState(null);
 
   // Post Project Modal States
   const [showPostProjectModal, setShowPostProjectModal] = useState(false);
@@ -226,15 +249,43 @@ const Home = () => {
     }, 4500);
   };
 
+  // Open a chat conversation: fetch history from DB + mark messages as read
+  const openChat = useCallback(async (user) => {
+    if (!currentUser || !user) return;
+    setActiveChatDesigner(user);
+    const otherIdStr = String(user._id);
+
+    // Mark messages from this user as read
+    if (socketRef.current) {
+      socketRef.current.emit('mark_read', { senderId: otherIdStr, receiverId: currentUser._id });
+    }
+    setUnreadCounts(prev => ({ ...prev, [otherIdStr]: 0 }));
+    setChatLastInteracted(prev => ({ ...prev, [otherIdStr]: Date.now() }));
+
+    // Fetch full message history from DB
+    try {
+      const res = await fetch(`http://localhost:5000/api/messages/${currentUser._id}/${otherIdStr}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDesignerChats(prev => ({ ...prev, [otherIdStr]: data.messages || [] }));
+      }
+    } catch (err) {
+      console.error('Error fetching message history:', err);
+    }
+  }, [currentUser]);
+
   useEffect(() => {
     if (location.state?.activeTab) {
       if (location.state.activeTab === 'profile') {
         navigate('/profile');
       } else {
         setActiveTab(location.state.activeTab);
+        if (location.state.activeTab === 'chats' && location.state.chatUser) {
+          openChat(location.state.chatUser);
+        }
       }
     }
-  }, [location.state, navigate]);
+  }, [location.state, navigate, openChat]);
 
   // Chats mock state
   const [activeChat, setActiveChat] = useState(0);
@@ -248,78 +299,22 @@ const Home = () => {
   const [showFullOverview, setShowFullOverview] = useState(false);
   const [followedAuthors, setFollowedAuthors] = useState({});
   const [hiredContractors, setHiredContractors] = useState({});
-  const [designsList, setDesignsList] = useState([
-    {
-      id: 'd1',
-      title: 'Modern 2BHK Apartment',
-      location: 'Mumbai, Maharashtra',
-      rating: 4.8,
-      reviewsCount: 124,
-      author: 'Neha Sharma',
-      authorRole: 'Architect',
-      authorEmail: 'neha.sharma@example.com',
-      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
-      mainImage: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-      images: [
-        'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=400&q=80'
-      ],
-      imgCount: '1/3',
-      likes: 128,
-      comments: 24,
-      saved: false,
-      hasLiked: false,
-      overview: 'A modern and minimal 2BHK apartment design with a perfect blend of comfort, functionality and aesthetics. Warm tones, natural light and smart space planning make this home truly beautiful.'
-    },
-    {
-      id: 'd2',
-      title: 'Modern Bedroom Design',
-      location: 'Pune, Maharashtra',
-      rating: 4.7,
-      reviewsCount: 98,
-      author: 'Rohit Mehta',
-      authorRole: 'Architect',
-      authorEmail: 'rohit.mehta@example.com',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-      mainImage: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
-      images: [
-        'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=400&q=80'
-      ],
-      imgCount: '1/4',
-      likes: 96,
-      comments: 18,
-      saved: false,
-      hasLiked: false,
-      overview: 'A contemporary bedroom layout maximizing vertical space and storage with premium materials, elegant light fixtures, and modern side tables.'
-    },
-    {
-      id: 'd3',
-      title: 'Minimal Kitchen Design',
-      location: 'Bengaluru, Karnataka',
-      rating: 4.9,
-      reviewsCount: 156,
-      author: 'Priya Nair',
-      authorRole: 'Architect',
-      authorEmail: 'priya.nair@example.com',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-      mainImage: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=800&q=80',
-      images: [
-        'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=400&q=80'
-      ],
-      imgCount: '1/3',
-      likes: 142,
-      comments: 32,
-      saved: false,
-      hasLiked: false,
-      overview: 'Sleek handle-less drawers, built-in kitchen appliances, and elegant marble countertops combine to create a clutter-free, premium cooking experience.'
-    }
-  ]);
+  const [designsList, setDesignsList] = useState([]);
+  const [designsLoading, setDesignsLoading] = useState(false);
+
+  // Post Design modal state
+  const [showPostDesignModal, setShowPostDesignModal] = useState(false);
+  const [postDesignForm, setPostDesignForm] = useState({
+    title: '',
+    location: '',
+    overview: '',
+    mainImage: '',
+    designType: 'Apartment',
+    priceRange: 'mid'
+  });
+  const [postDesignLoading, setPostDesignLoading] = useState(false);
+  const [imageUploadLoading, setImageUploadLoading] = useState(false);
+  const [postDesignError, setPostDesignError] = useState('');
 
   const handleLikeDesign = (designId, e) => {
     if (e) e.stopPropagation();
@@ -360,103 +355,27 @@ const Home = () => {
   const [designersSearch, setDesignersSearch] = useState('');
   const [designersRatingFilter, setDesignersRatingFilter] = useState('');
   const [showRatingFilterDrop, setShowRatingFilterDrop] = useState(false);
-  const [designerChats, setDesignerChats] = useState({
-    'neha.sharma@example.com': [
-      { sender: 'other', text: 'Hello! I specialize in modern, minimal and luxury interior design. How can I help you with your space today?', time: 'Yesterday' }
-    ],
-    'rohit.mehta@example.com': [
-      { sender: 'other', text: 'Hi there! I am an expert in space planning and smart home integration. Let me know if you have any questions!', time: '2 days ago' }
-    ],
-    'priya.nair@example.com': [
-      { sender: 'other', text: 'Greetings! I design contemporary apartment interiors. Feel free to share your project requirements.', time: '3 days ago' }
-    ],
-    'karan.patel@example.com': [
-      { sender: 'other', text: 'Hello! Let me know if you are looking for minimalist and cost-effective design solutions for your dream space.', time: '4 days ago' }
-    ]
-  });
+  const [designerChats, setDesignerChats] = useState({});
+
 
   const handleSendDesignerMessage = (e) => {
     e.preventDefault();
-    if (!chatMessage.trim() || !activeChatDesigner) return;
+    if (!chatMessage.trim() || !activeChatDesigner || !currentUser) return;
+    if (!socketRef.current) return;
 
-    const designerEmail = activeChatDesigner.email;
-    const userMsg = {
-      sender: 'me',
-      text: chatMessage,
-      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-    };
-
-    setDesignerChats(prev => {
-      const currentMsgs = prev[designerEmail] || [];
-      return {
-        ...prev,
-        [designerEmail]: [...currentMsgs, userMsg]
-      };
+    socketRef.current.emit('send_message', {
+      senderId: currentUser._id,
+      receiverId: activeChatDesigner._id,
+      text: chatMessage.trim()
     });
 
     setChatMessage('');
-
-    // Trigger mock response after 1 second
-    setTimeout(() => {
-      const replies = [
-        "That sounds like a wonderful project idea! I'd love to help you design it. Could you share the site layout or any initial inspiration photos?",
-        "Sure, I can certainly assist with that. Let's schedule a brief call or video meet to discuss your budget and design requirements in detail.",
-        "Perfect. I will review the details you provided and get back to you with some rough sketches and concepts soon!",
-        "Thanks for the details. Minimalist spaces require careful planning, and I am excited to collaborate on this with you."
-      ];
-      const randomReply = replies[Math.floor(Math.random() * replies.length)];
-      const systemReply = {
-        sender: 'other',
-        text: randomReply,
-        time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-      };
-
-      setDesignerChats(prev => {
-        const currentMsgs = prev[designerEmail] || [];
-        return {
-          ...prev,
-          [designerEmail]: [...currentMsgs, systemReply]
-        };
-      });
-    }, 1000);
   };
-  const [chatThreads, setChatThreads] = useState([
-    {
-      id: 1,
-      name: 'Rohan Mehta (Architect)',
-      avatar: 'RM',
-      lastMsg: 'I have updated the blueprint drafts for the duplex project.',
-      time: '10:30 AM',
-      messages: [
-        { sender: 'other', text: 'Hi, I received the site measurements. Let me start the layout drafting.', time: 'Yesterday' },
-        { sender: 'me', text: 'Sounds good! Keep the garden space in mind.', time: 'Yesterday' },
-        { sender: 'other', text: 'Yes, definitely. I have updated the blueprint drafts for the duplex project. Let me know when we can review them.', time: '10:30 AM' }
-      ]
-    },
-    {
-      id: 2,
-      name: 'Vikram Singh (Contractor)',
-      avatar: 'VS',
-      lastMsg: 'The cement supplies will arrive on site tomorrow morning.',
-      time: 'Yesterday',
-      messages: [
-        { sender: 'other', text: 'The excavators have completed the grading work.', time: '2 days ago' },
-        { sender: 'me', text: 'Excellent. When is the concrete pouring scheduled?', time: '2 days ago' },
-        { sender: 'other', text: 'The cement supplies will arrive on site tomorrow morning.', time: 'Yesterday' }
-      ]
-    },
-    {
-      id: 3,
-      name: 'Amit Kumar (Mason)',
-      avatar: 'AK',
-      lastMsg: 'I will be available for work from Monday next week.',
-      time: 'May 30',
-      messages: [
-        { sender: 'me', text: 'Hi Amit, do you have experience with slate tiling?', time: 'May 30' },
-        { sender: 'other', text: 'Yes, I have completed three slate tiling projects recently. I will be available for work from Monday next week.', time: 'May 30' }
-      ]
-    }
-  ]);
+
+  // Scroll to bottom when messages update
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [designerChats, activeChatDesigner]);
 
   // Fetch contract requests and workspaces
   const fetchNotificationsAndWorkspaces = async () => {
@@ -506,18 +425,19 @@ const Home = () => {
       const data = await response.json();
       if (response.ok) {
         setShowNotifDropdown(false);
+        setViewDetailRequest(null);
         await fetchNotificationsAndWorkspaces();
         
         if (status === 'Accepted' && data.workspace) {
           setActiveTab('workspaces');
           setSelectedWorkspace(data.workspace._id);
           fetchWorkspaceDetail(data.workspace._id);
-        } else {
-          alert(`Contract request ${status.toLowerCase()}!`);
         }
+        // No alert on reject - the card simply disappears from the list
       } else {
         alert(data.message || 'Failed to update request');
       }
+
     } catch (err) {
       console.error('Error updating request status:', err);
     }
@@ -688,9 +608,100 @@ const Home = () => {
       // Initial fetch and set interval polling for new hire requests/workspaces
       fetchNotificationsAndWorkspaces();
       const interval = setInterval(fetchNotificationsAndWorkspaces, 7000);
-      return () => clearInterval(interval);
+
+      // --- Socket.IO connection ---
+      const socket = io('http://localhost:5000', { transports: ['websocket'] });
+      socketRef.current = socket;
+
+      socket.on('connect', () => {
+        socket.emit('join', { userId: parsedUser._id });
+      });
+
+      // Real-time new message received
+      socket.on('new_message', (msg) => {
+        const myId = parsedUser._id;
+        const otherId = msg.senderId._id === myId ? msg.receiverId._id : msg.senderId._id;
+        const otherIdStr = String(otherId);
+        const isFromMe = String(msg.senderId._id) === myId;
+
+        // Update message list if this conversation is open
+        setDesignerChats(prev => {
+          const existing = prev[otherIdStr] || [];
+          // Avoid duplicate messages
+          const alreadyExists = existing.some(m => m._id && m._id === msg._id);
+          if (alreadyExists) return prev;
+          return { ...prev, [otherIdStr]: [...existing, msg] };
+        });
+
+        // Update last message preview
+        setContactLastMessages(prev => ({
+          ...prev,
+          [otherIdStr]: { text: msg.text, createdAt: msg.createdAt, fromMe: isFromMe }
+        }));
+
+        // Update sort order
+        setChatLastInteracted(prev => ({ ...prev, [otherIdStr]: new Date(msg.createdAt).getTime() }));
+
+        // Increment unread count only if the message is NOT from me and the conversation isn't currently open
+        if (!isFromMe) {
+          setUnreadCounts(prev => {
+            const current = prev[otherIdStr] || 0;
+            return { ...prev, [otherIdStr]: current + 1 };
+          });
+        }
+      });
+
+      // Messages were read by the other user (clear delivery indicator if needed)
+      socket.on('messages_read', ({ senderId, receiverId }) => {
+        // Currently used for future "read receipts" UI — no action needed yet
+      });
+
+      // Real-time request status updated
+      socket.on('request_status_updated', async ({ requestId, status, workspace }) => {
+        await fetchNotificationsAndWorkspaces();
+      });
+
+      // Real-time workspace message received
+      socket.on('workspace_message_received', ({ workspaceId, workspace }) => {
+        setWorkspaceDetail(prev => (prev && prev._id === workspaceId) ? workspace : prev);
+        setWorkspaces(prev => prev.map(w => w._id === workspaceId ? workspace : w));
+      });
+
+      // Fetch all registered users for contact discovery
+      fetch(`http://localhost:5000/api/all-users/${parsedUser._id}`)
+        .then(r => r.json())
+        .then(d => setAllChatUsers(d.users || []))
+        .catch(err => console.error('Error fetching all users:', err));
+
+      // Hydrate existing chat contacts with last messages + unread counts
+      fetch(`http://localhost:5000/api/chat-contacts/${parsedUser._id}`)
+        .then(r => r.json())
+        .then(d => {
+          const contacts = d.contacts || [];
+          const lastMsgs = {};
+          const unread = {};
+          const lastInteracted = {};
+          contacts.forEach(c => {
+            const uid = String(c.user._id);
+            if (c.lastMessage) {
+              lastMsgs[uid] = c.lastMessage;
+              lastInteracted[uid] = new Date(c.lastMessage.createdAt).getTime();
+            }
+            if (c.unreadCount > 0) unread[uid] = c.unreadCount;
+          });
+          setContactLastMessages(lastMsgs);
+          setUnreadCounts(unread);
+          setChatLastInteracted(lastInteracted);
+        })
+        .catch(err => console.error('Error hydrating chat contacts:', err));
+
+      return () => {
+        clearInterval(interval);
+        socket.disconnect();
+      };
     }
   }, []);
+
 
   useEffect(() => {
     fetch('http://localhost:5000/api/stats')
@@ -715,40 +726,10 @@ const Home = () => {
           setFeaturedPros(prev => ({ ...prev, Contractor: contData.professionals[0] }));
         }
 
-        // Fetch Labour - Auto-seed if none
+        // Fetch Labour
         const labourRes = await fetch('http://localhost:5000/api/professionals/Labour');
         const labourData = await labourRes.json();
-        if (!labourData.professionals || labourData.professionals.length === 0) {
-          const regRes = await fetch('http://localhost:5000/api/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fullName: 'Amit Kumar',
-              email: 'amit.kumar@example.com',
-              phoneNumber: '9876543211',
-              password: 'password123',
-              role: 'Labour',
-              city: 'Thane'
-            })
-          });
-          if (regRes.ok) {
-            const regData = await regRes.json();
-            const profUpdate = await fetch(`http://localhost:5000/api/user/profile/${regData.user._id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                skillType: 'Mason / Tiler',
-                experience: '8 Years',
-                availability: 'Available',
-                shortDesc: 'Specialized in premium stone work, floor tiling, and concrete masonry with 8 years of on-site experience.'
-              })
-            });
-            if (profUpdate.ok) {
-              const updatedData = await profUpdate.json();
-              setFeaturedPros(prev => ({ ...prev, Labour: updatedData.user }));
-            }
-          }
-        } else {
+        if (labourData.professionals && labourData.professionals.length > 0) {
           setFeaturedPros(prev => ({ ...prev, Labour: labourData.professionals[0] }));
         }
       } catch (err) {
@@ -760,102 +741,7 @@ const Home = () => {
       try {
         const res = await fetch('http://localhost:5000/api/professionals/Architect');
         const data = await res.json();
-        let list = data.professionals || [];
-        
-        // Seed if missing
-        if (list.length < 4) {
-          const seedData = [
-            {
-              fullName: 'Neha Sharma',
-              email: 'neha.sharma@example.com',
-              phoneNumber: '9876543212',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Mumbai, Maharashtra',
-              experience: '5+ Years',
-              shortDesc: 'Specializes in modern, minimal and luxury interior design.',
-              rating: 4.8,
-              reviews: 124,
-              projects: 128,
-              avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'
-            },
-            {
-              fullName: 'Rohit Mehta',
-              email: 'rohit.mehta@example.com',
-              phoneNumber: '9876543213',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Pune, Maharashtra',
-              experience: '7+ Years',
-              shortDesc: 'Expert in space planning, modular kitchen and smart homes.',
-              rating: 4.7,
-              reviews: 98,
-              projects: 96,
-              avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'
-            },
-            {
-              fullName: 'Priya Nair',
-              email: 'priya.nair@example.com',
-              phoneNumber: '9876543214',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Bengaluru, Karnataka',
-              experience: '6+ Years',
-              shortDesc: 'Specializes in contemporary and luxury apartment interiors.',
-              rating: 4.9,
-              reviews: 156,
-              projects: 156,
-              avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'
-            },
-            {
-              fullName: 'Karan Patel',
-              email: 'karan.patel@example.com',
-              phoneNumber: '9876543215',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Hyderabad, Telangana',
-              experience: '4+ Years',
-              shortDesc: 'Modern, minimalist and cost-effective design solutions.',
-              rating: 4.6,
-              reviews: 72,
-              projects: 72,
-              avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80'
-            }
-          ];
-
-          for (const item of seedData) {
-            const exists = list.some(u => u.email === item.email);
-            if (!exists) {
-              const regRes = await fetch('http://localhost:5000/api/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(item)
-              });
-              if (regRes.ok) {
-                const regData = await regRes.json();
-                await fetch(`http://localhost:5000/api/user/profile/${regData.user._id}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    rating: item.rating,
-                    reviews: item.reviews,
-                    projects: item.projects,
-                    experience: item.experience,
-                    shortDesc: item.shortDesc,
-                    avatarUrl: item.avatarUrl,
-                    firmName: item.fullName === 'Neha Sharma' ? 'Neha Sharma Designs' : 'Freelance Architect'
-                  })
-                });
-              }
-            }
-          }
-
-          const refetchRes = await fetch('http://localhost:5000/api/professionals/Architect');
-          const refetchData = await refetchRes.json();
-          setDesignersList(refetchData.professionals || []);
-        } else {
-          setDesignersList(list);
-        }
+        setDesignersList(data.professionals || []);
         setDesignersLoading(false);
       } catch (err) {
         console.error('Error fetching designers list:', err);
@@ -865,6 +751,41 @@ const Home = () => {
 
     fetchFeatured();
     fetchDesigners();
+
+    // Fetch designs from database
+    setDesignsLoading(true);
+    fetch('http://localhost:5000/api/designs')
+      .then(res => res.json())
+      .then(data => {
+        if (data.designs) {
+          const mapped = data.designs.map(d => ({
+            id: d._id,
+            title: d.title,
+            location: d.location,
+            overview: d.overview,
+            mainImage: d.mainImage || 'https://images.unsplash.com/photo-1567538096630-e0c55bd6374c?auto=format&fit=crop&w=600&q=80',
+            images: d.images || [],
+            imgCount: d.images?.length || 1,
+            author: d.author?.fullName || 'Architect',
+            authorId: d.author?._id,
+            avatarUrl: d.author?.avatarUrl || '',
+            rating: d.author?.rating || 4.5,
+            reviewsCount: d.author?.reviews || 0,
+            likes: d.likes,
+            comments: d.comments,
+            hasLiked: false,
+            saved: false,
+            designType: d.designType,
+            priceRange: d.priceRange
+          }));
+          setDesignsList(mapped);
+        }
+        setDesignsLoading(false);
+      })
+      .catch(err => {
+        console.error('Error fetching designs:', err);
+        setDesignsLoading(false);
+      });
   }, []);
 
   const handleLogout = () => {
@@ -923,6 +844,7 @@ const Home = () => {
               <Compass size={20} />
               <span>Design</span>
             </button>
+
             <button 
               className={`sidebar-nav-item ${activeTab === 'chats' ? 'active' : ''}`}
               onClick={() => setActiveTab('chats')}
@@ -930,13 +852,7 @@ const Home = () => {
               <MessageCircle size={20} />
               <span>Chats</span>
             </button>
-            <button 
-              className={`sidebar-nav-item ${activeTab === 'workspaces' ? 'active' : ''}`}
-              onClick={() => setActiveTab('workspaces')}
-            >
-              <Briefcase size={20} />
-              <span>Workspaces</span>
-            </button>
+
             <button 
               className={`sidebar-nav-item ${activeTab === 'profile' ? 'active' : ''}`}
               onClick={() => navigate('/profile')}
@@ -979,7 +895,9 @@ const Home = () => {
               >
                 <Bell size={20} />
                 {contractRequests.filter(r => r.status === 'Pending' && r.professional && r.professional._id === currentUser?._id).length > 0 && (
-                  <span className="badge" style={{ position: 'absolute', top: 0, right: 0, width: '8px', height: '8px', background: '#ef4444', borderRadius: '50%' }}></span>
+                  <span style={{ position: 'absolute', top: '-4px', right: '-4px', background: '#ef4444', color: 'white', fontSize: '0.6rem', fontWeight: '800', minWidth: '16px', height: '16px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '2px solid white', lineHeight: 1 }}>
+                    {contractRequests.filter(r => r.status === 'Pending' && r.professional && r.professional._id === currentUser?._id).length}
+                  </span>
                 )}
               </button>
 
@@ -988,79 +906,118 @@ const Home = () => {
                   position: 'absolute',
                   top: '100%',
                   right: 0,
-                  width: '340px',
+                  width: '360px',
                   background: 'white',
                   border: '1px solid #e2e8f0',
-                  borderRadius: '0.75rem',
-                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                  borderRadius: '1rem',
+                  boxShadow: '0 20px 40px rgba(0, 0, 0, 0.15)',
                   zIndex: 1000,
-                  maxHeight: '400px',
+                  maxHeight: '480px',
                   overflowY: 'auto',
                   marginTop: '0.5rem',
-                  padding: '0.5rem 0',
                   textAlign: 'left'
                 }}>
-                  <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid #f1f5f9', fontWeight: 'bold', fontSize: '0.9rem', color: '#0f172a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Notifications</span>
+                  {/* Header */}
+                  <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f1f5f9', fontWeight: '800', fontSize: '0.95rem', color: '#0f172a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: 'white', borderRadius: '1rem 1rem 0 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Bell size={16} style={{ color: '#f59e0b' }} />
+                      <span>Notifications</span>
+                    </div>
                     <button 
                       onClick={() => setShowNotifDropdown(false)}
-                      style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.75rem' }}
+                      style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', cursor: 'pointer' }}
                     >
-                      Close
+                      <X size={14} />
                     </button>
                   </div>
 
-                  {contractRequests.filter(r => (r.professional && r.professional._id === currentUser?._id && r.status === 'Pending') || (r.client && r.client._id === currentUser?._id)).length === 0 ? (
-                    <p style={{ textAlign: 'center', color: '#64748b', fontSize: '0.85rem', padding: '1.5rem', margin: 0 }}>No new notifications</p>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      {contractRequests.map(req => {
-                        const isProfessional = req.professional && req.professional._id === currentUser?._id;
-                        const isClient = req.client && req.client._id === currentUser?._id;
-                        
-                        if (isProfessional && req.status === 'Pending') {
-                          return (
-                            <div key={req._id} style={{ padding: '1rem', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                              <div style={{ fontSize: '0.85rem', color: '#1e293b', lineHeight: '1.4' }}>
-                                🔔 <strong>{req.client.fullName}</strong> wants to hire you.
-                              </div>
-                              <div style={{ background: '#f8fafc', padding: '0.5rem', borderRadius: '0.375rem', fontSize: '0.75rem', color: '#475569' }}>
-                                <div style={{ fontWeight: '600' }}>Project: {req.title}</div>
-                                <div>Location: {req.location}</div>
-                                <div>Budget: {req.budget}</div>
-                              </div>
-                              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.25rem' }}>
-                                <button 
-                                  onClick={() => handleRequestAction(req._id, 'Accepted')}
-                                  style={{ flex: 1, padding: '0.35rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer' }}
-                                >
-                                  Accept Discussion
-                                </button>
-                                <button 
-                                  onClick={() => handleRequestAction(req._id, 'Rejected')}
-                                  style={{ padding: '0.35rem 0.75rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer' }}
-                                >
-                                  Reject
-                                </button>
+                  {/* Pending requests for professionals */}
+                  {(() => {
+                    const pending = contractRequests.filter(r => r.professional && r.professional._id === currentUser?._id && r.status === 'Pending');
+                    const clientUpdates = contractRequests.filter(r => r.client && r.client._id === currentUser?._id && r.status !== 'Pending');
+                    
+                    if (pending.length === 0 && clientUpdates.length === 0) {
+                      return (
+                        <div style={{ textAlign: 'center', padding: '2.5rem 1rem' }}>
+                          <Bell size={36} style={{ color: '#e2e8f0', marginBottom: '0.75rem', display: 'block', margin: '0 auto 0.75rem' }} />
+                          <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: 0, fontWeight: '600' }}>No notifications yet</p>
+                          <p style={{ color: '#cbd5e1', fontSize: '0.78rem', margin: '4px 0 0' }}>You're all caught up!</p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        {/* Professionals: Show pending project requests with a prompt to view on Home */}
+                        {pending.length > 0 && (
+                          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', background: 'linear-gradient(135deg, #fef3c7, #fde68a)', padding: '0.75rem', borderRadius: '0.6rem', border: '1px solid #fde68a' }}>
+                              <ClipboardList size={18} style={{ color: '#d97706', flexShrink: 0 }} />
+                              <div>
+                                <div style={{ fontWeight: '800', fontSize: '0.88rem', color: '#92400e' }}>
+                                  {pending.length} New Project Request{pending.length > 1 ? 's' : ''}!
+                                </div>
+                                <div style={{ fontSize: '0.74rem', color: '#b45309' }}>
+                                  {pending.map(r => r.client?.fullName || 'A client').slice(0, 2).join(', ')}{pending.length > 2 ? ` +${pending.length - 2} more` : ''} sent you a request.
+                                </div>
                               </div>
                             </div>
-                          );
-                        } else if (isClient) {
+                            <button
+                              onClick={() => { setShowNotifDropdown(false); setActiveTab('home'); }}
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '0.6rem', background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.82rem', fontWeight: '800', cursor: 'pointer', boxShadow: '0 3px 10px rgba(245,158,11,0.3)' }}
+                            >
+                              <Eye size={14} /> View Requests on Home
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Client: Status updates */}
+                        {clientUpdates.map(req => {
+                          const isAccepted = req.status === 'Accepted';
+                          const statusColor = isAccepted ? '#10b981' : '#ef4444';
+                          const statusBg = isAccepted ? '#f0fdf4' : '#fef2f2';
+                          const statusBorder = isAccepted ? '#bbf7d0' : '#fecaca';
                           return (
-                            <div key={req._id} style={{ padding: '1rem', borderBottom: '1px solid #f1f5f9', fontSize: '0.82rem', color: '#475569' }}>
-                              <span>📢 <strong>{req.professional?.fullName}</strong> has <strong>{req.status.toLowerCase()}</strong> your contract request for <strong>{req.title}</strong>.</span>
-                              <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '4px' }}>
-                                {new Date(req.createdAt).toLocaleDateString()}
+                            <div key={req._id} style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f1f5f9' }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+                                <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: statusBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: `1px solid ${statusBorder}` }}>
+                                  {isAccepted ? <CheckCircle size={16} style={{ color: statusColor }} /> : <XCircle size={16} style={{ color: statusColor }} />}
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: '0.85rem', color: '#1e293b', lineHeight: '1.4', fontWeight: '600' }}>
+                                    <strong style={{ color: statusColor }}>{req.professional?.fullName || 'Professional'}</strong> {isAccepted ? 'accepted' : 'rejected'} your request
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                                    Project: <strong>{req.title}</strong>
+                                  </div>
+                                  <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '3px' }}>
+                                    {new Date(req.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  </div>
+                                </div>
+                                <span style={{ background: statusBg, color: statusColor, fontSize: '0.68rem', fontWeight: '800', padding: '0.2rem 0.5rem', borderRadius: '1rem', border: `1px solid ${statusBorder}`, flexShrink: 0 }}>
+                                  {req.status}
+                                </span>
                               </div>
+                              {isAccepted && (
+                                <button
+                                  onClick={() => {
+                                    setShowNotifDropdown(false);
+                                    setActiveTab('workspaces');
+                                  }}
+                                  style={{ marginTop: '0.6rem', width: '100%', padding: '0.45rem', background: '#eff6ff', color: '#3b82f6', border: '1px solid #bfdbfe', borderRadius: '0.4rem', fontSize: '0.78rem', fontWeight: '700', cursor: 'pointer' }}
+                                >
+                                  View Project Workspace →
+                                </button>
+                              )}
                             </div>
                           );
-                        }
-                        return null;
-                      })}
-                    </div>
-                  )}
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
+
 
               <div className="avatar" onClick={() => navigate('/profile')}>
                 {currentUser.fullName ? currentUser.fullName.charAt(0).toUpperCase() : 'U'}
@@ -1074,6 +1031,148 @@ const Home = () => {
             {/* HOME TAB - EXACTLY AS THE USER IMAGE 5 */}
             {activeTab === 'home' && (
               <div className="tab-pane home-tab">
+
+                {/* ─── PROJECT REQUESTS SECTION (Professional Only) ─── */}
+                {currentUser && ['Architect', 'Contractor', 'Labour'].includes(currentUser.role) && (() => {
+                  const pendingRequests = contractRequests.filter(
+                    r => r.professional && r.professional._id === currentUser._id && r.status === 'Pending'
+                  );
+                  if (pendingRequests.length === 0) return null;
+                  return (
+                    <section style={{ marginBottom: '2rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '38px', height: '38px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', borderRadius: '10px', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
+                          <ClipboardList size={20} color="white" />
+                        </div>
+                        <div>
+                          <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>Project Requests</h3>
+                          <p style={{ fontSize: '0.78rem', color: '#64748b', margin: 0 }}>{pendingRequests.length} pending request{pendingRequests.length !== 1 ? 's' : ''} awaiting your response</p>
+                        </div>
+                        <span style={{ marginLeft: 'auto', background: '#fef3c7', color: '#d97706', fontWeight: '800', fontSize: '0.82rem', padding: '0.3rem 0.85rem', borderRadius: '2rem', border: '1.5px solid #fde68a' }}>
+                          {pendingRequests.length} Pending
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.25rem' }}>
+                        {pendingRequests.map(req => {
+                          const client = req.client;
+                          const clientInitial = client?.fullName ? client.fullName.charAt(0).toUpperCase() : '?';
+                          const roleColor = { Architect: '#10b981', Contractor: '#3b82f6', Labour: '#f59e0b' }[currentUser.role] || '#6366f1';
+                          return (
+                            <div key={req._id} style={{
+                              background: 'white',
+                              borderRadius: '1rem',
+                              border: '1px solid #e2e8f0',
+                              boxShadow: '0 4px 20px rgba(0,0,0,0.06)',
+                              overflow: 'hidden',
+                              transition: 'box-shadow 0.2s, transform 0.2s',
+                              position: 'relative'
+                            }}
+                              onMouseEnter={e => { e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,0.12)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 4px 20px rgba(0,0,0,0.06)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                            >
+                              {/* Top accent bar */}
+                              <div style={{ height: '4px', background: `linear-gradient(90deg, ${roleColor}, ${roleColor}99)` }} />
+
+                              {/* NEW badge */}
+                              <div style={{ position: 'absolute', top: '16px', right: '16px', background: '#fef3c7', color: '#d97706', fontSize: '0.68rem', fontWeight: '800', padding: '0.2rem 0.6rem', borderRadius: '2rem', border: '1.5px solid #fde68a', letterSpacing: '0.5px' }}>NEW</div>
+
+                              <div style={{ padding: '1.25rem' }}>
+                                {/* Client info row */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                                  {client?.avatarUrl ? (
+                                    <img src={client.avatarUrl} alt={client.fullName} style={{ width: '46px', height: '46px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #f1f5f9' }} />
+                                  ) : (
+                                    <div style={{ width: '46px', height: '46px', borderRadius: '50%', background: `linear-gradient(135deg, ${roleColor}33, ${roleColor}66)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '1.2rem', color: roleColor, border: `2px solid ${roleColor}33`, flexShrink: 0 }}>
+                                      {clientInitial}
+                                    </div>
+                                  )}
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: '700', fontSize: '0.97rem', color: '#0f172a', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{client?.fullName || 'Client'}</div>
+                                    <div style={{ fontSize: '0.76rem', color: '#64748b' }}>{client?.city || client?.email || 'Client'}</div>
+                                  </div>
+                                  <div style={{ fontSize: '0.72rem', color: '#94a3b8', flexShrink: 0 }}>
+                                    <Clock size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '3px' }} />
+                                    {new Date(req.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                                  </div>
+                                </div>
+
+                                {/* Project Title */}
+                                <h4 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#0f172a', margin: '0 0 0.75rem', lineHeight: '1.3' }}>{req.title}</h4>
+
+                                {/* Key details grid */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.85rem' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.8rem', color: '#475569' }}>
+                                    <DollarSign size={13} style={{ color: '#10b981', flexShrink: 0 }} />
+                                    <span><strong style={{ color: '#0f172a' }}>Budget:</strong> {req.budget}</span>
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.8rem', color: '#475569' }}>
+                                    <Calendar size={13} style={{ color: '#3b82f6', flexShrink: 0 }} />
+                                    <span><strong style={{ color: '#0f172a' }}>Start:</strong> {req.startDate ? new Date(req.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'}</span>
+                                  </div>
+                                  {req.expectedCompletionDate && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.8rem', color: '#475569' }}>
+                                      <Calendar size={13} style={{ color: '#8b5cf6', flexShrink: 0 }} />
+                                      <span><strong style={{ color: '#0f172a' }}>End:</strong> {new Date(req.expectedCompletionDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })}</span>
+                                    </div>
+                                  )}
+                                  {(req.plotArea || req.builtUpArea || req.totalArea) && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.8rem', color: '#475569' }}>
+                                      <Building2 size={13} style={{ color: '#f59e0b', flexShrink: 0 }} />
+                                      <span><strong style={{ color: '#0f172a' }}>Area:</strong> {req.plotArea || req.builtUpArea || req.totalArea} sq.ft</span>
+                                    </div>
+                                  )}
+                                  {req.projectType && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.8rem', color: '#475569', gridColumn: req.plotArea || req.builtUpArea || req.totalArea ? 'auto' : '1 / -1' }}>
+                                      <Briefcase size={13} style={{ color: '#64748b', flexShrink: 0 }} />
+                                      <span><strong style={{ color: '#0f172a' }}>Type:</strong> {req.projectType}</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Description preview */}
+                                {req.description && (
+                                  <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 1rem', lineHeight: '1.5', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                    {req.description}
+                                  </p>
+                                )}
+
+                                {/* Action buttons */}
+                                <div style={{ display: 'flex', gap: '0.6rem' }}>
+                                  <button
+                                    onClick={() => setViewDetailRequest(req)}
+                                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '0.55rem', background: '#f8fafc', color: '#475569', border: '1.5px solid #e2e8f0', borderRadius: '0.6rem', fontSize: '0.82rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.15s' }}
+                                    onMouseEnter={e => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#e2e8f0'; }}
+                                  >
+                                    <Eye size={14} /> View Details
+                                  </button>
+                                  <button
+                                    onClick={() => handleRequestAction(req._id, 'Accepted')}
+                                    style={{ flex: 1.2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '0.55rem', background: 'linear-gradient(135deg, #10b981, #059669)', color: 'white', border: 'none', borderRadius: '0.6rem', fontSize: '0.82rem', fontWeight: '700', cursor: 'pointer', boxShadow: '0 3px 10px rgba(16,185,129,0.3)', transition: 'all 0.15s' }}
+                                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 5px 14px rgba(16,185,129,0.4)'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 3px 10px rgba(16,185,129,0.3)'; }}
+                                  >
+                                    <CheckCircle size={14} /> Accept
+                                  </button>
+                                  <button
+                                    onClick={() => handleRequestAction(req._id, 'Rejected')}
+                                    style={{ padding: '0.55rem 0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: '#fff1f2', color: '#ef4444', border: '1.5px solid #fecaca', borderRadius: '0.6rem', fontSize: '0.82rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.15s' }}
+                                    onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.borderColor = '#fca5a5'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = '#fff1f2'; e.currentTarget.style.borderColor = '#fecaca'; }}
+                                  >
+                                    <XCircle size={14} /> Reject
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })()}
+
                 {/* Welcome Card Banner */}
                 <div className="welcome-banner">
                   <div className="banner-left">
@@ -1818,6 +1917,17 @@ const Home = () => {
                       <p>
                         Good design is more than just looks – it's about comfort, function, and creating spaces that truly feel like home.
                       </p>
+                      {/* Post Design button — Architects only */}
+                      {currentUser?.role === 'Architect' && (
+                        <button
+                          id="post-design-btn"
+                          className="post-design-cta-btn"
+                          onClick={() => { setShowPostDesignModal(true); setPostDesignError(''); }}
+                        >
+                          <Plus size={16} />
+                          Post Design
+                        </button>
+                      )}
                     </div>
 
                     {/* Search & Price range select row */}
@@ -1901,8 +2011,10 @@ const Home = () => {
                                 </div>
 
                                 <div className="design-card-author">
-                                  <img src={d.avatarUrl} alt={d.author} />
-                                  <span className="name">{d.author}</span>
+                                  <img src={d.avatarUrl || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=100&q=80'} alt={d.author} />
+                                  <span className="name">
+                                    {d.author.startsWith('Ar.') ? d.author : `Ar. ${d.author}`}
+                                  </span>
                                   <div className="rating">
                                     <Star size={12} fill="#f59e0b" />
                                     <span>{d.rating}</span>
@@ -1913,6 +2025,15 @@ const Home = () => {
                           </div>
                         ))}
                     </div>
+
+                    {/* Empty state when no designs exist */}
+                    {!designsLoading && designsList.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#94a3b8' }}>
+                        <PenLine size={48} style={{ margin: '0 auto 1rem', display: 'block', color: '#cbd5e1' }} />
+                        <h3 style={{ fontSize: '1rem', fontWeight: '700', color: '#475569', marginBottom: '0.5rem' }}>No Designs Yet</h3>
+                        <p style={{ fontSize: '0.85rem' }}>Architects can post their first design using the "Post Design" button above.</p>
+                      </div>
+                    )}
 
                   </div>
                 ) : (
@@ -2246,7 +2367,230 @@ const Home = () => {
                     </div>
 
                   </div>
+                )}\r\n
+
+                {/* ====== POST DESIGN MODAL — Architect only ====== */}
+                {showPostDesignModal && (
+                  <div
+                    style={{
+                      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+                      zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      padding: '1rem'
+                    }}
+                    onClick={(e) => { if (e.target === e.currentTarget) setShowPostDesignModal(false); }}
+                  >
+                    <div style={{
+                      background: 'white', borderRadius: '1rem', padding: '2rem',
+                      width: '100%', maxWidth: '540px', boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+                      maxHeight: '90vh', overflowY: 'auto'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <div style={{ width: '40px', height: '40px', borderRadius: '0.6rem', background: 'linear-gradient(135deg, #016a3e, #10b981)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <PenLine size={18} color="white" />
+                          </div>
+                          <div>
+                            <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '800', color: '#0f172a' }}>Post a Design</h2>
+                            <p style={{ margin: 0, fontSize: '0.76rem', color: '#64748b' }}>Share your architectural work with clients</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setShowPostDesignModal(false)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '4px' }}
+                        >
+                          <X size={20} />
+                        </button>
+                      </div>
+
+                      {postDesignError && (
+                        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '0.5rem', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center', color: '#dc2626', fontSize: '0.85rem' }}>
+                          <AlertTriangle size={16} />
+                          {postDesignError}
+                        </div>
+                      )}
+
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!postDesignForm.title.trim() || !postDesignForm.location.trim()) {
+                            setPostDesignError('Title and Location are required.');
+                            return;
+                          }
+                          setPostDesignLoading(true);
+                          setPostDesignError('');
+                          try {
+                            const res = await fetch('http://localhost:5000/api/designs', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ authorId: currentUser._id, ...postDesignForm })
+                            });
+                            const data = await res.json();
+                            if (res.ok) {
+                              const d = data.design;
+                              setDesignsList(prev => [{
+                                id: d._id, title: d.title, location: d.location, overview: d.overview,
+                                mainImage: d.mainImage || 'https://images.unsplash.com/photo-1567538096630-e0c55bd6374c?auto=format&fit=crop&w=600&q=80',
+                                images: d.images || [], imgCount: d.images?.length || 1,
+                                author: d.author?.fullName || currentUser.fullName, authorId: d.author?._id,
+                                avatarUrl: d.author?.avatarUrl || '', rating: d.author?.rating || 4.5,
+                                reviewsCount: d.author?.reviews || 0, likes: 0, comments: 0,
+                                hasLiked: false, saved: false, designType: d.designType, priceRange: d.priceRange
+                              }, ...prev]);
+                              setShowPostDesignModal(false);
+                              setPostDesignForm({ title: '', location: '', overview: '', mainImage: '', designType: 'Apartment', priceRange: 'mid' });
+                            } else {
+                              setPostDesignError(data.message || 'Failed to post design.');
+                            }
+                          } catch (err) {
+                            setPostDesignError('Network error. Please try again.');
+                          } finally {
+                            setPostDesignLoading(false);
+                          }
+                        }}
+                      >
+                        <div style={{ marginBottom: '1rem' }}>
+                          <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#374151', marginBottom: '0.4rem' }}>Design Title *</label>
+                          <input type="text" placeholder="e.g. Modern 3BHK Apartment Design" value={postDesignForm.title}
+                            onChange={e => setPostDesignForm(p => ({ ...p, title: e.target.value }))} required
+                            style={{ width: '100%', padding: '0.65rem 0.85rem', border: '1.5px solid #e2e8f0', borderRadius: '0.5rem', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                        </div>
+                        <div style={{ marginBottom: '1rem' }}>
+                          <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#374151', marginBottom: '0.4rem' }}>Location *</label>
+                          <input type="text" placeholder="e.g. Mumbai, Maharashtra" value={postDesignForm.location}
+                            onChange={e => setPostDesignForm(p => ({ ...p, location: e.target.value }))} required
+                            style={{ width: '100%', padding: '0.65rem 0.85rem', border: '1.5px solid #e2e8f0', borderRadius: '0.5rem', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }} />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#374151', marginBottom: '0.4rem' }}>Design Type</label>
+                            <select value={postDesignForm.designType} onChange={e => setPostDesignForm(p => ({ ...p, designType: e.target.value }))}
+                              style={{ width: '100%', padding: '0.65rem 0.85rem', border: '1.5px solid #e2e8f0', borderRadius: '0.5rem', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', background: 'white' }}>
+                              {['Apartment', 'Bedroom', 'Kitchen', 'Living Room', 'Villa', 'Office', 'Other'].map(t => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#374151', marginBottom: '0.4rem' }}>Price Range</label>
+                            <select value={postDesignForm.priceRange} onChange={e => setPostDesignForm(p => ({ ...p, priceRange: e.target.value }))}
+                              style={{ width: '100%', padding: '0.65rem 0.85rem', border: '1.5px solid #e2e8f0', borderRadius: '0.5rem', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', background: 'white' }}>
+                              <option value="budget">Budget-Friendly</option>
+                              <option value="mid">Mid-Range</option>
+                              <option value="premium">Premium / Luxury</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div style={{ marginBottom: '1rem' }}>
+                          <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#374151', marginBottom: '0.4rem' }}>
+                            Cover Photo <span style={{ fontWeight: '400', color: '#94a3b8' }}>(optional)</span>
+                          </label>
+
+                          {/* Drop zone / file picker */}
+                          <label
+                            htmlFor="design-photo-upload"
+                            style={{
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                              gap: '0.5rem', padding: '1.25rem', border: `2px dashed ${postDesignForm.mainImage ? '#10b981' : '#cbd5e1'}`,
+                              borderRadius: '0.75rem', background: postDesignForm.mainImage ? '#f0fdf4' : '#f8fafc',
+                              cursor: imageUploadLoading ? 'not-allowed' : 'pointer', transition: 'all 0.2s',
+                              minHeight: postDesignForm.mainImage ? 'auto' : '100px'
+                            }}
+                          >
+                            {imageUploadLoading ? (
+                              <>
+                                <div style={{ width: '36px', height: '36px', border: '3px solid #e2e8f0', borderTop: '3px solid #10b981', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                                <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: '600' }}>Uploading photo...</span>
+                              </>
+                            ) : postDesignForm.mainImage ? (
+                              <>
+                                <img
+                                  src={postDesignForm.mainImage}
+                                  alt="Preview"
+                                  style={{ width: '100%', height: '160px', objectFit: 'cover', borderRadius: '0.5rem' }}
+                                />
+                                <span style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Upload size={13} /> Click to change photo
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <Image size={20} color="#94a3b8" />
+                                </div>
+                                <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#374151' }}>Click to upload photo</span>
+                                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>PNG, JPG, WEBP — max 5 MB</span>
+                              </>
+                            )}
+                            <input
+                              id="design-photo-upload"
+                              type="file"
+                              accept="image/*"
+                              style={{ display: 'none' }}
+                              disabled={imageUploadLoading}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                if (file.size > 5 * 1024 * 1024) {
+                                  setPostDesignError('Image must be under 5 MB.');
+                                  return;
+                                }
+                                setImageUploadLoading(true);
+                                setPostDesignError('');
+                                try {
+                                  const formData = new FormData();
+                                  formData.append('image', file);
+                                  const res = await fetch('http://localhost:5000/api/upload', {
+                                    method: 'POST',
+                                    body: formData
+                                  });
+                                  const data = await res.json();
+                                  if (res.ok && data.url) {
+                                    setPostDesignForm(p => ({ ...p, mainImage: data.url }));
+                                  } else {
+                                    setPostDesignError(data.message || 'Upload failed. Please try again.');
+                                  }
+                                } catch (err) {
+                                  setPostDesignError('Network error during upload.');
+                                } finally {
+                                  setImageUploadLoading(false);
+                                  e.target.value = '';
+                                }
+                              }}
+                            />
+                          </label>
+
+                          {/* Remove photo button */}
+                          {postDesignForm.mainImage && !imageUploadLoading && (
+                            <button
+                              type="button"
+                              onClick={() => setPostDesignForm(p => ({ ...p, mainImage: '' }))}
+                              style={{ marginTop: '0.4rem', background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '3px', fontFamily: 'inherit' }}
+                            >
+                              <X size={12} /> Remove photo
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ marginBottom: '1.5rem' }}>
+                          <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: '700', color: '#374151', marginBottom: '0.4rem' }}>Design Overview <span style={{ fontWeight: '400', color: '#94a3b8' }}>(optional)</span></label>
+                          <textarea rows={3} placeholder="Describe the design concept, materials, style and key features..."
+                            value={postDesignForm.overview} onChange={e => setPostDesignForm(p => ({ ...p, overview: e.target.value }))}
+                            style={{ width: '100%', padding: '0.65rem 0.85rem', border: '1.5px solid #e2e8f0', borderRadius: '0.5rem', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }} />
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.75rem' }}>
+                          <button type="button" onClick={() => setShowPostDesignModal(false)}
+                            style={{ flex: 1, padding: '0.75rem', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '0.6rem', fontWeight: '700', cursor: 'pointer', fontSize: '0.9rem', fontFamily: 'inherit' }}>
+                            Cancel
+                          </button>
+                          <button type="submit" disabled={postDesignLoading}
+                            style={{ flex: 2, padding: '0.75rem', background: postDesignLoading ? '#94a3b8' : 'linear-gradient(135deg, #016a3e, #10b981)', color: 'white', border: 'none', borderRadius: '0.6rem', fontWeight: '700', cursor: postDesignLoading ? 'not-allowed' : 'pointer', fontSize: '0.9rem', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                            {postDesignLoading ? 'Posting...' : (<><Upload size={16} /> Publish Design</>)}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
                 )}
+
               </div>
             )}
 
@@ -2257,171 +2601,206 @@ const Home = () => {
                   <div className="designer-page-container">
                     
                     {/* Welcome Card Banner */}
-                    <div className="designer-welcome-banner">
-                      <div className="designer-banner-icon">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                          <circle cx="9" cy="7" r="4" />
-                          <polygon points="19 11 20 13 22 13 20.5 14.5 21 16.5 19 15.5 17 16.5 17.5 14.5 16 13 18 13" fill="#10b981" />
-                        </svg>
+                    <div className="designer-welcome-banner" style={{ background: 'linear-gradient(135deg, #0f766e 0%, #115e59 100%)', color: 'white', padding: '1.5rem', borderRadius: '1rem', marginBottom: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                      <div className="designer-banner-icon" style={{ background: 'rgba(255,255,255,0.2)', padding: '0.75rem', borderRadius: '0.75rem' }}>
+                        <MessageCircle size={24} color="white" />
                       </div>
                       <div className="designer-banner-text">
-                        <h3>Find the right designer for your dream space.</h3>
-                        <p>Connect, discuss and get your perfect design.</p>
+                        <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '600' }}>Real-Time Conversations</h3>
+                        <p style={{ margin: '0.25rem 0 0', opacity: 0.9, fontSize: '0.85rem' }}>Connect, coordinate, and share updates instantly with anyone on Allver.</p>
                       </div>
                     </div>
 
                     {/* Search & Filter row */}
-                    <div className="designer-search-filter-row">
-                      <div className="designer-search-wrapper">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                      <div className="designer-search-wrapper" style={{ flex: 1 }}>
                         <Search size={18} className="designer-search-icon" />
                         <input 
                           type="text" 
                           className="designer-search-input"
-                          placeholder="Search designer name, location..." 
-                          value={designersSearch}
-                          onChange={e => setDesignersSearch(e.target.value)}
+                          placeholder="Search users by name, location..." 
+                          value={chatContactsSearch}
+                          onChange={e => setChatContactsSearch(e.target.value)}
                         />
                       </div>
-                      <button 
-                        className="designer-filter-btn"
-                        onClick={() => setShowRatingFilterDrop(!showRatingFilterDrop)}
-                      >
-                        <SlidersHorizontal size={16} />
-                        Filter
-                      </button>
                       
-                      {showRatingFilterDrop && (
-                        <div className="designer-rating-dropdown" style={{ right: 'auto', left: 'calc(100% - 140px)' }}>
-                          {['', '3', '3.5', '4', '4.5'].map(r => (
-                            <div 
-                              key={r} 
-                              className="designer-dropdown-item"
-                              onClick={() => { setDesignersRatingFilter(r); setShowRatingFilterDrop(false); }}
-                            >
-                              {r ? `${r}+ Stars` : 'All Ratings'}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      {/* Filter Pills */}
+                      <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
+                        {['All', 'Architect', 'Contractor', 'Labour', 'Client'].map(role => (
+                          <button
+                            key={role}
+                            onClick={() => setChatContactsFilter(role)}
+                            style={{
+                              padding: '0.4rem 1rem',
+                              borderRadius: '2rem',
+                              fontSize: '0.8rem',
+                              fontWeight: '600',
+                              border: '1px solid',
+                              borderColor: chatContactsFilter === role ? '#0f766e' : '#cbd5e1',
+                              background: chatContactsFilter === role ? '#0f766e' : 'white',
+                              color: chatContactsFilter === role ? 'white' : '#475569',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {role === 'All' ? 'All Chats' : role === 'Client' ? 'Clients' : `${role}s`}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
-                    {/* Designers list */}
-                    {designersLoading ? (
-                      <div style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>Loading designers...</div>
-                    ) : (
-                      <div className="designer-list-container">
-                        {designersList
-                          .filter(prof => {
-                            const nm = (prof.fullName || '').toLowerCase();
-                            const lc = (prof.city || prof.location || '').toLowerCase();
-                            const desc = (prof.shortDesc || '').toLowerCase();
-                            const ratingMatches = !designersRatingFilter || (prof.rating || 4.5) >= parseFloat(designersRatingFilter);
-                            const searchMatches = !designersSearch || 
-                              nm.includes(designersSearch.toLowerCase()) || 
-                              lc.includes(designersSearch.toLowerCase()) || 
-                              desc.includes(designersSearch.toLowerCase());
-                            return ratingMatches && searchMatches;
-                          })
-                          .map(prof => {
-                            const initials = (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-                            return (
-                              <div key={prof._id} className="designer-card">
-                                {/* Left Side: Photo & Info */}
-                                <div className="designer-card-left">
-                                  <div className="designer-avatar-wrapper">
-                                    {prof.avatarUrl ? (
-                                      <img 
-                                        src={prof.avatarUrl} 
-                                        alt={prof.fullName} 
-                                        className="designer-avatar"
-                                      />
-                                    ) : (
-                                      <div className="designer-avatar">
-                                        {initials}
-                                      </div>
-                                    )}
-                                    {/* Active Status Dot */}
-                                    <span className="designer-status-dot"></span>
-                                  </div>
+                    {/* Contacts list */}
+                    <div className="designer-list-container">
+                      {allChatUsers
+                        .filter(u => {
+                          const nameMatch = (u.fullName || '').toLowerCase().includes(chatContactsSearch.toLowerCase()) || 
+                                            (u.city || '').toLowerCase().includes(chatContactsSearch.toLowerCase());
+                          const roleMatch = chatContactsFilter === 'All' || u.role === chatContactsFilter;
+                          return nameMatch && roleMatch;
+                        })
+                        .sort((a, b) => {
+                          const timeA = chatLastInteracted[a._id] || 0;
+                          const timeB = chatLastInteracted[b._id] || 0;
+                          if (timeA !== timeB) {
+                            return timeB - timeA;
+                          }
+                          const hasMsgA = contactLastMessages[a._id] ? 1 : 0;
+                          const hasMsgB = contactLastMessages[b._id] ? 1 : 0;
+                          if (hasMsgB !== hasMsgA) {
+                            return hasMsgB - hasMsgA;
+                          }
+                          return (a.fullName || '').localeCompare(b.fullName || '');
+                        })
+                        .map(prof => {
+                          const initials = (prof.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+                          const lastMsg = contactLastMessages[prof._id];
+                          const unreadCount = unreadCounts[prof._id] || 0;
+                          const isUnread = unreadCount > 0;
+                          
+                          // Role colors
+                          const roleColorMap = {
+                            Architect: '#10b981',
+                            Contractor: '#3b82f6',
+                            Labour: '#f59e0b',
+                            Client: '#8b5cf6'
+                          };
+                          const roleColor = roleColorMap[prof.role] || '#64748b';
 
-                                  <div className="designer-details">
-                                    <div className="designer-name-row">
-                                      <strong className="designer-name">Ar. {prof.fullName}</strong>
-                                      <CheckCircle2 size={14} className="designer-verified-badge" />
-                                    </div>
-                                    
-                                    <div className="designer-rating-row">
-                                      <Star size={13} fill="#f59e0b" color="#f59e0b" />
-                                      <strong>{prof.rating || 4.8}</strong>
-                                      <span>({prof.reviews || 120} Reviews)</span>
-                                    </div>
+                          // Format time helper
+                          const formatTime = (dateStr) => {
+                            if (!dateStr) return '';
+                            const d = new Date(dateStr);
+                            const now = new Date();
+                            if (d.toDateString() === now.toDateString()) {
+                              return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                            }
+                            const yesterday = new Date(now);
+                            yesterday.setDate(now.getDate() - 1);
+                            if (d.toDateString() === yesterday.toDateString()) {
+                              return 'Yesterday';
+                            }
+                            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                          };
 
-                                    <div className="designer-location-row">
-                                      <MapPin size={13} />
-                                      <span>{prof.city || 'Mumbai, Maharashtra'}</span>
+                          return (
+                            <div 
+                              key={prof._id} 
+                              className="designer-card"
+                              onClick={() => openChat(prof)}
+                              style={{ 
+                                cursor: 'pointer',
+                                background: isUnread ? '#f0fdfa' : 'white',
+                                border: isUnread ? '1.5px solid #0f766e' : '1px solid #e2e8f0',
+                                transition: 'all 0.2s',
+                                padding: '1rem',
+                                borderRadius: '0.75rem',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: '1rem',
+                                marginBottom: '0.75rem'
+                              }}
+                              onMouseEnter={e => {
+                                e.currentTarget.style.transform = 'translateY(-2px)';
+                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
+                              }}
+                              onMouseLeave={e => {
+                                e.currentTarget.style.transform = 'none';
+                                e.currentTarget.style.boxShadow = 'none';
+                              }}
+                            >
+                              {/* Left Side: Photo & Info */}
+                              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flex: 1, minWidth: 0 }}>
+                                <div className="designer-avatar-wrapper" style={{ position: 'relative', flexShrink: 0 }}>
+                                  {prof.avatarUrl ? (
+                                    <img 
+                                      src={prof.avatarUrl} 
+                                      alt={prof.fullName} 
+                                      className="designer-avatar"
+                                      style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }}
+                                    />
+                                  ) : (
+                                    <div className="designer-avatar" style={{ width: '48px', height: '48px', borderRadius: '50%', background: roleColor, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1rem' }}>
+                                      {initials}
                                     </div>
-
-                                    <p className="designer-desc">
-                                      {prof.shortDesc || 'Specializes in modern, minimal and luxury interior design.'}
-                                    </p>
-
-                                    <div className="designer-stats-row">
-                                      <span className="designer-stat-item">
-                                        <Briefcase size={12} /> {prof.projects || 120} Projects
-                                      </span>
-                                      <span className="designer-stat-item">
-                                        <Image size={12} /> {prof.experience || '5+ Years'} Exp.
-                                      </span>
-                                    </div>
-                                  </div>
+                                  )}
+                                  <span className="designer-status-dot" style={{ position: 'absolute', bottom: '2px', right: '2px', width: '12px', height: '12px', background: '#22c55e', border: '2px solid white', borderRadius: '50%' }}></span>
                                 </div>
 
-                                {/* Right Side: Action Buttons */}
-                                <div className="designer-card-actions">
-                                  <button 
-                                    onClick={() => navigate(`/architect/${prof._id}`)}
-                                    className="designer-btn-primary"
-                                  >
-                                    View Profile
-                                  </button>
-                                  <button 
-                                    onClick={() => setActiveChatDesigner(prof)}
-                                    className="designer-btn-secondary"
-                                  >
-                                    <MessageSquare size={14} />
-                                    Chat
-                                  </button>
+                                <div className="designer-details" style={{ flex: 1, minWidth: 0 }}>
+                                  <div className="designer-name-row" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.2rem' }}>
+                                    <strong className="designer-name" style={{ fontSize: '1rem', color: '#0f172a' }}>
+                                      {prof.role === 'Architect' ? `Ar. ${prof.fullName}` : prof.fullName}
+                                    </strong>
+                                    {prof.rating >= 4.5 && <CheckCircle2 size={14} className="designer-verified-badge" style={{ color: '#10b981' }} />}
+                                    <span style={{ fontSize: '0.7rem', fontWeight: '600', padding: '0.15rem 0.4rem', borderRadius: '0.25rem', background: `${roleColor}15`, color: roleColor }}>
+                                      {prof.role}
+                                    </span>
+                                  </div>
+                                  
+                                  {/* Last Message Preview */}
+                                  {lastMsg ? (
+                                    <p style={{ margin: 0, fontSize: '0.85rem', color: isUnread ? '#0f172a' : '#64748b', fontWeight: isUnread ? '600' : '400', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {lastMsg.fromMe ? 'You: ' : ''}{lastMsg.text}
+                                    </p>
+                                  ) : (
+                                    <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>No messages yet</span>
+                                  )}
                                 </div>
                               </div>
-                            );
-                          })}
-                        {designersList.filter(prof => {
-                          const nm = (prof.fullName || '').toLowerCase();
-                          const lc = (prof.city || prof.location || '').toLowerCase();
-                          const desc = (prof.shortDesc || '').toLowerCase();
-                          const ratingMatches = !designersRatingFilter || (prof.rating || 4.5) >= parseFloat(designersRatingFilter);
-                          const searchMatches = !designersSearch || 
-                            nm.includes(designersSearch.toLowerCase()) || 
-                            lc.includes(designersSearch.toLowerCase()) || 
-                            desc.includes(designersSearch.toLowerCase());
-                          return ratingMatches && searchMatches;
-                        }).length === 0 && (
-                          <p style={{ textAlign: 'center', color: '#64748b', padding: '2rem 0' }}>No designers match your filters.</p>
-                        )}
-                      </div>
-                    )}
 
-                    {/* Verified Badge Footer */}
-                    <div className="designer-verified-footer">
-                      <ShieldCheck size={16} />
-                      <span>All designers are verified and reviewed by our community.</span>
+                              {/* Right Side: Timestamp & Badge */}
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.4rem', flexShrink: 0 }}>
+                                {lastMsg && (
+                                  <span style={{ fontSize: '0.75rem', color: isUnread ? '#0f766e' : '#94a3b8', fontWeight: isUnread ? '600' : '400' }}>
+                                    {formatTime(lastMsg.createdAt)}
+                                  </span>
+                                )}
+                                {isUnread && (
+                                  <div style={{ background: '#0f766e', color: 'white', fontSize: '0.75rem', fontWeight: 'bold', minWidth: '18px', height: '18px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
+                                    {unreadCount}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                      {allChatUsers.filter(u => {
+                        const nameMatch = (u.fullName || '').toLowerCase().includes(chatContactsSearch.toLowerCase()) || 
+                                          (u.city || '').toLowerCase().includes(chatContactsSearch.toLowerCase());
+                        const roleMatch = chatContactsFilter === 'All' || u.role === chatContactsFilter;
+                        return nameMatch && roleMatch;
+                      }).length === 0 && (
+                        <p style={{ textAlign: 'center', color: '#64748b', padding: '3rem 0' }}>No users matched your query or filter.</p>
+                      )}
                     </div>
 
                   </div>
                 ) : (
                   <div className="chat-window" style={{ maxWidth: '640px', margin: '0 auto', background: 'white', border: '1px solid #e2e8f0', borderRadius: '1rem', overflow: 'hidden' }}>
-                    <div className="chat-conversation-panel" style={{ display: 'flex', flexDirection: 'column', height: '550px' }}>
+                    <div className="chat-conversation-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                       <div className="panel-header" style={{ padding: '0.85rem 1.25rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <button 
@@ -2447,49 +2826,63 @@ const Home = () => {
                           </button>
                           <div style={{ width: '1px', height: '16px', background: '#e2e8f0' }}></div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div className="avatar-circle" style={{ width: '32px', height: '32px', fontSize: '0.9rem', backgroundColor: '#10b981', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                              {activeChatDesigner.fullName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                            <div className="avatar-circle" style={{ width: '32px', height: '32px', fontSize: '0.9rem', backgroundColor: activeChatDesigner.role === 'Architect' ? '#10b981' : activeChatDesigner.role === 'Contractor' ? '#3b82f6' : activeChatDesigner.role === 'Labour' ? '#f59e0b' : '#8b5cf6', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                              {(activeChatDesigner.fullName || 'U').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
                             </div>
                             <div>
-                              <strong style={{ display: 'block', fontSize: '0.95rem', color: '#0f172a' }}>Ar. {activeChatDesigner.fullName}</strong>
-                              <span style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: '600' }}>● Active Now</span>
+                              <strong style={{ display: 'block', fontSize: '0.95rem', color: '#0f172a' }}>
+                                {activeChatDesigner.role === 'Architect' ? `Ar. ${activeChatDesigner.fullName}` : activeChatDesigner.fullName}
+                              </strong>
+                              <span style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: '600' }}>● Connected</span>
                             </div>
                           </div>
                         </div>
-                        <button 
-                          onClick={() => navigate(`/architect/${activeChatDesigner._id}`)}
-                          style={{
-                            background: '#eff6ff',
-                            color: '#1e40af',
-                            border: 'none',
-                            padding: '0.4rem 0.85rem',
-                            borderRadius: '0.375rem',
-                            fontSize: '0.8rem',
-                            fontWeight: '600',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          View Profile
-                        </button>
+                        {activeChatDesigner.role !== 'Client' && (
+                          <button 
+                            onClick={() => {
+                              const route = activeChatDesigner.role === 'Architect' ? `/architect/${activeChatDesigner._id}` : activeChatDesigner.role === 'Contractor' ? `/contractor/${activeChatDesigner._id}` : `/labour/${activeChatDesigner._id}`;
+                              navigate(route);
+                            }}
+                            style={{
+                              background: '#eff6ff',
+                              color: '#1e40af',
+                              border: 'none',
+                              padding: '0.4rem 0.85rem',
+                              borderRadius: '0.375rem',
+                              fontSize: '0.8rem',
+                              fontWeight: '600',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            View Profile
+                          </button>
+                        )}
                       </div>
 
                       <div className="messages-area" style={{ flex: 1, padding: '1.25rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.85rem', background: '#f8fafc' }}>
-                        {(designerChats[activeChatDesigner.email] || []).map((msg, idx) => (
-                          <div key={idx} className={`message-bubble-wrapper ${msg.sender === 'me' ? 'me' : 'other'}`} style={{ display: 'flex', justifyContent: msg.sender === 'me' ? 'flex-end' : 'flex-start' }}>
-                            <div className="message-bubble" style={{
-                              maxWidth: '75%',
-                              padding: '0.75rem 1rem',
-                              borderRadius: msg.sender === 'me' ? '1rem 1rem 0 1rem' : '1rem 1rem 1rem 0',
-                              background: msg.sender === 'me' ? '#0f766e' : 'white',
-                              color: msg.sender === 'me' ? 'white' : '#1e293b',
-                              boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                              border: msg.sender === 'me' ? 'none' : '1px solid #e2e8f0'
-                            }}>
-                              <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: '1.4', wordBreak: 'break-word' }}>{msg.text}</p>
-                              <span className="msg-time" style={{ display: 'block', textAlign: 'right', fontSize: '0.7rem', color: msg.sender === 'me' ? '#cbd5e1' : '#94a3b8', marginTop: '4px' }}>{msg.time}</span>
+                        {(designerChats[activeChatDesigner._id] || []).map((msg, idx) => {
+                          const isFromMe = msg.senderId === currentUser._id || msg.senderId?._id === currentUser._id;
+                          const formattedTime = new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                          return (
+                            <div key={idx} className={`message-bubble-wrapper ${isFromMe ? 'me' : 'other'}`} style={{ display: 'flex', justifyContent: isFromMe ? 'flex-end' : 'flex-start' }}>
+                              <div className="message-bubble" style={{
+                                maxWidth: '75%',
+                                padding: '0.75rem 1rem',
+                                borderRadius: isFromMe ? '1rem 1rem 0 1rem' : '1rem 1rem 1rem 0',
+                                background: isFromMe ? '#0f766e' : 'white',
+                                color: isFromMe ? 'white' : '#1e293b',
+                                boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                                border: isFromMe ? 'none' : '1px solid #e2e8f0'
+                              }}>
+                                <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: '1.4', wordBreak: 'break-word' }}>{msg.text}</p>
+                                <span className="msg-time" style={{ display: 'block', textAlign: 'right', fontSize: '0.7rem', color: isFromMe ? '#cbd5e1' : '#94a3b8', marginTop: '4px' }}>
+                                  {formattedTime}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
+                        <div ref={messagesEndRef} />
                       </div>
 
                       <form onSubmit={handleSendDesignerMessage} className="message-input-form" style={{ padding: '0.85rem', borderTop: '1px solid #f1f5f9', display: 'flex', gap: '0.75rem', background: 'white' }}>
@@ -3147,6 +3540,160 @@ const Home = () => {
 
           </div>
         </main>
+
+        {/* ─── View Project Request Detail Modal ─── */}
+        {viewDetailRequest && (() => {
+          const req = viewDetailRequest;
+          const client = req.client;
+          const roleColor = { Architect: '#10b981', Contractor: '#3b82f6', Labour: '#f59e0b' }[currentUser?.role] || '#6366f1';
+          const clientInitial = client?.fullName ? client.fullName.charAt(0).toUpperCase() : '?';
+          return (
+            <div
+              onClick={() => setViewDetailRequest(null)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '1rem' }}
+            >
+              <div
+                onClick={e => e.stopPropagation()}
+                style={{ background: 'white', borderRadius: '1.25rem', width: '100%', maxWidth: '620px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 60px rgba(0,0,0,0.25)', position: 'relative' }}
+              >
+                {/* Color top bar */}
+                <div style={{ height: '5px', background: `linear-gradient(90deg, ${roleColor}, ${roleColor}88)`, borderRadius: '1.25rem 1.25rem 0 0' }} />
+
+                {/* Header */}
+                <div style={{ padding: '1.5rem 1.5rem 1rem', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                    {client?.avatarUrl ? (
+                      <img src={client.avatarUrl} alt={client.fullName} style={{ width: '52px', height: '52px', borderRadius: '50%', objectFit: 'cover', border: `3px solid ${roleColor}33` }} />
+                    ) : (
+                      <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: `linear-gradient(135deg, ${roleColor}33, ${roleColor}66)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '1.4rem', color: roleColor, border: `2px solid ${roleColor}33`, flexShrink: 0 }}>
+                        {clientInitial}
+                      </div>
+                    )}
+                    <div>
+                      <div style={{ fontWeight: '800', fontSize: '1.05rem', color: '#0f172a' }}>{client?.fullName || 'Client'}</div>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{client?.email || ''} {client?.city ? `• ${client.city}` : ''}</div>
+                      {client?.phoneNumber && <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>📞 {client.phoneNumber}</div>}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setViewDetailRequest(null)}
+                    style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '34px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, color: '#64748b' }}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  {/* Project Title & Type */}
+                  <div>
+                    <h2 style={{ fontSize: '1.3rem', fontWeight: '800', color: '#0f172a', margin: '0 0 0.35rem' }}>{req.title}</h2>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      {req.projectType && <span style={{ background: `${roleColor}15`, color: roleColor, fontSize: '0.75rem', fontWeight: '700', padding: '0.25rem 0.7rem', borderRadius: '2rem', border: `1px solid ${roleColor}33` }}>{req.projectType}</span>}
+                      {req.priority && req.priority !== 'Normal' && <span style={{ background: req.priority === 'High' ? '#fef3c7' : '#fef2f2', color: req.priority === 'High' ? '#d97706' : '#ef4444', fontSize: '0.75rem', fontWeight: '700', padding: '0.25rem 0.7rem', borderRadius: '2rem', border: `1px solid ${req.priority === 'High' ? '#fde68a' : '#fecaca'}` }}>⚡ {req.priority} Priority</span>}
+                    </div>
+                  </div>
+
+                  {/* Key Info Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', background: '#f8fafc', borderRadius: '0.75rem', padding: '1rem', border: '1px solid #e2e8f0' }}>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Budget</div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#10b981' }}>{req.budget || '—'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Location</div>
+                      <div style={{ fontSize: '0.9rem', fontWeight: '600', color: '#0f172a' }}>{req.location || '—'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Start Date</div>
+                      <div style={{ fontSize: '0.9rem', fontWeight: '600', color: '#0f172a' }}>{req.startDate ? new Date(req.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '3px' }}>Completion Date</div>
+                      <div style={{ fontSize: '0.9rem', fontWeight: '600', color: '#0f172a' }}>{req.expectedCompletionDate ? new Date(req.expectedCompletionDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</div>
+                    </div>
+                  </div>
+
+                  {/* Role-specific fields */}
+                  {(req.plotArea || req.builtUpArea || req.designRequirements || req.needSiteVisits !== undefined) && (
+                    <div style={{ background: '#f0fdf4', borderRadius: '0.75rem', padding: '1rem', border: '1px solid #bbf7d0' }}>
+                      <div style={{ fontSize: '0.78rem', color: '#16a34a', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.75rem' }}>🏛 Architect Specific Details</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.85rem' }}>
+                        {req.plotArea && <div><strong style={{ color: '#0f172a' }}>Plot Area:</strong> <span style={{ color: '#475569' }}>{req.plotArea} sq.ft</span></div>}
+                        {req.builtUpArea && <div><strong style={{ color: '#0f172a' }}>Built-up Area:</strong> <span style={{ color: '#475569' }}>{req.builtUpArea} sq.ft</span></div>}
+                        {req.designRequirements && <div style={{ gridColumn: '1 / -1' }}><strong style={{ color: '#0f172a' }}>Design Style:</strong> <span style={{ color: '#475569' }}>{req.designRequirements}</span></div>}
+                        {req.needSiteVisits !== undefined && <div><strong style={{ color: '#0f172a' }}>Site Visits:</strong> <span style={{ color: '#475569' }}>{req.needSiteVisits ? 'Required' : 'Not required'}</span></div>}
+                      </div>
+                    </div>
+                  )}
+
+                  {(req.constructionType || req.totalArea || req.materialResponsibility || req.estimatedProjectDuration) && (
+                    <div style={{ background: '#eff6ff', borderRadius: '0.75rem', padding: '1rem', border: '1px solid #bfdbfe' }}>
+                      <div style={{ fontSize: '0.78rem', color: '#2563eb', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.75rem' }}>🏗 Contractor Specific Details</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.85rem' }}>
+                        {req.constructionType && <div><strong style={{ color: '#0f172a' }}>Construction Type:</strong> <span style={{ color: '#475569' }}>{req.constructionType}</span></div>}
+                        {req.totalArea && <div><strong style={{ color: '#0f172a' }}>Total Area:</strong> <span style={{ color: '#475569' }}>{req.totalArea} sq.ft</span></div>}
+                        {req.materialResponsibility && <div><strong style={{ color: '#0f172a' }}>Materials By:</strong> <span style={{ color: '#475569' }}>{req.materialResponsibility}</span></div>}
+                        {req.estimatedProjectDuration && <div><strong style={{ color: '#0f172a' }}>Duration:</strong> <span style={{ color: '#475569' }}>{req.estimatedProjectDuration}</span></div>}
+                        {req.labourIncluded !== undefined && <div><strong style={{ color: '#0f172a' }}>Labour Included:</strong> <span style={{ color: '#475569' }}>{req.labourIncluded ? 'Yes' : 'No'}</span></div>}
+                      </div>
+                    </div>
+                  )}
+
+                  {(req.labourCategory || req.workingDuration || req.dailyMonthlyContract) && (
+                    <div style={{ background: '#fffbeb', borderRadius: '0.75rem', padding: '1rem', border: '1px solid #fde68a' }}>
+                      <div style={{ fontSize: '0.78rem', color: '#d97706', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.75rem' }}>👷 Labour Specific Details</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.85rem' }}>
+                        {req.labourCategory && <div><strong style={{ color: '#0f172a' }}>Labour Category:</strong> <span style={{ color: '#475569' }}>{req.labourCategory}</span></div>}
+                        {req.workingDuration && <div><strong style={{ color: '#0f172a' }}>Working Duration:</strong> <span style={{ color: '#475569' }}>{req.workingDuration}</span></div>}
+                        {req.dailyMonthlyContract && <div><strong style={{ color: '#0f172a' }}>Contract Type:</strong> <span style={{ color: '#475569' }}>{req.dailyMonthlyContract}</span></div>}
+                        {req.accommodationProvided !== undefined && <div><strong style={{ color: '#0f172a' }}>Accommodation:</strong> <span style={{ color: '#475569' }}>{req.accommodationProvided ? 'Provided' : 'Not provided'}</span></div>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  {req.description && (
+                    <div>
+                      <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.5rem' }}>Project Description</div>
+                      <p style={{ fontSize: '0.9rem', color: '#475569', lineHeight: '1.7', margin: 0, background: '#f8fafc', padding: '1rem', borderRadius: '0.6rem', border: '1px solid #e2e8f0' }}>{req.description}</p>
+                    </div>
+                  )}
+
+                  {/* Attachment */}
+                  {req.attachmentUrl && (
+                    <div>
+                      <div style={{ fontSize: '0.78rem', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '0.5rem' }}>Attachment</div>
+                      <a href={req.attachmentUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#3b82f6', fontSize: '0.85rem', fontWeight: '600', textDecoration: 'none', background: '#eff6ff', padding: '0.5rem 1rem', borderRadius: '0.5rem', border: '1px solid #bfdbfe' }}>
+                        📎 {req.attachmentName || 'View Attachment'}
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div style={{ display: 'flex', gap: '0.75rem', paddingTop: '0.5rem', borderTop: '1px solid #f1f5f9' }}>
+                    <button
+                      onClick={() => { handleRequestAction(req._id, 'Accepted'); setViewDetailRequest(null); }}
+                      style={{ flex: 1, padding: '0.75rem', background: 'linear-gradient(135deg, #10b981, #059669)', color: 'white', border: 'none', borderRadius: '0.75rem', fontSize: '0.95rem', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 15px rgba(16,185,129,0.3)', transition: 'all 0.15s' }}
+                      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(16,185,129,0.4)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 15px rgba(16,185,129,0.3)'; }}
+                    >
+                      <CheckCircle size={18} /> Accept Request
+                    </button>
+                    <button
+                      onClick={() => { handleRequestAction(req._id, 'Rejected'); setViewDetailRequest(null); }}
+                      style={{ padding: '0.75rem 1.5rem', background: '#fff1f2', color: '#ef4444', border: '2px solid #fecaca', borderRadius: '0.75rem', fontSize: '0.95rem', fontWeight: '800', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.15s' }}
+                      onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.borderColor = '#fca5a5'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = '#fff1f2'; e.currentTarget.style.borderColor = '#fecaca'; }}
+                    >
+                      <XCircle size={18} /> Reject
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Render Post a Project Modal */}
         {showPostProjectModal && (

@@ -1,4 +1,6 @@
 const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const multer = require('multer');
@@ -23,6 +25,13 @@ const upload = multer({
 });
 
 const app = express();
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  }
+});
 const PORT = process.env.PORT || 5000;
 
 // Ensure uploads folder exists
@@ -37,6 +46,10 @@ app.use('/uploads', express.static(uploadsDir));
 
 const User = require('./models/User');
 const Review = require('./models/Review');
+const Message = require('./models/Message');
+const ContractRequest = require('./models/ContractRequest');
+const ProjectWorkspace = require('./models/ProjectWorkspace');
+const Design = require('./models/Design');
 
 // Sample Data
 const platformStats = {
@@ -229,8 +242,6 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 
 // --- Contract Request and Project Workspace Endpoints ---
 
-const ContractRequest = require('./models/ContractRequest');
-const ProjectWorkspace = require('./models/ProjectWorkspace');
 const Notification = require('./models/Notification');
 
 // Active Server-Sent Events client streams
@@ -383,8 +394,26 @@ app.get('/api/contract-requests/user/:userId', async (req, res) => {
   }
 });
 
+// 2b. Get a single contract request by ID
+app.get('/api/contract-requests/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const request = await ContractRequest.findById(id)
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl');
+    if (!request) {
+      return res.status(404).json({ message: 'Contract request not found' });
+    }
+    res.status(200).json({ contractRequest: request });
+  } catch (error) {
+    console.error('Error fetching contract request:', error);
+    res.status(500).json({ message: 'Error fetching contract request: ' + error.message });
+  }
+});
+
 // 3. Accept or Reject a contract request
 app.put('/api/contract-requests/:id/status', async (req, res) => {
+
   try {
     const { id } = req.params;
     const { status } = req.body; // 'Accepted' or 'Rejected'
@@ -482,6 +511,18 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
       contractRequest: request
     });
 
+    // Emit real-time status update to client and professional private rooms via Socket.IO
+    io.to(`user:${request.client}`).emit('request_status_updated', {
+      requestId: id,
+      status,
+      workspace
+    });
+    io.to(`user:${request.professional}`).emit('request_status_updated', {
+      requestId: id,
+      status,
+      workspace
+    });
+
     res.status(200).json({ 
       message: `Contract request ${status.toLowerCase()} successfully`, 
       contractRequest: request,
@@ -501,14 +542,43 @@ app.get('/api/project-workspaces/user/:userId', async (req, res) => {
     const workspaces = await ProjectWorkspace.find({
       $or: [{ client: userId }, { professional: userId }]
     })
+    .populate('contractRequest')
     .populate('client', 'fullName email phoneNumber role city avatarUrl')
     .populate('professional', 'fullName email phoneNumber role city avatarUrl')
     .sort({ createdAt: -1 });
 
-    res.status(200).json({ workspaces });
+    // Only return workspaces that are Accepted
+    const activeWorkspaces = workspaces.filter(ws => {
+      return !ws.contractRequest || ws.contractRequest.status === 'Accepted';
+    });
+
+    res.status(200).json({ workspaces: activeWorkspaces });
   } catch (error) {
     console.error('Error fetching workspaces:', error);
     res.status(500).json({ message: 'Error fetching workspaces: ' + error.message });
+  }
+});
+
+// Get workspace by contractRequest ID
+app.get('/api/project-workspaces/request/:requestId', async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const workspace = await ProjectWorkspace.findOne({ contractRequest: requestId })
+      .populate('client', 'fullName email phoneNumber role city avatarUrl')
+      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
+      .populate({
+        path: 'messages.sender',
+        select: 'fullName email role avatarUrl'
+      });
+
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found' });
+    }
+
+    res.status(200).json({ workspace });
+  } catch (error) {
+    console.error('Error fetching workspace by request ID:', error);
+    res.status(500).json({ message: 'Error fetching workspace: ' + error.message });
   }
 });
 
@@ -578,6 +648,14 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
         select: 'fullName email role'
       });
 
+    // Emit real-time workspace message via Socket.IO
+    const ioEventData = {
+      workspaceId: id,
+      workspace: updatedWorkspace
+    };
+    io.to(`user:${updatedWorkspace.client._id || updatedWorkspace.client}`).emit('workspace_message_received', ioEventData);
+    io.to(`user:${updatedWorkspace.professional._id || updatedWorkspace.professional}`).emit('workspace_message_received', ioEventData);
+
     res.status(201).json({ message: 'Message sent successfully', workspace: updatedWorkspace });
   } catch (error) {
     console.error('Error sending message:', error);
@@ -629,6 +707,14 @@ app.put('/api/project-workspaces/:id/quotation', async (req, res) => {
         path: 'messages.sender',
         select: 'fullName email role'
       });
+
+    // Emit real-time workspace message via Socket.IO
+    const ioEventData = {
+      workspaceId: id,
+      workspace: updatedWorkspace
+    };
+    io.to(`user:${updatedWorkspace.client._id || updatedWorkspace.client}`).emit('workspace_message_received', ioEventData);
+    io.to(`user:${updatedWorkspace.professional._id || updatedWorkspace.professional}`).emit('workspace_message_received', ioEventData);
 
     res.status(200).json({ message: 'Quotation updated successfully', workspace: updatedWorkspace });
   } catch (error) {
@@ -940,7 +1026,209 @@ app.delete('/api/professional/:id/team/:memberId', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// ─── REAL-TIME CHAT ENDPOINTS ───────────────────────────────────────────────
+
+// GET conversation history between two users
+app.get('/api/messages/:userA/:userB', async (req, res) => {
+  try {
+    const { userA, userB } = req.params;
+    const messages = await Message.find({
+      $or: [
+        { senderId: userA, receiverId: userB },
+        { senderId: userB, receiverId: userA }
+      ]
+    })
+    .populate('senderId', 'fullName avatarUrl role')
+    .populate('receiverId', 'fullName avatarUrl role')
+    .sort({ createdAt: 1 });
+    res.json({ messages });
+  } catch (err) {
+    console.error('Error fetching messages:', err);
+    res.status(500).json({ message: 'Error fetching messages: ' + err.message });
+  }
 });
 
+// GET all users this user has chatted with (for contacts list hydration)
+app.get('/api/chat-contacts/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    // Find distinct conversation partners
+    const sentMessages = await Message.distinct('receiverId', { senderId: userId });
+    const receivedMessages = await Message.distinct('senderId', { receiverId: userId });
+    const allPartnerIds = [...new Set([...sentMessages.map(String), ...receivedMessages.map(String)])];
+    
+    // For each partner, get the latest message and unread count
+    const contacts = await Promise.all(allPartnerIds.map(async (partnerId) => {
+      const lastMessage = await Message.findOne({
+        $or: [
+          { senderId: userId, receiverId: partnerId },
+          { senderId: partnerId, receiverId: userId }
+        ]
+      })
+      .populate('senderId', 'fullName avatarUrl role')
+      .sort({ createdAt: -1 });
+
+      const unreadCount = await Message.countDocuments({
+        senderId: partnerId,
+        receiverId: userId,
+        read: false
+      });
+
+      const partner = await User.findById(partnerId).select('fullName avatarUrl role city email');
+      if (!partner) return null;
+
+      return {
+        user: partner,
+        lastMessage: lastMessage ? {
+          text: lastMessage.text,
+          createdAt: lastMessage.createdAt,
+          fromMe: lastMessage.senderId._id.toString() === userId
+        } : null,
+        unreadCount
+      };
+    }));
+
+    res.json({ contacts: contacts.filter(Boolean) });
+  } catch (err) {
+    console.error('Error fetching chat contacts:', err);
+    res.status(500).json({ message: 'Error fetching chat contacts: ' + err.message });
+  }
+});
+
+// GET all users for contact discovery (all registered users except current)
+app.get('/api/all-users/:exceptUserId', async (req, res) => {
+  try {
+    const { exceptUserId } = req.params;
+    const users = await User.find({ _id: { $ne: exceptUserId } })
+      .select('fullName avatarUrl role city email experience rating reviews')
+      .sort({ createdAt: -1 })
+      .limit(200);
+    res.json({ users });
+  } catch (err) {
+    console.error('Error fetching users:', err);
+    res.status(500).json({ message: 'Error fetching users' });
+  }
+});
+
+// ─── SOCKET.IO REAL-TIME CHAT ────────────────────────────────────────────────
+const onlineUsers = new Map(); // userId -> Set of socketIds
+
+io.on('connection', (socket) => {
+  console.log('Socket connected:', socket.id);
+
+  // Join user to their private room
+  socket.on('join', ({ userId }) => {
+    if (!userId) return;
+    socket.join(`user:${userId}`);
+    if (!onlineUsers.has(userId)) onlineUsers.set(userId, new Set());
+    onlineUsers.get(userId).add(socket.id);
+    console.log(`User ${userId} joined room user:${userId}`);
+  });
+
+  // Handle sending a message
+  socket.on('send_message', async ({ senderId, receiverId, text }) => {
+    if (!senderId || !receiverId || !text?.trim()) return;
+    try {
+      const message = new Message({ senderId, receiverId, text: text.trim() });
+      await message.save();
+
+      const populated = await Message.findById(message._id)
+        .populate('senderId', 'fullName avatarUrl role email')
+        .populate('receiverId', 'fullName avatarUrl role email');
+
+      // Emit to both sender and receiver rooms
+      io.to(`user:${receiverId}`).emit('new_message', populated);
+      io.to(`user:${senderId}`).emit('new_message', populated);
+    } catch (err) {
+      console.error('Error sending socket message:', err);
+      socket.emit('message_error', { error: 'Failed to send message' });
+    }
+  });
+
+  // Mark messages as read
+  socket.on('mark_read', async ({ senderId, receiverId }) => {
+    if (!senderId || !receiverId) return;
+    try {
+      await Message.updateMany(
+        { senderId, receiverId, read: false },
+        { $set: { read: true } }
+      );
+      // Notify the original sender that their messages were read
+      io.to(`user:${senderId}`).emit('messages_read', { senderId, receiverId });
+    } catch (err) {
+      console.error('Error marking messages read:', err);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    // Clean up online users map
+    for (const [userId, sockets] of onlineUsers.entries()) {
+      sockets.delete(socket.id);
+      if (sockets.size === 0) onlineUsers.delete(userId);
+    }
+    console.log('Socket disconnected:', socket.id);
+  });
+});
+
+// ==========================================
+// DESIGN POSTS ROUTES
+// ==========================================
+
+// GET all designs (any user)
+app.get('/api/designs', async (req, res) => {
+  try {
+    const designs = await Design.find()
+      .populate('author', 'fullName role city avatarUrl rating reviews')
+      .sort({ createdAt: -1 });
+    res.status(200).json({ designs });
+  } catch (err) {
+    console.error('Error fetching designs:', err);
+    res.status(500).json({ message: 'Error fetching designs: ' + err.message });
+  }
+});
+
+// POST new design — Architects only
+app.post('/api/designs', async (req, res) => {
+  try {
+    const { authorId, title, location, overview, mainImage, images, designType, priceRange } = req.body;
+
+    if (!authorId) {
+      return res.status(400).json({ message: 'authorId is required' });
+    }
+
+    // Verify user exists and is an Architect
+    const author = await User.findById(authorId);
+    if (!author) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    if (author.role !== 'Architect') {
+      return res.status(403).json({ message: 'Only Architects can post designs' });
+    }
+
+    if (!title || !location) {
+      return res.status(400).json({ message: 'Title and location are required' });
+    }
+
+    const design = new Design({
+      title: title.trim(),
+      location: location.trim(),
+      overview: overview || '',
+      mainImage: mainImage || '',
+      images: images || [],
+      designType: designType || 'Other',
+      priceRange: priceRange || 'mid',
+      author: authorId
+    });
+
+    await design.save();
+    const populated = await design.populate('author', 'fullName role city avatarUrl rating reviews');
+    res.status(201).json({ message: 'Design posted successfully', design: populated });
+  } catch (err) {
+    console.error('Error posting design:', err);
+    res.status(500).json({ message: 'Error posting design: ' + err.message });
+  }
+});
+
+httpServer.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});

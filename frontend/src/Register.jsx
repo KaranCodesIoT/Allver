@@ -178,7 +178,7 @@ const Register = () => {
                 <button 
                   type="button" 
                   onClick={() => setShowPassword(!showPassword)}
-                  style={{ position: 'absolute', right: '1rem', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--text-muted)' }}
+                  className="password-toggle-eye"
                 >
                   {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                 </button>
