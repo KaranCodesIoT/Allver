@@ -1,0 +1,20 @@
+{
+  "main": {
+    "found": false,
+    "error": "Command failed: git show main:allver-mobile/app/(tabs)/profile.tsx\nfatal: path 'allver-mobile/app/(tabs)/profile.tsx' exists on disk, but not in 'main'\n"
+  },
+  "mobile-app-backup": {
+    "found": true,
+    "size": 33626,
+    "lines": 751
+  },
+  "feature-contractor": {
+    "found": true,
+    "size": 28612,
+    "lines": 614
+  },
+  "improvement-in-feature": {
+    "found": false,
+    "error": "Command failed: git show improvement-in-feature:allver-mobile/app/(tabs)/profile.tsx\nfatal: path 'allver-mobile/app/(tabs)/profile.tsx' exists on disk, but not in 'improvement-in-feature'\n"
+  }
+}
