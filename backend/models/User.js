@@ -71,6 +71,7 @@ const userSchema = new mongoose.Schema({
   }],
 
   expoPushToken: { type: String, default: '' },
+  language: { type: String, default: 'en' },
   createdAt: { type: Date, default: Date.now }
 });
 
