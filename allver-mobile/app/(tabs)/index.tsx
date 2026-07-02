@@ -3,6 +3,7 @@ import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platf
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useTranslation } from '../../utils/i18n';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import NotificationBell from '../../components/NotificationBell';
@@ -119,6 +120,7 @@ const SERVICE_DIRECT_NAV: Record<string, string> = {
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const { width: screenWidth } = useWindowDimensions();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedService, setSelectedService] = useState<string | null>(null);
@@ -667,8 +669,8 @@ export default function DashboardScreen() {
         
         {/* ================= GREETING ================= */}
         <View style={styles.greetingContainer}>
-          <Text style={styles.greetingText}>Welcome {userName} !</Text>
-          <Text style={styles.subtitleText}>Let's build something great today!</Text>
+          <Text style={styles.greetingText}>{t('welcome')}, {userName} !</Text>
+          <Text style={styles.subtitleText}>{t('buildGreatDay')}</Text>
         </View>
 
 
@@ -680,7 +682,7 @@ export default function DashboardScreen() {
             </TouchableOpacity>
             <TextInput 
               style={styles.searchInput} 
-              placeholder="Search architects, contractors, labour, services..." 
+              placeholder={t('homeSearchPlaceholder')} 
               placeholderTextColor={COLORS.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -700,7 +702,7 @@ export default function DashboardScreen() {
 
         {/* ================= QUICK ACTIONS ================= */}
         <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <Text style={styles.sectionTitle}>{t('quickActions')}</Text>
           
           {/* All 3 cards in a flex-wrap grid */}
           <View style={styles.qaTopRow}>
@@ -715,13 +717,13 @@ export default function DashboardScreen() {
                   <FontAwesome5 name="hard-hat" size={18} color="#10B981" />
                 </View>
                 <View style={styles.qaCardTextCol}>
-                  <Text style={styles.qaCardTitle}>Find Contractor</Text>
-                  <Text style={styles.qaCardDesc}>Hire trusted contractors for your project.</Text>
+                  <Text style={styles.qaCardTitle}>{t('findContractor')}</Text>
+                  <Text style={styles.qaCardDesc}>{t('findContractorDesc')}</Text>
                 </View>
               </View>
               <View style={styles.qaCardFooter}>
                 <View style={[styles.qaPill, { backgroundColor: '#10B981' }]}>
-                  <Text style={styles.qaPillText}>Hire Now ↗</Text>
+                  <Text style={styles.qaPillText}>{t('hireNow')}</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -737,13 +739,13 @@ export default function DashboardScreen() {
                   <FontAwesome5 name="drafting-compass" size={16} color="#2563EB" />
                 </View>
                 <View style={styles.qaCardTextCol}>
-                  <Text style={styles.qaCardTitle}>Find Architect</Text>
-                  <Text style={styles.qaCardDesc}>Discover architects for design & planning.</Text>
+                  <Text style={styles.qaCardTitle}>{t('findArchitect')}</Text>
+                  <Text style={styles.qaCardDesc}>{t('findArchitectDesc')}</Text>
                 </View>
               </View>
               <View style={styles.qaCardFooter}>
                 <View style={[styles.qaPill, { backgroundColor: '#2563EB' }]}>
-                  <Text style={styles.qaPillText}>Explore ↗</Text>
+                  <Text style={styles.qaPillText}>{t('exploreLabel')}</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -759,13 +761,13 @@ export default function DashboardScreen() {
                   <FontAwesome5 name="users" size={18} color="#F97316" />
                 </View>
                 <View style={styles.qaCardTextCol}>
-                  <Text style={styles.qaCardTitle}>Skilled Labour</Text>
-                  <Text style={styles.qaCardDesc}>Connect with verified skilled workers.</Text>
+                  <Text style={styles.qaCardTitle}>{t('skilledLabour')}</Text>
+                  <Text style={styles.qaCardDesc}>{t('findLabourDesc')}</Text>
                 </View>
               </View>
               <View style={styles.qaCardFooter}>
                 <View style={[styles.qaPill, { backgroundColor: '#F97316' }]}>
-                  <Text style={styles.qaPillText}>Find Labour ↗</Text>
+                  <Text style={styles.qaPillText}>{t('findLabourBtn')}</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -781,7 +783,7 @@ export default function DashboardScreen() {
                 <Feather name="plus" size={14} color="#D97706" />
               </View>
               <Text style={styles.qaSecondaryText}>
-                {currentUser?.role === 'Labour' ? 'Add Work' : 'Post Project'}
+                {currentUser?.role === 'Labour' ? t('addWork') : t('postProject')}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity 
@@ -791,7 +793,7 @@ export default function DashboardScreen() {
               <View style={[styles.qaSecondaryIcon, { backgroundColor: '#E9D5FF' }]}>
                 <Feather name="clipboard" size={13} color="#7C3AED" />
               </View>
-              <Text style={styles.qaSecondaryText}>Track Project</Text>
+              <Text style={styles.qaSecondaryText}>{t('trackProject')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -799,8 +801,8 @@ export default function DashboardScreen() {
         {/* ================= MY PROJECTS ================= */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>My Projects</Text>
-            <TouchableOpacity><Text style={styles.viewAllText}>View All</Text></TouchableOpacity>
+            <Text style={styles.sectionTitle}>{t('myProjects')}</Text>
+            <TouchableOpacity><Text style={styles.viewAllText}>{t('viewAll')}</Text></TouchableOpacity>
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalCardsScroll}>
@@ -915,14 +917,14 @@ export default function DashboardScreen() {
                     onPress={() => router.push('/(tabs)/post-project')}
                   >
                     <Feather name="plus-circle" size={32} color={COLORS.green} style={{ marginBottom: 8 }} />
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>Post New Project</Text>
-                    <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>Get competitive contractor bids</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>{t('postNewProject')}</Text>
+                    <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>{t('postNewProjectDesc')}</Text>
                   </TouchableOpacity>
                 ) : (
                   <View style={[styles.projectCard, { justifyContent: 'center', alignItems: 'center', padding: 16 }]}>
                     <Feather name="clipboard" size={32} color={COLORS.textLight} style={{ marginBottom: 8 }} />
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>No Active Projects</Text>
-                    <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>Assigned projects will appear here</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>{t('noActiveProjects')}</Text>
+                    <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>{t('noActiveProjectsDesc')}</Text>
                   </View>
                 )
               )
@@ -976,8 +978,8 @@ export default function DashboardScreen() {
         {/* ================= FEATURED PROFESSIONALS ================= */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Featured Professionals</Text>
-            <TouchableOpacity><Text style={styles.viewAllText}>View All</Text></TouchableOpacity>
+            <Text style={styles.sectionTitle}>{t('featuredProfessionals')}</Text>
+            <TouchableOpacity><Text style={styles.viewAllText}>{t('viewAll')}</Text></TouchableOpacity>
           </View>
 
           {featuredLoading ? (
@@ -1099,7 +1101,7 @@ export default function DashboardScreen() {
                       style={[styles.profBtn, { borderColor: cardColor }]} 
                       onPress={() => handleViewProfile(prof)}
                     >
-                      <Text style={[styles.profBtnText, { color: cardColor }]}>View Profile</Text>
+                      <Text style={[styles.profBtnText, { color: cardColor }]}>{t('viewProfile')}</Text>
                     </TouchableOpacity>
                   </View>
                 );
@@ -1108,7 +1110,7 @@ export default function DashboardScreen() {
               {filteredProfessionals.length === 0 && !featuredLoading && (
                 <View style={styles.emptyCard}>
                   <Feather name="globe" size={24} color={COLORS.textMuted} />
-                  <Text style={styles.emptyText}>Explore professionals across India to expand your network.</Text>
+                  <Text style={styles.emptyText}>{t('exploreNetworkDesc')}</Text>
                 </View>
               )}
             </ScrollView>
@@ -1118,8 +1120,8 @@ export default function DashboardScreen() {
         {/* ================= BROWSE BY SERVICE ================= */}
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Browse by Service</Text>
-            <TouchableOpacity><Text style={styles.viewAllText}>View All</Text></TouchableOpacity>
+            <Text style={styles.sectionTitle}>{t('browseByService')}</Text>
+            <TouchableOpacity><Text style={styles.viewAllText}>{t('viewAll')}</Text></TouchableOpacity>
           </View>
 
           <View style={styles.servicesGrid}>
@@ -1155,9 +1157,9 @@ export default function DashboardScreen() {
         {/* ================= RECENT ACTIVITY ================= */}
         <View style={[styles.sectionContainer, { paddingBottom: 30 }]}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Recent Activity</Text>
+            <Text style={styles.sectionTitle}>{t('recentActivity')}</Text>
             <TouchableOpacity onPress={() => router.push('/notifications')}>
-              <Text style={styles.viewAllText}>View All</Text>
+              <Text style={styles.viewAllText}>{t('viewAll')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -1201,7 +1203,7 @@ export default function DashboardScreen() {
               <View style={{ paddingVertical: 24, alignItems: 'center', justifyContent: 'center' }}>
                 <Feather name="activity" size={32} color="#94A3B8" style={{ marginBottom: 8 }} />
                 <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center', marginHorizontal: 16 }}>
-                  No recent activity yet. Updates will appear here as you explore the app!
+                  {t('noRecentActivityDesc')}
                 </Text>
               </View>
             )}

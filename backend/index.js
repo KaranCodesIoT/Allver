@@ -9,6 +9,9 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 require('dotenv').config();
+console.log('--- Startup Environment ---');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('---------------------------');
 
 
 // Trim environment variables to prevent CRLF or whitespace issues on Windows / Render
@@ -704,7 +707,7 @@ app.post('/api/posts/:id/comment', async (req, res) => {
 
 app.post('/api/register', async (req, res) => {
   try {
-    const { fullName, email, phoneNumber, password, role, city } = req.body;
+    const { fullName, email, phoneNumber, password, role, city, language } = req.body;
     
     // Check if user already exists by email
     const existingUser = await User.findOne({ email });
@@ -712,12 +715,28 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ message: 'User with this email already exists' });
     }
 
-    const newUser = new User({ fullName, email, phoneNumber: phoneNumber || '', password, role, city });
+    const newUser = new User({ 
+      fullName, 
+      email, 
+      phoneNumber: phoneNumber || '', 
+      password, 
+      role, 
+      city,
+      language: language || 'en'
+    });
     await newUser.save();
     
     res.status(201).json({ 
       message: 'User registered successfully', 
-      user: { _id: newUser._id, fullName, email, phoneNumber: newUser.phoneNumber, role, city } 
+      user: { 
+        _id: newUser._id, 
+        fullName, 
+        email, 
+        phoneNumber: newUser.phoneNumber, 
+        role, 
+        city,
+        language: newUser.language 
+      } 
     });
   } catch (error) {
     console.error('Registration error:', error);

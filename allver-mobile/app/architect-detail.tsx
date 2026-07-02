@@ -6,6 +6,8 @@ import { Image } from 'expo-image';
 import { Video, ResizeMode } from 'expo-av';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
+import { useTranslation } from '../utils/i18n';
+
 
 const { width } = Dimensions.get('window');
 
@@ -35,6 +37,8 @@ const COLORS = {
 export default function ArchitectDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { t } = useTranslation();
+
 
   // Dynamic values with fallbacks to Neha Sharma (from third screenshot)
   const architectId = (params.id as string) || '60c72b2f9b1d8a2a4c8b0001';
@@ -509,10 +513,10 @@ export default function ArchitectDetailScreen() {
                 onPress={() => router.push('/edit-profile')}
               >
                 <Feather name="edit" size={16} color={COLORS.white} style={{ marginRight: 8 }} />
-                <Text style={{ color: COLORS.white, fontSize: 15, fontWeight: '700' }}>Edit Profile Info</Text>
+                <Text style={{ color: COLORS.white, fontSize: 15, fontWeight: '700' }}>{t('editProfileInfo')}</Text>
               </TouchableOpacity>
               <Text style={{ textAlign: 'center', color: COLORS.textMuted, fontSize: 12, marginTop: 8 }}>
-                This is your public profile.
+                {t('publicProfileDesc')}
               </Text>
             </View>
           ) : (
@@ -524,9 +528,10 @@ export default function ArchitectDetailScreen() {
                 >
                   <Feather name={isFollowing ? "check" : "user-plus"} size={12} color={isFollowing ? COLORS.textDark : COLORS.white} style={{ marginRight: 4 }} />
                   <Text style={[styles.followBtnText, isFollowing && { color: COLORS.textDark }]}>
-                    {isFollowing ? 'In Network' : 'Add to Network'}
+                    {isFollowing ? t('inNetwork') : t('addToNetwork')}
                   </Text>
                 </TouchableOpacity>
+
 
                 {currentUser?.role === 'Client' ? (
                   <TouchableOpacity 
@@ -534,12 +539,12 @@ export default function ArchitectDetailScreen() {
                     onPress={() => setIsHireModalVisible(true)}
                   >
                     <Feather name="briefcase" size={12} color={COLORS.green} style={{ marginRight: 4 }} />
-                    <Text style={[styles.outlineActionText, { color: COLORS.green, fontWeight: '700' }]}>Hire</Text>
+                    <Text style={[styles.outlineActionText, { color: COLORS.green, fontWeight: '700' }]}>{t('hire')}</Text>
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity style={styles.outlineActionBtn} onPress={handleWhatsApp}>
                     <FontAwesome5 name="whatsapp" size={12} color={COLORS.green} style={{ marginRight: 4 }} />
-                    <Text style={styles.outlineActionText}>Chat</Text>
+                    <Text style={styles.outlineActionText}>{t('chat')}</Text>
                   </TouchableOpacity>
                 )}
 
@@ -562,7 +567,8 @@ export default function ArchitectDetailScreen() {
                   }}
                 >
                   <Feather name="message-circle" size={12} color={COLORS.blue} style={{ marginRight: 4 }} />
-                  <Text style={[styles.outlineActionText, { color: COLORS.blue }]}>Message</Text>
+                  <Text style={[styles.outlineActionText, { color: COLORS.blue }]}>{t('message')}</Text>
+
                 </TouchableOpacity>
               </View>
             </>
@@ -570,7 +576,7 @@ export default function ArchitectDetailScreen() {
 
           {/* About Section */}
           <View style={styles.aboutSection}>
-            <Text style={styles.sectionHeaderTitle}>About</Text>
+            <Text style={styles.sectionHeaderTitle}>{t('about')}</Text>
             <Text style={styles.aboutParagraphText}>
               {specializationStr}
             </Text>
@@ -578,7 +584,7 @@ export default function ArchitectDetailScreen() {
 
           {/* Specializations Wrap */}
           <View style={styles.specializationSection}>
-            <Text style={styles.sectionHeaderTitle}>Specialization</Text>
+            <Text style={styles.sectionHeaderTitle}>{t('specialization')}</Text>
             <View style={styles.specializationsWrap}>
               {['Residential Design', 'Commercial Design', 'Interior Design', 'Landscape', '3D Visualization', 'Renovation', 'Vastu Planning', 'Smart Homes'].map((spec, index) => (
                 <View key={index} style={styles.specTag}>
@@ -592,9 +598,9 @@ export default function ArchitectDetailScreen() {
           {portfolioProjects.length > 0 && (
             <View style={styles.portfolioHighlightSection}>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeaderTitle}>Portfolio Highlights</Text>
+                <Text style={styles.sectionHeaderTitle}>{t('portfolioHighlights')}</Text>
                 <TouchableOpacity onPress={() => router.push({ pathname: '/portfolio-highlights', params: { userId: architectId } })}>
-                  <Text style={styles.viewAllText}>View All</Text>
+                  <Text style={styles.viewAllText}>{t('viewAll')}</Text>
                 </TouchableOpacity>
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 16, paddingBottom: 10 }}>
@@ -644,7 +650,7 @@ export default function ArchitectDetailScreen() {
                   onPress={() => setActiveTab(tab)}
                 >
                   <Text style={[styles.tabButtonText, activeTab === tab && styles.activeTabButtonText]}>
-                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {t(tab)}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -658,12 +664,12 @@ export default function ArchitectDetailScreen() {
                 {isLoadingProjects ? (
                   <ActivityIndicator size="small" color={COLORS.blue} style={{ padding: 20 }} />
                 ) : realProjects.length === 0 ? (
-                  <Text style={{ textAlign: 'center', padding: 20, color: COLORS.textMuted }}>No performed projects yet.</Text>
+                  <Text style={{ textAlign: 'center', padding: 20, color: COLORS.textMuted }}>{t('noPerformedProjects')}</Text>
                 ) : (
                   realProjects.map((w: any, idx) => {
                     const isCompleted = w.status === 'Completed';
                     const isCancelled = w.status === 'Cancelled';
-                    const statusText = isCompleted ? 'Completed' : isCancelled ? 'Cancelled' : 'Ongoing';
+                    const statusText = isCompleted ? t('completed') : isCancelled ? t('cancelled') : t('ongoing');
                     const image = w.projectType === 'Interior' 
                       ? 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=200&q=80' 
                       : 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=200&q=80';

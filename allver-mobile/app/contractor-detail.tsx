@@ -5,6 +5,8 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
+import { useTranslation } from '../utils/i18n';
+
 
 const { width } = Dimensions.get('window');
 
@@ -46,6 +48,8 @@ const TEAM_MEMBERS = [
 export default function ContractorDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { t } = useTranslation();
+
 
   // Load params with fallbacks
   const id = (params.id as string) || '60c72b2f9b1d8a2a4c8b0010';
@@ -520,10 +524,10 @@ export default function ContractorDetailScreen() {
                 onPress={() => router.push('/edit-profile')}
               >
                 <Feather name="edit" size={16} color={COLORS.white} style={{ marginRight: 8 }} />
-                <Text style={{ color: COLORS.white, fontSize: 15, fontWeight: '700' }}>Edit Profile Info</Text>
+                <Text style={{ color: COLORS.white, fontSize: 15, fontWeight: '700' }}>{t('editProfileInfo')}</Text>
               </TouchableOpacity>
               <Text style={{ textAlign: 'center', color: COLORS.textMuted, fontSize: 12, marginTop: 8 }}>
-                This is your public profile.
+                {t('publicProfileDesc')}
               </Text>
             </View>
           ) : (
@@ -534,7 +538,7 @@ export default function ContractorDetailScreen() {
               >
                 <Feather name={isFollowing ? "check" : "user-plus"} size={12} color={isFollowing ? COLORS.textDark : COLORS.white} style={{ marginRight: 4 }} />
                 <Text style={[styles.followBtnText, isFollowing && { color: COLORS.textDark }]}>
-                  {isFollowing ? 'In Network' : 'Add to Network'}
+                  {isFollowing ? t('inNetwork') : t('addToNetwork')}
                 </Text>
               </TouchableOpacity>
 
@@ -544,12 +548,12 @@ export default function ContractorDetailScreen() {
                   onPress={() => setIsHireModalVisible(true)}
                 >
                   <Feather name="briefcase" size={12} color={COLORS.green} style={{ marginRight: 4 }} />
-                  <Text style={[styles.outlineActionText, { color: COLORS.green, fontWeight: '700' }]}>Hire</Text>
+                  <Text style={[styles.outlineActionText, { color: COLORS.green, fontWeight: '700' }]}>{t('hire')}</Text>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity style={styles.outlineActionBtn} onPress={handleWhatsApp}>
                   <FontAwesome5 name="whatsapp" size={12} color={COLORS.green} style={{ marginRight: 4 }} />
-                  <Text style={styles.outlineActionText}>Chat</Text>
+                  <Text style={styles.outlineActionText}>{t('chat')}</Text>
                 </TouchableOpacity>
               )}
 
@@ -572,14 +576,14 @@ export default function ContractorDetailScreen() {
                 }}
               >
                 <Feather name="message-circle" size={12} color={COLORS.blue} style={{ marginRight: 4 }} />
-                <Text style={[styles.outlineActionText, { color: COLORS.blue }]}>Message</Text>
+                <Text style={[styles.outlineActionText, { color: COLORS.blue }]}>{t('message')}</Text>
               </TouchableOpacity>
             </View>
           )}
 
           {/* About Section */}
           <View style={styles.aboutSection}>
-            <Text style={styles.sectionHeaderTitle}>About</Text>
+            <Text style={styles.sectionHeaderTitle}>{t('about')}</Text>
             <Text style={styles.aboutParagraphText} numberOfLines={showFullAbout ? undefined : 3}>
               {specialization} We are a trusted team of construction professionals specializing in residential and commercial building projects. From concrete foundation slab pouring to structural brickwork, plumbing, electrical wiring, and high-end interior woodworking, we deliver standard results ahead of schedule.
             </Text>
@@ -590,7 +594,7 @@ export default function ContractorDetailScreen() {
 
           {/* Skills & Expertise */}
           <View style={styles.specializationSection}>
-            <Text style={styles.sectionHeaderTitle}>Skills & Expertise</Text>
+            <Text style={styles.sectionHeaderTitle}>{t('skills')}</Text>
             <View style={styles.specializationsWrap}>
               {skillsList.map((spec, index) => (
                 <View key={index} style={styles.specTag}>
@@ -604,9 +608,9 @@ export default function ContractorDetailScreen() {
           {portfolioProjects.length > 0 && (
             <View style={{ marginBottom: 20 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark }}>Portfolio Highlights</Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark }}>{t('portfolioHighlights')}</Text>
                 <TouchableOpacity onPress={() => router.push({ pathname: '/portfolio-highlights', params: { userId: id } })}>
-                  <Text style={{ fontSize: 13, color: COLORS.gold, fontWeight: '700' }}>View All ›</Text>
+                  <Text style={{ fontSize: 13, color: COLORS.gold, fontWeight: '700' }}>{t('viewAll')} ›</Text>
                 </TouchableOpacity>
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 16 }}>
@@ -653,7 +657,7 @@ export default function ContractorDetailScreen() {
               onPress={() => setActiveTab('projects')}
             >
               <Feather name="grid" size={16} color={activeTab === 'projects' ? COLORS.blue : COLORS.textMuted} />
-              <Text style={[styles.tabButtonText, activeTab === 'projects' && styles.activeTabButtonText]}>Projects</Text>
+              <Text style={[styles.tabButtonText, activeTab === 'projects' && styles.activeTabButtonText]}>{t('projects')}</Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
@@ -661,7 +665,7 @@ export default function ContractorDetailScreen() {
               onPress={() => setActiveTab('media')}
             >
               <Feather name="play-circle" size={16} color={activeTab === 'media' ? COLORS.blue : COLORS.textMuted} />
-              <Text style={[styles.tabButtonText, activeTab === 'media' && styles.activeTabButtonText]}>Media</Text>
+              <Text style={[styles.tabButtonText, activeTab === 'media' && styles.activeTabButtonText]}>{t('media')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
@@ -669,7 +673,7 @@ export default function ContractorDetailScreen() {
               onPress={() => setActiveTab('team')}
             >
               <Feather name="users" size={16} color={activeTab === 'team' ? COLORS.blue : COLORS.textMuted} />
-              <Text style={[styles.tabButtonText, activeTab === 'team' && styles.activeTabButtonText]}>Team</Text>
+              <Text style={[styles.tabButtonText, activeTab === 'team' && styles.activeTabButtonText]}>{t('team')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
@@ -677,7 +681,7 @@ export default function ContractorDetailScreen() {
               onPress={() => setActiveTab('reviews')}
             >
               <Feather name="star" size={16} color={activeTab === 'reviews' ? COLORS.blue : COLORS.textMuted} />
-              <Text style={[styles.tabButtonText, activeTab === 'reviews' && styles.activeTabButtonText]}>Reviews</Text>
+              <Text style={[styles.tabButtonText, activeTab === 'reviews' && styles.activeTabButtonText]}>{t('reviews')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -690,12 +694,12 @@ export default function ContractorDetailScreen() {
                 {isLoadingProjects ? (
                   <ActivityIndicator size="small" color={COLORS.blue} style={{ padding: 20 }} />
                 ) : realProjects.length === 0 ? (
-                  <Text style={{ textAlign: 'center', padding: 20, color: COLORS.textMuted }}>No performed projects yet.</Text>
+                  <Text style={{ textAlign: 'center', padding: 20, color: COLORS.textMuted }}>{t('noPerformedProjects')}</Text>
                 ) : (
                   realProjects.map((w: any, idx) => {
                     const isCompleted = w.status === 'Completed';
                     const isCancelled = w.status === 'Cancelled';
-                    const statusText = isCompleted ? 'Completed' : isCancelled ? 'Cancelled' : 'Ongoing';
+                    const statusText = isCompleted ? t('completed') : isCancelled ? t('cancelled') : t('ongoing');
                     const image = w.projectType === 'Interior' 
                       ? 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=200&q=80' 
                       : 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=200&q=80';

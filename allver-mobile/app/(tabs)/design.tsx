@@ -6,6 +6,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { BACKEND_URL } from '../../constants/Config';
 import NotificationBell from '../../components/NotificationBell';
+import { useTranslation } from '../../utils/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -83,6 +84,7 @@ const mapBackendPostToDesign = (bp: any): DesignItem => {
 
 export default function DesignScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [designs, setDesigns] = useState<DesignItem[]>(DESIGN_DATA);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -282,7 +284,7 @@ export default function DesignScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header Bar */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Design</Text>
+        <Text style={styles.headerTitle}>{t('design')}</Text>
         <NotificationBell size={18} color={COLORS.textDark} style={styles.notificationBtn} />
       </View>
 
@@ -300,7 +302,7 @@ export default function DesignScreen() {
                 <Feather name="info" size={18} color={COLORS.green} />
               </View>
               <Text style={styles.bannerText}>
-                Good design is more than just looks – it's about comfort, function, and creating spaces that truly feel like home.
+                {t('designBanner')}
               </Text>
             </View>
 
@@ -312,7 +314,7 @@ export default function DesignScreen() {
                   <Feather name="search" size={18} color={COLORS.textMuted} style={styles.searchIcon} />
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Search design type or location..."
+                    placeholder={t('designSearchPlaceholder')}
                     placeholderTextColor={COLORS.textMuted}
                     value={searchQuery}
                     onChangeText={setSearchQuery}
@@ -355,11 +357,11 @@ export default function DesignScreen() {
                     selectedPrice !== 'All' && { backgroundColor: COLORS.greenLight, borderColor: COLORS.green }
                   ]}
                   activeOpacity={0.8}
-                  onPress={() => setPriceModalVisible(true)}
+                   onPress={() => setPriceModalVisible(true)}
                 >
                   <Feather name="tag" size={13} color={selectedPrice !== 'All' ? COLORS.green : COLORS.textDark} style={{ marginRight: 4 }} />
                   <Text style={[styles.filterPillText, selectedPrice !== 'All' && { color: COLORS.green, fontWeight: '700' }]}>
-                    {selectedPrice === 'All' ? 'Price Range' : selectedPrice}
+                    {selectedPrice === 'All' ? t('priceRange') : selectedPrice}
                   </Text>
                   <Feather name="chevron-down" size={12} color={selectedPrice !== 'All' ? COLORS.green : COLORS.textMuted} style={{ marginLeft: 4 }} />
                 </TouchableOpacity>
@@ -367,6 +369,13 @@ export default function DesignScreen() {
                 {/* Categories filter pills */}
                 {['All', 'Apartment', 'Bedroom', 'Kitchen', 'Living Room'].map((cat) => {
                   const isSelected = selectedCategory === cat;
+                  const labelMap: Record<string, string> = {
+                    'All': t('all'),
+                    'Apartment': t('apartment'),
+                    'Bedroom': t('bedroom'),
+                    'Kitchen': t('kitchen'),
+                    'Living Room': t('livingRoom'),
+                  };
                   return (
                     <TouchableOpacity
                       key={cat}
@@ -378,7 +387,7 @@ export default function DesignScreen() {
                       activeOpacity={0.8}
                     >
                       <Text style={[styles.categoryPillText, isSelected && { color: COLORS.white, fontWeight: '700' }]}>
-                        {cat}
+                        {labelMap[cat] || cat}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -402,11 +411,17 @@ export default function DesignScreen() {
           onPress={() => setPriceModalVisible(false)}
         >
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Price Range</Text>
+            <Text style={styles.modalTitle}>{t('selectPriceRange')}</Text>
             <View style={styles.modalDivider} />
             
             {['All', 'Under ₹5L', '₹5L - ₹15L', 'Over ₹15L'].map((priceOption) => {
               const isSelected = selectedPrice === priceOption;
+              const priceLabels: Record<string, string> = {
+                'All': t('allPrices'),
+                'Under ₹5L': t('under5L'),
+                '₹5L - ₹15L': t('between5LAnd15L'),
+                'Over ₹15L': t('over15L')
+              };
               return (
                 <TouchableOpacity
                   key={priceOption}
@@ -418,7 +433,7 @@ export default function DesignScreen() {
                   }}
                 >
                   <Text style={[styles.modalOptionText, isSelected && { color: COLORS.green, fontWeight: '700' }]}>
-                    {priceOption === 'All' ? 'All Prices' : priceOption}
+                    {priceLabels[priceOption] || priceOption}
                   </Text>
                   {isSelected && (
                     <Feather name="check" size={16} color={COLORS.green} />

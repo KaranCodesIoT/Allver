@@ -8,6 +8,7 @@ import { useRouter, useNavigation } from 'expo-router';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
+import { useTranslation } from '../../utils/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -69,6 +70,7 @@ const DEFAULT_USER_DATA = {
 export default function ProfileScreen() {
   const router = useRouter();
   const navigation = useNavigation();
+  const { t } = useTranslation();
   const [user, setUser] = useState(DEFAULT_USER_DATA);
   const [activeTab, setActiveTab] = useState<'projects' | 'media' | 'team' | 'reviews'>('projects');
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -1176,7 +1178,7 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* ===== HEADER ===== */}
       <View style={styles.navHeader}>
-        <Text style={styles.headerTitle}>My Profile</Text>
+        <Text style={styles.headerTitle}>{t('myProfile')}</Text>
         <View style={styles.headerRightActions}>
           <TouchableOpacity onPress={handleShare} style={styles.headerIconBtn}>
             <Feather name="share-2" size={18} color={COLORS.textDark} />
@@ -1272,11 +1274,11 @@ export default function ProfileScreen() {
                 <View style={styles.profileActionBtnsRow}>
                   <TouchableOpacity style={styles.smallEditProfileBtn} onPress={handleEditProfile} activeOpacity={0.85}>
                     <Feather name="edit-2" size={11} color={COLORS.white} style={{ marginRight: 4 }} />
-                    <Text style={styles.smallEditProfileBtnText}>Edit</Text>
+                    <Text style={styles.smallEditProfileBtnText}>{t('edit')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.smallLogoutBtn} onPress={handleLogout} activeOpacity={0.85}>
                     <Feather name="log-out" size={11} color={COLORS.red} style={{ marginRight: 4 }} />
-                    <Text style={styles.smallLogoutBtnText}>Logout</Text>
+                    <Text style={styles.smallLogoutBtnText}>{t('logout')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>

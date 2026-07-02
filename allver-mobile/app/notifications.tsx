@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
+import { useTranslation } from '../utils/i18n';
 
 const COLORS = {
   green: '#1BC47D', // Green accent
@@ -35,6 +36,7 @@ interface NotificationItem {
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -194,11 +196,11 @@ export default function NotificationsScreen() {
 
   const { today, yesterday, earlier } = getGroupedNotifications();
 
-  const renderNotificationSection = (title: string, items: NotificationItem[]) => {
+  const renderNotificationSection = (key: string, items: NotificationItem[]) => {
     if (items.length === 0) return null;
     return (
-      <View key={title} style={styles.sectionContainer}>
-        <Text style={styles.sectionHeader}>{title}</Text>
+      <View key={key} style={styles.sectionContainer}>
+        <Text style={styles.sectionHeader}>{t(key)}</Text>
         {items.map((item) => {
           const sender = item.senderId || { fullName: 'Someone', role: 'User' };
           const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(sender.fullName)}&background=1BC47D&color=fff`;
@@ -243,12 +245,12 @@ export default function NotificationsScreen() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <Feather name="arrow-left" size={20} color={COLORS.textDark} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Notifications</Text>
+          <Text style={styles.headerTitle}>{t('notifications')}</Text>
         </View>
         
         {hasUnread && (
           <TouchableOpacity onPress={markAllAsRead} style={styles.markReadBtn}>
-            <Text style={styles.markReadText}>Mark read</Text>
+            <Text style={styles.markReadText}>{t('markRead')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -266,9 +268,9 @@ export default function NotificationsScreen() {
           <View style={styles.emptyIconCircle}>
             <Feather name="bell-off" size={36} color={COLORS.textMuted} />
           </View>
-          <Text style={styles.emptyTitle}>No notifications yet</Text>
+          <Text style={styles.emptyTitle}>{t('noNotifications')}</Text>
           <Text style={styles.emptySubtitle}>
-            We'll notify you here when users add you to their network or interact with your posts.
+            {t('noNotificationsDesc')}
           </Text>
         </ScrollView>
       ) : (
@@ -277,9 +279,9 @@ export default function NotificationsScreen() {
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} colors={[COLORS.green]} />}
           showsVerticalScrollIndicator={false}
         >
-          {renderNotificationSection('Today', today)}
-          {renderNotificationSection('Yesterday', yesterday)}
-          {renderNotificationSection('Earlier', earlier)}
+          {renderNotificationSection('today', today)}
+          {renderNotificationSection('yesterday', yesterday)}
+          {renderNotificationSection('earlier', earlier)}
         </ScrollView>
       )}
     </SafeAreaView>

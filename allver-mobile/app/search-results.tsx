@@ -6,6 +6,7 @@ import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import NotificationBell from '../components/NotificationBell';
+import { useTranslation } from '../utils/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -26,6 +27,7 @@ const COLORS = {
 
 export default function SearchResultsScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const params = useLocalSearchParams();
   
   const [searchQuery, setSearchQuery] = useState((params.searchQuery as string) || '');
@@ -200,8 +202,8 @@ export default function SearchResultsScreen() {
             <Feather name="arrow-left" size={24} color={COLORS.textDark} />
           </TouchableOpacity>
           <View style={styles.headerTextCol}>
-            <Text style={styles.headerTitle}>Search Results</Text>
-            <Text style={styles.headerSubtitle}>Search across all categories</Text>
+            <Text style={styles.headerTitle}>{t('searchResults')}</Text>
+            <Text style={styles.headerSubtitle}>{t('searchAllCategories')}</Text>
           </View>
         </View>
 
@@ -211,7 +213,7 @@ export default function SearchResultsScreen() {
             <Feather name="search" size={16} color={COLORS.textMuted} style={styles.searchIcon} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search by name, skill, city..."
+              placeholder={t('searchPlaceholderResults')}
               placeholderTextColor={COLORS.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -220,27 +222,35 @@ export default function SearchResultsScreen() {
 
           {/* Role Filter Pills */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pillsContainer}>
-            {(['All', 'Contractor', 'Architect', 'Labour'] as const).map((role) => (
-              <TouchableOpacity
-                key={role}
-                style={[
-                  styles.pill,
-                  selectedRole === role && styles.pillActive,
-                  selectedRole === role && role !== 'All' && { backgroundColor: getRoleColors(role).bg, borderColor: getRoleColors(role).text }
-                ]}
-                onPress={() => setSelectedRole(role)}
-              >
-                <Text 
+            {(['All', 'Contractor', 'Architect', 'Labour'] as const).map((role) => {
+              const roleLabels: Record<string, string> = {
+                'All': t('allProfessionals'),
+                'Contractor': t('contractor'),
+                'Architect': t('architect'),
+                'Labour': t('labour')
+              };
+              return (
+                <TouchableOpacity
+                  key={role}
                   style={[
-                    styles.pillText, 
-                    selectedRole === role && styles.pillTextActive,
-                    selectedRole === role && role !== 'All' && { color: getRoleColors(role).text }
+                    styles.pill,
+                    selectedRole === role && styles.pillActive,
+                    selectedRole === role && role !== 'All' && { backgroundColor: getRoleColors(role).bg, borderColor: getRoleColors(role).text }
                   ]}
+                  onPress={() => setSelectedRole(role)}
                 >
-                  {role === 'All' ? 'All Professionals' : role}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Text 
+                    style={[
+                      styles.pillText, 
+                      selectedRole === role && styles.pillTextActive,
+                      selectedRole === role && role !== 'All' && { color: getRoleColors(role).text }
+                    ]}
+                  >
+                    {roleLabels[role] || role}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </View>
 
@@ -252,8 +262,8 @@ export default function SearchResultsScreen() {
         ) : filteredList.length === 0 ? (
           <ScrollView contentContainerStyle={styles.centerContainer}>
             <Feather name="search" size={48} color={COLORS.textMuted} style={{ marginBottom: 12 }} />
-            <Text style={styles.noResultsTitle}>No results found</Text>
-            <Text style={styles.noResultsSubtitle}>Try adjusting your keywords or filters</Text>
+            <Text style={styles.noResultsTitle}>{t('noResultsFound')}</Text>
+            <Text style={styles.noResultsSubtitle}>{t('tryAdjustingKeywords')}</Text>
           </ScrollView>
         ) : (
           <ScrollView bounces={true} contentContainerStyle={styles.scrollContent}>
@@ -300,7 +310,7 @@ export default function SearchResultsScreen() {
                         <Text style={styles.detailText} numberOfLines={1}>{item.city}</Text>
                         <Text style={styles.detailDot}>•</Text>
                         <Feather name="briefcase" size={12} color={COLORS.textMuted} style={styles.detailIcon} />
-                        <Text style={styles.detailText} numberOfLines={1}>{item.experience || 'Entry'}</Text>
+                        <Text style={styles.detailText} numberOfLines={1}>{item.experience || t('entryLevel')}</Text>
                       </View>
                     </View>
                   </View>
@@ -308,7 +318,7 @@ export default function SearchResultsScreen() {
                   {/* Skills preview */}
                   {displaySkills ? (
                     <View style={styles.skillsContainer}>
-                      <Text style={styles.skillsLabel}>Skills: </Text>
+                      <Text style={styles.skillsLabel}>{t('skills')}: </Text>
                       <Text style={styles.skillsText} numberOfLines={1}>{displaySkills}</Text>
                     </View>
                   ) : null}

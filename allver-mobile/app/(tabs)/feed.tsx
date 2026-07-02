@@ -7,6 +7,7 @@ import { Image } from 'expo-image';
 import { Video, ResizeMode } from 'expo-av';
 import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
 import NotificationBell from '../../components/NotificationBell';
+import { useTranslation } from '../../utils/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -80,6 +81,7 @@ const mapBackendPostToFeed = (bp: any, currentUserId?: string): PostData => {
 };
 
 export default function DiscoverScreen() {
+  const { t } = useTranslation();
   const [activeCategory, setActiveCategory] = useState('All');
   const [posts, setPosts] = useState<PostData[]>(INITIAL_POSTS);
   const [locationModalVisible, setLocationModalVisible] = useState(false);
@@ -657,7 +659,7 @@ export default function DiscoverScreen() {
         }
       >
         {/* Subheading */}
-        <Text style={styles.subHeadingText}>Showing posts from people you follow</Text>
+        <Text style={styles.subHeadingText}>{t('followPostsSubheading')}</Text>
 
         {/* Posts List */}
         {filteredPosts.map(post => (
@@ -704,9 +706,9 @@ export default function DiscoverScreen() {
             {/* Stats Summary Row */}
             <View style={styles.statsSummaryRow}>
               <View style={styles.likesCountWrap}>
-                <Text style={styles.likesText}>{post.likes} Appreciations</Text>
+                <Text style={styles.likesText}>{post.likes} {t('appreciations')}</Text>
               </View>
-              <Text style={styles.commentsText}>{post.comments} Comments</Text>
+              <Text style={styles.commentsText}>{post.comments} {t('comments')}</Text>
             </View>
 
             {/* Card Actions Row */}
@@ -723,7 +725,7 @@ export default function DiscoverScreen() {
                   color={post.hasLiked ? COLORS.green : COLORS.textMuted} 
                 />
                 <Text style={[styles.actionBtnText, post.hasLiked && { color: COLORS.green, fontWeight: '700' }]}>
-                  Appreciate
+                  {t('appreciate')}
                 </Text>
               </TouchableOpacity>
 
@@ -733,7 +735,7 @@ export default function DiscoverScreen() {
                 onPress={() => handleCommentPress(post)}
               >
                 <Feather name="message-square" size={15} color={COLORS.textMuted} />
-                <Text style={styles.actionBtnText}>Comment</Text>
+                <Text style={styles.actionBtnText}>{t('comment')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity 
@@ -747,7 +749,7 @@ export default function DiscoverScreen() {
                   color={post.hasConnected ? COLORS.green : COLORS.textMuted} 
                 />
                 <Text style={[styles.actionBtnText, post.hasConnected && { color: COLORS.green, fontWeight: '700' }]}>
-                  {post.hasConnected ? 'Connected' : 'Network'}
+                  {post.hasConnected ? t('connected') : t('network')}
                 </Text>
               </TouchableOpacity>
 
@@ -762,7 +764,7 @@ export default function DiscoverScreen() {
                   <Feather name="bookmark" size={15} color={COLORS.textMuted} />
                 )}
                 <Text style={[styles.actionBtnText, post.hasSaved && { color: COLORS.green, fontWeight: '700' }]}>
-                  {post.hasSaved ? 'Saved' : 'Save'}
+                  {post.hasSaved ? t('saved') : t('save')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -773,7 +775,7 @@ export default function DiscoverScreen() {
         {filteredPosts.length === 0 && (
           <View style={styles.emptyContainer}>
             <Feather name="alert-circle" size={40} color={COLORS.textMuted} style={{ marginBottom: 12 }} />
-            <Text style={styles.emptyText}>No posts available in this category.</Text>
+            <Text style={styles.emptyText}>{t('noPostsCategory')}</Text>
           </View>
         )}
       </ScrollView>
@@ -955,10 +957,10 @@ export default function DiscoverScreen() {
             elevation: 5,
           }}>
             <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>
-              Filter by Location
+              {t('filterByLocation')}
             </Text>
             <Text style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 16 }}>
-              Enter a city or state name to filter the discover feed posts.
+              {t('filterLocationDesc')}
             </Text>
 
             <TextInput
@@ -973,7 +975,7 @@ export default function DiscoverScreen() {
                 backgroundColor: '#F9FAFB',
                 marginBottom: 20,
               }}
-              placeholder="e.g. Mumbai, Pune, Delhi"
+              placeholder={t('filterLocationPlaceholder')}
               placeholderTextColor="#9CA3AF"
               value={locationInput}
               onChangeText={setLocationInput}
@@ -994,7 +996,7 @@ export default function DiscoverScreen() {
                 }}
               >
                 <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textMuted }}>
-                  Cancel
+                  {t('cancel')}
                 </Text>
               </TouchableOpacity>
 
@@ -1013,7 +1015,7 @@ export default function DiscoverScreen() {
                   }}
                 >
                   <Text style={{ fontSize: 13, fontWeight: '700', color: '#EF4444' }}>
-                    Clear
+                    {t('clear')}
                   </Text>
                 </TouchableOpacity>
               ) : null}
@@ -1031,7 +1033,7 @@ export default function DiscoverScreen() {
                 }}
               >
                 <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.white }}>
-                  Apply
+                  {t('apply')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1069,7 +1071,7 @@ export default function DiscoverScreen() {
               borderBottomColor: '#F3F4F6'
             }}>
               <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.textDark }}>
-                Comments ({selectedCommentPost?.commentsList?.length || 0})
+                {t('comments')} ({selectedCommentPost?.commentsList?.length || 0})
               </Text>
               <TouchableOpacity onPress={() => setCommentModalVisible(false)}>
                 <Feather name="x" size={22} color={COLORS.textMuted} />
@@ -1103,7 +1105,7 @@ export default function DiscoverScreen() {
                 <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 60 }}>
                   <Feather name="message-square" size={36} color={COLORS.textMuted} style={{ marginBottom: 12 }} />
                   <Text style={{ fontSize: 14, color: COLORS.textMuted, textAlign: 'center' }}>
-                    No comments yet. Start the conversation!
+                    {t('noCommentsYet')}
                   </Text>
                 </View>
               )}
@@ -1130,7 +1132,7 @@ export default function DiscoverScreen() {
                   color: COLORS.textDark,
                   maxHeight: 100
                 }}
-                placeholder="Write a comment..."
+                placeholder={t('writeCommentPlaceholder')}
                 placeholderTextColor="#9CA3AF"
                 multiline
                 value={newCommentText}

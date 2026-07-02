@@ -6,6 +6,8 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { BACKEND_URL } from '../../constants/Config';
+import { useTranslation } from '../../utils/i18n';
+
 import NotificationBell from '../../components/NotificationBell';
 
 const getParticipantDetails = (workspace: any, currentUserId: string, onlineUserIds: string[] = []) => {
@@ -55,7 +57,9 @@ const CONVERSATIONS_DATA: any[] = [];
 
 export default function ChatsScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
+
   const [selectedFilter, setSelectedFilter] = useState<'All' | 'Projects' | 'Professionals' | 'System' | 'Unread'>('All');
   const [conversations, setConversations] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -343,7 +347,7 @@ export default function ChatsScreen() {
       <ScrollView bounces={true} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
         {/* Title */}
-        <Text style={styles.pageTitle}>Messages</Text>
+        <Text style={styles.pageTitle}>{t('messages')}</Text>
 
         {/* Search Bar */}
         <View style={styles.searchContainer}>
@@ -351,7 +355,7 @@ export default function ChatsScreen() {
             <Feather name="search" size={18} color={COLORS.textMuted} style={styles.searchIcon} />
             <TextInput 
               style={styles.searchInput} 
-              placeholder="Search messages or contacts..." 
+              placeholder={t('searchMessagesPlaceholder')} 
               placeholderTextColor={COLORS.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -366,6 +370,13 @@ export default function ChatsScreen() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
           {(['All', 'Projects', 'Professionals', 'System', 'Unread'] as const).map((filter) => {
             const isSelected = selectedFilter === filter;
+            const filterLabels: Record<string, string> = {
+              All: t('all') || 'All',
+              Projects: t('projects') || 'Projects',
+              Professionals: t('professionals') || 'Professionals',
+              System: t('system') || 'System',
+              Unread: t('unread') || 'Unread',
+            };
             return (
               <TouchableOpacity
                 key={filter}
@@ -374,7 +385,7 @@ export default function ChatsScreen() {
                 activeOpacity={0.8}
               >
                 <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
-                  {filter}
+                  {filterLabels[filter]}
                 </Text>
                 {filter === 'Unread' && totalUnreadCount > 0 && (
                   <View style={[styles.chipBadge, isSelected && styles.chipBadgeActive]}>
@@ -425,7 +436,7 @@ export default function ChatsScreen() {
           {filteredConversations.length === 0 && (
             <View style={styles.emptyContainer}>
               <Feather name="message-square" size={48} color={COLORS.textMuted} style={{ marginBottom: 12 }} />
-              <Text style={styles.emptyText}>No messages found</Text>
+              <Text style={styles.emptyText}>{t('noMessagesFound')}</Text>
             </View>
           )}
         </View>

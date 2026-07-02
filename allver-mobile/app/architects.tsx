@@ -5,7 +5,9 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
+import { useTranslation } from '../utils/i18n';
 import NotificationBell from '../components/NotificationBell';
+
 
 const { width } = Dimensions.get('window');
 
@@ -21,14 +23,26 @@ const COLORS = {
 };
 
 // Mock data based on the user's second screenshot
-const ARCHITECTS_DATA: any[] = [];
+const PREDEFINED_SKILLS = [
+  'Residential Design',
+  'Interior Design',
+  'Commercial Design',
+  'Landscape Architecture',
+  'Urban Planning',
+  'Sustainable Design',
+  '3D Visualization',
+  'Renovation'
+];
 
 export default function ArchitectsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState((params.searchQuery as string) || '');
+
   const [locationQuery, setLocationQuery] = useState('');
   const [ratingQuery, setRatingQuery] = useState('');
+  const [selectedSkill, setSelectedSkill] = useState('');
   const [architects, setArchitects] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -51,14 +65,29 @@ export default function ArchitectsScreen() {
 
   // Filter architects
   const filteredArchitects = architects.filter((item) => {
-    const name = item.fullName || '';
+    const name = item.fullName || item.name || '';
     const specs = Array.isArray(item.specialization) 
       ? item.specialization.join(', ') 
       : (item.specialization || '');
+
+    const specsPlural = Array.isArray(item.specializations) 
+      ? item.specializations.join(', ') 
+      : (item.specializations || '');
+    
+    const workCat = Array.isArray(item.workCategory)
+      ? item.workCategory.join(', ')
+      : (item.workCategory || '');
+
+    const skills = Array.isArray(item.skills)
+      ? item.skills.join(', ')
+      : (item.skills || '');
     
     const matchesSearch = 
       name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      specs.toLowerCase().includes(searchQuery.toLowerCase());
+      specs.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      specsPlural.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      workCat.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      skills.toLowerCase().includes(searchQuery.toLowerCase());
     
     const location = item.city || '';
     const matchesLocation = location.toLowerCase().includes(locationQuery.toLowerCase());
@@ -66,7 +95,14 @@ export default function ArchitectsScreen() {
     const rating = item.rating || 4.5;
     const matchesRating = ratingQuery ? rating >= parseFloat(ratingQuery) : true;
     
-    return matchesSearch && matchesLocation && matchesRating;
+    const matchesSkill = selectedSkill
+      ? specs.toLowerCase().includes(selectedSkill.toLowerCase()) || 
+        specsPlural.toLowerCase().includes(selectedSkill.toLowerCase()) || 
+        workCat.toLowerCase().includes(selectedSkill.toLowerCase()) ||
+        skills.toLowerCase().includes(selectedSkill.toLowerCase())
+      : true;
+    
+    return matchesSearch && matchesLocation && matchesRating && matchesSkill;
   });
 
 
@@ -107,8 +143,8 @@ export default function ArchitectsScreen() {
             <Feather name="arrow-left" size={24} color={COLORS.textDark} />
           </TouchableOpacity>
           <View style={styles.headerTextCol}>
-            <Text style={styles.headerTitle}>Architecture</Text>
-            <Text style={styles.headerSubtitle}>Find the best architects for your project</Text>
+            <Text style={styles.headerTitle}>{t('architecture')}</Text>
+            <Text style={styles.headerSubtitle}>{t('findArchitectDesc')}</Text>
           </View>
           <NotificationBell size={22} color={COLORS.textDark} style={styles.notificationBtn} />
         </View>
@@ -120,7 +156,7 @@ export default function ArchitectsScreen() {
               <Feather name="search" size={14} color={COLORS.textMuted} style={styles.searchIcon} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Name or skill"
+                placeholder={t('nameOrSkill')}
                 placeholderTextColor={COLORS.textMuted}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
@@ -130,7 +166,7 @@ export default function ArchitectsScreen() {
               <Feather name="map-pin" size={14} color={COLORS.textMuted} style={styles.searchIcon} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Location"
+                placeholder={t('location')}
                 placeholderTextColor={COLORS.textMuted}
                 value={locationQuery}
                 onChangeText={setLocationQuery}
@@ -138,10 +174,29 @@ export default function ArchitectsScreen() {
             </View>
           </View>
 
+          {/* Skill Chips */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ratingPillScroll} contentContainerStyle={styles.ratingPillRow}>
+            <TouchableOpacity
+              style={[styles.ratingPill, selectedSkill === '' && styles.ratingPillActive]}
+              onPress={() => setSelectedSkill('')}
+            >
+              <Text style={[styles.ratingPillText, selectedSkill === '' && styles.ratingPillTextActive]}>{t('allSkills')}</Text>
+            </TouchableOpacity>
+            {PREDEFINED_SKILLS.map((skill) => (
+              <TouchableOpacity
+                key={skill}
+                style={[styles.ratingPill, selectedSkill === skill && styles.ratingPillActive]}
+                onPress={() => setSelectedSkill(skill)}
+              >
+                <Text style={[styles.ratingPillText, selectedSkill === skill && styles.ratingPillTextActive]}>{skill}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
           {/* Rating Pills */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ratingPillScroll} contentContainerStyle={styles.ratingPillRow}>
             {[
-              { label: 'All', value: '' },
+              { label: t('all'), value: '' },
               { label: '⭐ 4.8+', value: '4.8' },
               { label: '⭐ 4.5+', value: '4.5' },
               { label: '⭐ 4.0+', value: '4.0' },
@@ -181,7 +236,7 @@ export default function ArchitectsScreen() {
                       <View style={styles.ratingRow}>
                         <Feather name="star" size={13} color={COLORS.gold} style={styles.starIcon} />
                         <Text style={styles.ratingText}>{item.rating || 4.5}</Text>
-                        <Text style={styles.reviewsText}>({item.reviews || 0} Reviews)</Text>
+                        <Text style={styles.reviewsText}>({item.reviews || 0} {t('reviews')})</Text>
                       </View>
 
                       <View style={styles.metaRow}>
@@ -191,13 +246,13 @@ export default function ArchitectsScreen() {
 
                       <View style={styles.metaRow}>
                         <Feather name="briefcase" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
-                        <Text style={styles.metaText}>{item.experience || 'Entry Level'} Experience</Text>
+                        <Text style={styles.metaText}>{item.experience || t('entryLevel')} {t('experienceSuffix')}</Text>
                       </View>
                     </View>
 
                     {/* View Profile Button */}
                     <TouchableOpacity style={styles.viewProfileButton} onPress={() => navigateToDetail(item)}>
-                      <Text style={styles.viewProfileText}>View Profile</Text>
+                      <Text style={styles.viewProfileText}>{t('viewProfile')}</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -207,11 +262,11 @@ export default function ArchitectsScreen() {
                   <View style={styles.cardStatsRow}>
                     <View style={styles.statItem}>
                       <FontAwesome5 name="briefcase" size={12} color={COLORS.textMuted} style={styles.statIcon} />
-                      <Text style={styles.statText}>{item.projects || 0} Projects</Text>
+                      <Text style={styles.statText}>{item.projects || 0} {t('projectsSuffix')}</Text>
                     </View>
                     <View style={styles.statItem}>
                       <FontAwesome5 name="users" size={12} color={COLORS.textMuted} style={styles.statIcon} />
-                      <Text style={styles.statText}>{followers} Networks</Text>
+                      <Text style={styles.statText}>{followers} {t('networksSuffix')}</Text>
                     </View>
                   </View>
                 </View>
@@ -221,7 +276,7 @@ export default function ArchitectsScreen() {
             {filteredArchitects.length === 0 && (
               <View style={styles.emptyContainer}>
                 <Feather name="alert-circle" size={48} color={COLORS.textMuted} style={{ marginBottom: 15 }} />
-                <Text style={styles.emptyText}>No architects found matching your criteria.</Text>
+                <Text style={styles.emptyText}>{t('noArchitectsFound')}</Text>
               </View>
             )}
           </ScrollView>

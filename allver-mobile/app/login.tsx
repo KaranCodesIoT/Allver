@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
+import { useTranslation } from '../utils/i18n';
 
 const { width, height } = Dimensions.get('window');
 
@@ -50,6 +51,7 @@ const GoldLines = () => (
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { t, i18n } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -84,6 +86,11 @@ export default function LoginScreen() {
           localStorage.setItem('currentUser', JSON.stringify(data.user));
         }
         (global as any).currentUser = data.user;
+
+        // Apply profile language
+        if (data.user?.language) {
+          i18n.changeLanguage(data.user.language);
+        }
 
         if (data.user?.role === 'Architect') {
           const done =
@@ -150,7 +157,7 @@ export default function LoginScreen() {
                 </TouchableOpacity>
 
                 <View style={styles.welcomeTextContainer}>
-                  <Text style={styles.welcomeText}>Welcome</Text>
+                  <Text style={styles.welcomeText}>{t('allverLogin')}</Text>
                   <Text style={styles.sloganText}>Build.Connect.Grow</Text>
                 </View>
               </View>
@@ -160,7 +167,7 @@ export default function LoginScreen() {
             <View style={styles.formCard}>
               {/* Email */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email <Text style={styles.req}>*</Text></Text>
+                <Text style={styles.label}>{t('email')} <Text style={styles.req}>*</Text></Text>
                 <View style={[
                   styles.inputWrap,
                   isEmailFocused ? styles.inputWrapActive : styles.inputWrapInactive
@@ -168,7 +175,7 @@ export default function LoginScreen() {
                   <Feather name="mail" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder="Enter your email"
+                    placeholder={t('enterEmail')}
                     placeholderTextColor={COLORS.textMuted}
                     keyboardType="email-address"
                     autoCapitalize="none"
@@ -182,7 +189,7 @@ export default function LoginScreen() {
 
               {/* Password */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Password <Text style={styles.req}>*</Text></Text>
+                <Text style={styles.label}>{t('password')} <Text style={styles.req}>*</Text></Text>
                 <View style={[
                   styles.inputWrap,
                   isPasswordFocused ? styles.inputWrapActive : styles.inputWrapInactive
@@ -190,7 +197,7 @@ export default function LoginScreen() {
                   <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder="Enter your password"
+                    placeholder={t('enterPassword')}
                     placeholderTextColor={COLORS.textMuted}
                     secureTextEntry={!showPassword}
                     value={password}
@@ -206,7 +213,7 @@ export default function LoginScreen() {
 
               {/* Forgot Password */}
               <TouchableOpacity style={styles.forgotBtn} onPress={() => setResetModalVisible(true)}>
-                <Text style={styles.forgotText}>Forgot Password?</Text>
+                <Text style={styles.forgotText}>{t('forgotPassword')}</Text>
               </TouchableOpacity>
 
               {/* Login Button */}
@@ -217,7 +224,7 @@ export default function LoginScreen() {
                 activeOpacity={0.85}
               >
                 <Text style={styles.primaryBtnText}>
-                  {isLoading ? 'Logging In...' : 'Log In'}
+                  {isLoading ? 'Logging In...' : t('login')}
                 </Text>
                 {!isLoading && (
                   <View style={styles.arrowCircle}>
@@ -229,10 +236,9 @@ export default function LoginScreen() {
 
             {/* Footer */}
             <View style={styles.footerRow}>
-              <Text style={styles.footerText}>Don't have an account? </Text>
               <Link href="/signup" asChild>
                 <TouchableOpacity>
-                  <Text style={styles.footerLink}>Create Account</Text>
+                  <Text style={styles.footerLink}>{t('dontHaveAccount')}</Text>
                 </TouchableOpacity>
               </Link>
             </View>

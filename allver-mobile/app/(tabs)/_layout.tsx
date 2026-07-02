@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Platform, View, Text, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from '../../utils/i18n';
 
 const COLORS = {
   green: '#16A34A',
@@ -63,6 +64,7 @@ const CustomPostButton = ({ onPress, accessibilityState, style, label }: any) =>
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   
   const [userRole, setUserRole] = useState<string>('');
 
@@ -79,7 +81,7 @@ export default function TabLayout() {
     }
   }, []);
 
-  const postLabel = userRole === 'Labour' ? 'Add Work' : 'Post Project';
+  const postLabel = userRole === 'Labour' ? t('addWork') : t('postProject');
 
   // Calculate dynamic bottom padding and height based on system safe area bottom insets
   const bottomPadding = insets.bottom > 0 ? insets.bottom : 8;
@@ -110,14 +112,14 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: t('home'),
           tabBarIcon: ({ color }) => <FontAwesome5 name="home" size={20} color={color} />,
         }}
       />
       <Tabs.Screen
         name="feed"
         options={{
-          title: 'Discover',
+          title: t('discover'),
           tabBarIcon: ({ color }) => <Feather name="compass" size={22} color={color} />,
         }}
       />
@@ -131,7 +133,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="explore"
         options={{
-          title: 'Explore',
+          title: t('explore'),
           tabBarIcon: ({ color }) => <Feather name="globe" size={22} color={color} />,
           href: null,
         }}
@@ -139,14 +141,14 @@ export default function TabLayout() {
       <Tabs.Screen
         name="design"
         options={{
-          title: 'Design',
+          title: t('design'),
           tabBarIcon: ({ color }) => <FontAwesome5 name="pencil-ruler" size={20} color={color} />,
         }}
       />
       <Tabs.Screen
         name="chats"
         options={{
-          title: 'Chats',
+          title: t('chats'),
           tabBarIcon: ({ color }) => <FontAwesome5 name="comment-dots" size={22} color={color} />,
           href: null,
         }}
@@ -154,7 +156,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: t('profile'),
           tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} />,
         }}
       />

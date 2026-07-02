@@ -5,7 +5,9 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
+import { useTranslation } from '../utils/i18n';
 import NotificationBell from '../components/NotificationBell';
+
 
 const { width } = Dimensions.get('window');
 
@@ -20,12 +22,26 @@ const COLORS = {
   bgLight: '#F9FAFB',
 };
 
+const PREDEFINED_SKILLS = [
+  'Mason',
+  'Electrician',
+  'Plumber',
+  'Painter',
+  'Carpenter',
+  'Welder',
+  'Tile Fitter',
+  'Helper'
+];
+
 export default function LaboursScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState((params.searchQuery as string) || '');
+
   const [locationQuery, setLocationQuery] = useState('');
   const [availabilityFilter, setAvailabilityFilter] = useState('');
+  const [selectedSkill, setSelectedSkill] = useState('');
   const [labours, setLabours] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -48,10 +64,21 @@ export default function LaboursScreen() {
 
   // Filter labours
   const filteredLabours = labours.filter((item) => {
-    const name = (item.fullName || '').toLowerCase();
+    const name = (item.fullName || item.name || '').toLowerCase();
     const skill = (item.skillType || '').toLowerCase();
+    
+    const workCat = Array.isArray(item.workCategory)
+      ? item.workCategory.join(', ').toLowerCase()
+      : (item.workCategory || '').toLowerCase();
+
+    const skills = Array.isArray(item.skills)
+      ? item.skills.join(', ').toLowerCase()
+      : (item.skills || '').toLowerCase();
+      
     const matchesSearch = name.includes(searchQuery.toLowerCase()) || 
-                          skill.includes(searchQuery.toLowerCase());
+                          skill.includes(searchQuery.toLowerCase()) ||
+                          workCat.includes(searchQuery.toLowerCase()) ||
+                          skills.includes(searchQuery.toLowerCase());
     
     const location = (item.city || '').toLowerCase();
     const matchesLocation = location.includes(locationQuery.toLowerCase());
@@ -59,8 +86,14 @@ export default function LaboursScreen() {
     const matchesAvailability = availabilityFilter 
       ? (item.availability || '').toLowerCase() === availabilityFilter.toLowerCase() 
       : true;
+      
+    const matchesSkill = selectedSkill
+      ? skill.includes(selectedSkill.toLowerCase()) ||
+        workCat.includes(selectedSkill.toLowerCase()) ||
+        skills.includes(selectedSkill.toLowerCase())
+      : true;
     
-    return matchesSearch && matchesLocation && matchesAvailability;
+    return matchesSearch && matchesLocation && matchesAvailability && matchesSkill;
   });
 
 
@@ -98,8 +131,8 @@ export default function LaboursScreen() {
             <Feather name="arrow-left" size={24} color={COLORS.textDark} />
           </TouchableOpacity>
           <View style={styles.headerTextCol}>
-            <Text style={styles.headerTitle}>Skilled Labour</Text>
-            <Text style={styles.headerSubtitle}>Find skilled & reliable workers</Text>
+            <Text style={styles.headerTitle}>{t('labourers')}</Text>
+            <Text style={styles.headerSubtitle}>{t('findLabourDesc')}</Text>
           </View>
           <NotificationBell size={22} color={COLORS.textDark} style={styles.notificationBtn} />
         </View>
@@ -111,7 +144,7 @@ export default function LaboursScreen() {
               <Feather name="search" size={14} color={COLORS.textMuted} style={styles.searchIcon} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Name or skill"
+                placeholder={t('nameOrSkill')}
                 placeholderTextColor={COLORS.textMuted}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
@@ -121,7 +154,7 @@ export default function LaboursScreen() {
               <Feather name="map-pin" size={14} color={COLORS.textMuted} style={styles.searchIcon} />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Location"
+                placeholder={t('location')}
                 placeholderTextColor={COLORS.textMuted}
                 value={locationQuery}
                 onChangeText={setLocationQuery}
@@ -129,12 +162,31 @@ export default function LaboursScreen() {
             </View>
           </View>
 
+          {/* Skill Chips */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll} contentContainerStyle={styles.pillRow}>
+            <TouchableOpacity
+              style={[styles.pill, selectedSkill === '' && styles.pillActive]}
+              onPress={() => setSelectedSkill('')}
+            >
+              <Text style={[styles.pillText, selectedSkill === '' && styles.pillTextActive]}>{t('allSkills')}</Text>
+            </TouchableOpacity>
+            {PREDEFINED_SKILLS.map((skill) => (
+              <TouchableOpacity
+                key={skill}
+                style={[styles.pill, selectedSkill === skill && styles.pillActive]}
+                onPress={() => setSelectedSkill(skill)}
+              >
+                <Text style={[styles.pillText, selectedSkill === skill && styles.pillTextActive]}>{skill}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
           {/* Availability Pills */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll} contentContainerStyle={styles.pillRow}>
             {[
-              { label: 'All', value: '' },
-              { label: '✅ Available', value: 'Available' },
-              { label: 'Busy', value: 'Not Available' },
+              { label: t('all'), value: '' },
+              { label: `✅ ${t('available')}`, value: 'Available' },
+              { label: t('busy'), value: 'Not Available' },
             ].map((r) => (
               <TouchableOpacity
                 key={r.value}
@@ -173,17 +225,17 @@ export default function LaboursScreen() {
                       <View style={styles.ratingRow}>
                         <Feather name="star" size={13} color={COLORS.gold} style={styles.starIcon} />
                         <Text style={styles.ratingText}>{item.rating || 0}</Text>
-                        <Text style={styles.reviewsText}>({item.reviews || 0} Reviews)</Text>
+                        <Text style={styles.reviewsText}>({item.reviews || 0} {t('reviews')})</Text>
                       </View>
 
                       <View style={styles.metaRow}>
                         <Feather name="map-pin" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
-                        <Text style={styles.metaText}>{item.city || 'Not specified'}</Text>
+                        <Text style={styles.metaText}>{item.city || t('notSpecified') || 'Not specified'}</Text>
                       </View>
 
                       <View style={styles.metaRow}>
                         <Feather name="briefcase" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
-                        <Text style={styles.metaText}>{item.experience || '0'} Experience</Text>
+                        <Text style={styles.metaText}>{item.experience || '0'} {t('experienceSuffix')}</Text>
                       </View>
                     </View>
 
@@ -192,11 +244,11 @@ export default function LaboursScreen() {
                       <View style={[styles.availabilityBadge, { backgroundColor: isAvailable ? '#ECFDF5' : '#FEF2F2' }]}>
                         <View style={[styles.availabilityDot, { backgroundColor: isAvailable ? '#10B981' : '#EF4444' }]} />
                         <Text style={[styles.availabilityText, { color: isAvailable ? '#10B981' : '#EF4444' }]}>
-                          {isAvailable ? 'Available' : 'Busy'}
+                          {isAvailable ? t('available') : t('busy')}
                         </Text>
                       </View>
                       <TouchableOpacity style={styles.viewProfileButton} onPress={() => navigateToDetail(item)}>
-                        <Text style={styles.viewProfileText}>View Profile</Text>
+                        <Text style={styles.viewProfileText}>{t('viewProfile')}</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -207,7 +259,7 @@ export default function LaboursScreen() {
             {filteredLabours.length === 0 && (
               <View style={styles.emptyContainer}>
                 <Feather name="alert-circle" size={48} color={COLORS.textMuted} style={{ marginBottom: 15 }} />
-                <Text style={styles.emptyText}>No skilled labour found matching your criteria.</Text>
+                <Text style={styles.emptyText}>{t('noLaboursFound')}</Text>
               </View>
             )}
           </ScrollView>

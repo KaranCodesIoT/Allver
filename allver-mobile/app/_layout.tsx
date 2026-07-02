@@ -14,6 +14,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { BACKEND_URL } from '@/constants/Config';
+import { I18nProvider } from '../utils/i18n';
 
 // Keep the splash screen visible until we hide it
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -213,7 +214,7 @@ export default function RootLayout() {
   }, [stage]);
 
   useEffect(() => {
-    // Stage 1: Keep native splash screen visible for 500ms
+    // Stage 1: Keep native splash screen visible for 200ms
     const splashTimer = setTimeout(async () => {
       try {
         await SplashScreen.hideAsync();
@@ -221,7 +222,7 @@ export default function RootLayout() {
         console.warn(e);
       }
       setStage('ready');
-    }, 500);
+    }, 200);
 
     return () => clearTimeout(splashTimer);
   }, []);
@@ -231,70 +232,73 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <View style={{ flex: 1 }}>
-        <Stack>
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="signup" options={{ headerShown: false }} />
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="portfolio-highlights" options={{ headerShown: false }} />
-          <Stack.Screen name="architect-profile" options={{ headerShown: false }} />
-          <Stack.Screen name="contractor-profile" options={{ headerShown: false }} />
-          <Stack.Screen name="chat-room" options={{ headerShown: false }} />
-          <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
-          <Stack.Screen name="architects" options={{ headerShown: false }} />
-          <Stack.Screen name="architect-detail" options={{ headerShown: false }} />
-          <Stack.Screen name="design-detail" options={{ headerShown: false }} />
-          <Stack.Screen name="contractors" options={{ headerShown: false }} />
-          <Stack.Screen name="contractor-detail" options={{ headerShown: false }} />
-          <Stack.Screen name="labour-detail" options={{ headerShown: false }} />
-          <Stack.Screen name="project-detail" options={{ headerShown: false }} />
-          <Stack.Screen name="project-applications" options={{ headerShown: false }} />
-          <Stack.Screen name="project-compare" options={{ headerShown: false }} />
-          <Stack.Screen name="project-progress" options={{ headerShown: false }} />
-          <Stack.Screen name="notifications" options={{ headerShown: false }} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-        </Stack>
-        <StatusBar style="auto" />
+    <I18nProvider>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <View style={{ flex: 1 }}>
+          <Stack>
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="choose-language" options={{ headerShown: false }} />
+            <Stack.Screen name="signup" options={{ headerShown: false }} />
+            <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="portfolio-highlights" options={{ headerShown: false }} />
+            <Stack.Screen name="architect-profile" options={{ headerShown: false }} />
+            <Stack.Screen name="contractor-profile" options={{ headerShown: false }} />
+            <Stack.Screen name="chat-room" options={{ headerShown: false }} />
+            <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
+            <Stack.Screen name="architects" options={{ headerShown: false }} />
+            <Stack.Screen name="architect-detail" options={{ headerShown: false }} />
+            <Stack.Screen name="design-detail" options={{ headerShown: false }} />
+            <Stack.Screen name="contractors" options={{ headerShown: false }} />
+            <Stack.Screen name="contractor-detail" options={{ headerShown: false }} />
+            <Stack.Screen name="labour-detail" options={{ headerShown: false }} />
+            <Stack.Screen name="project-detail" options={{ headerShown: false }} />
+            <Stack.Screen name="project-applications" options={{ headerShown: false }} />
+            <Stack.Screen name="project-compare" options={{ headerShown: false }} />
+            <Stack.Screen name="project-progress" options={{ headerShown: false }} />
+            <Stack.Screen name="notifications" options={{ headerShown: false }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+          </Stack>
+          <StatusBar style="auto" />
 
-        {/* Loading Spinner Overlay */}
-        {stage === 'ready' && checkingLocation && (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', zIndex: 99999 }]}>
-            <ActivityIndicator size="large" color="#16A34A" />
-            <Text style={{ marginTop: 12, fontSize: 14, color: '#6B7280', fontWeight: '500' }}>Verifying location services...</Text>
-          </View>
-        )}
+          {/* Loading Spinner Overlay */}
+          {stage === 'ready' && checkingLocation && (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', zIndex: 99999 }]}>
+              <ActivityIndicator size="large" color="#16A34A" />
+              <Text style={{ marginTop: 12, fontSize: 14, color: '#6B7280', fontWeight: '500' }}>Verifying location services...</Text>
+            </View>
+          )}
 
-        {/* Location Permission Blocking Overlay */}
-        {stage === 'ready' && locationPermissionGranted === false && (
-          <View style={[StyleSheet.absoluteFill, { zIndex: 99999 }]}>
-            <View style={styles.permissionContainer}>
-              <View style={styles.permissionCard}>
-                <View style={styles.iconCircle}>
-                  <Feather name="map-pin" size={38} color="#16A34A" />
+          {/* Location Permission Blocking Overlay */}
+          {stage === 'ready' && locationPermissionGranted === false && (
+            <View style={[StyleSheet.absoluteFill, { zIndex: 99999 }]}>
+              <View style={styles.permissionContainer}>
+                <View style={styles.permissionCard}>
+                  <View style={styles.iconCircle}>
+                    <Feather name="map-pin" size={38} color="#16A34A" />
+                  </View>
+                  <Text style={styles.permissionTitle}>Location Access Required</Text>
+                  <Text style={styles.permissionDescription}>
+                    Allver requires GPS location permissions to match you with relevant construction requests, design portfolios, and check-in services.
+                  </Text>
+                  <Text style={styles.permissionWarning}>
+                    Please enable location services in your system settings to use the Allver platform.
+                  </Text>
+                  
+                  <TouchableOpacity style={styles.permissionBtn} activeOpacity={0.8} onPress={() => checkLocationPermission(true)}>
+                    <Text style={styles.permissionBtnText}>Enable Location</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.settingsBtn} activeOpacity={0.8} onPress={() => Linking.openSettings()}>
+                    <Text style={styles.settingsBtnText}>Open Settings</Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.permissionTitle}>Location Access Required</Text>
-                <Text style={styles.permissionDescription}>
-                  Allver requires GPS location permissions to match you with relevant construction requests, design portfolios, and check-in services.
-                </Text>
-                <Text style={styles.permissionWarning}>
-                  Please enable location services in your system settings to use the Allver platform.
-                </Text>
-                
-                <TouchableOpacity style={styles.permissionBtn} activeOpacity={0.8} onPress={() => checkLocationPermission(true)}>
-                  <Text style={styles.permissionBtnText}>Enable Location</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.settingsBtn} activeOpacity={0.8} onPress={() => Linking.openSettings()}>
-                  <Text style={styles.settingsBtnText}>Open Settings</Text>
-                </TouchableOpacity>
               </View>
             </View>
-          </View>
-        )}
-      </View>
-    </ThemeProvider>
+          )}
+        </View>
+      </ThemeProvider>
+    </I18nProvider>
   );
 }
 

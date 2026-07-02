@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, Link } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
+import { useTranslation, getLocalLanguage } from '../utils/i18n';
 
 const COLORS = {
   green: '#1BC47D',
@@ -32,6 +33,7 @@ const ROLES = [
 
 export default function SignupScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
 
   const [fullName, setFullName] = useState('');
@@ -62,7 +64,15 @@ export default function SignupScreen() {
       const response = await fetch(`${BACKEND_URL}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fullName, email: email.trim().toLowerCase(), phoneNumber, password, role, city }),
+        body: JSON.stringify({ 
+          fullName, 
+          email: email.trim().toLowerCase(), 
+          phoneNumber, 
+          password, 
+          role, 
+          city,
+          language: getLocalLanguage() || 'en'
+        }),
       });
 
       const data = await response.json();
@@ -109,9 +119,9 @@ export default function SignupScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.title}>Create Account</Text>
+            <Text style={styles.title}>{t('createAccount')}</Text>
             <Text style={styles.subtitle}>
-              Join India's largest construction network
+              {t('joinNetwork')}
             </Text>
 
             {/* ─── FORM ─── */}
@@ -119,12 +129,12 @@ export default function SignupScreen() {
 
               {/* Full Name */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Full Name <Text style={styles.req}>*</Text></Text>
+                <Text style={styles.label}>{t('fullName')} <Text style={styles.req}>*</Text></Text>
                 <View style={styles.inputWrap}>
                   <Feather name="user" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder="Enter your full name"
+                    placeholder={t('enterFullName')}
                     placeholderTextColor={COLORS.textMuted}
                     value={fullName}
                     onChangeText={setFullName}
@@ -134,7 +144,7 @@ export default function SignupScreen() {
 
               {/* Email */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email <Text style={styles.req}>*</Text></Text>
+                <Text style={styles.label}>{t('email')} <Text style={styles.req}>*</Text></Text>
                 <View style={styles.inputWrap}>
                   <Feather name="mail" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
@@ -151,7 +161,7 @@ export default function SignupScreen() {
 
               {/* Phone (optional) */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Phone Number</Text>
+                <Text style={styles.label}>{t('phoneNumber')}</Text>
                 <View style={styles.inputWrap}>
                   <Feather name="phone" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
@@ -167,12 +177,12 @@ export default function SignupScreen() {
 
               {/* City */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>City <Text style={styles.req}>*</Text></Text>
+                <Text style={styles.label}>{t('city')} <Text style={styles.req}>*</Text></Text>
                 <View style={styles.inputWrap}>
                   <Feather name="map-pin" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder="e.g. Mumbai, Delhi"
+                    placeholder={t('enterCity')}
                     placeholderTextColor={COLORS.textMuted}
                     value={city}
                     onChangeText={setCity}
@@ -182,7 +192,7 @@ export default function SignupScreen() {
 
               {/* Role Selection */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>I am a <Text style={styles.req}>*</Text></Text>
+                <Text style={styles.label}>{t('roleLabel')} <Text style={styles.req}>*</Text></Text>
                 <View style={styles.roleRow}>
                   {ROLES.map((r) => {
                     const selected = role === r.title;
@@ -217,7 +227,7 @@ export default function SignupScreen() {
 
               {/* Password */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Password <Text style={styles.req}>*</Text></Text>
+                <Text style={styles.label}>{t('password')} <Text style={styles.req}>*</Text></Text>
                 <View style={styles.inputWrap}>
                   <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
@@ -236,7 +246,7 @@ export default function SignupScreen() {
 
               {/* Confirm Password */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Confirm Password <Text style={styles.req}>*</Text></Text>
+                <Text style={styles.label}>{t('confirmPassword')} <Text style={styles.req}>*</Text></Text>
                 <View style={styles.inputWrap}>
                   <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
@@ -259,7 +269,7 @@ export default function SignupScreen() {
               activeOpacity={0.85}
             >
               <Text style={styles.primaryBtnText}>
-                {isLoading ? 'Creating Account...' : 'Create Account'}
+                {isLoading ? 'Creating Account...' : t('createAccount')}
               </Text>
               {!isLoading && (
                 <View style={styles.arrowCircle}>
@@ -270,10 +280,9 @@ export default function SignupScreen() {
 
             {/* Footer */}
             <View style={styles.footerRow}>
-              <Text style={styles.footerText}>Already have an account? </Text>
               <Link href="/login" asChild>
                 <TouchableOpacity>
-                  <Text style={styles.footerLink}>Login</Text>
+                  <Text style={styles.footerLink}>{t('alreadyHaveAccount')}</Text>
                 </TouchableOpacity>
               </Link>
             </View>

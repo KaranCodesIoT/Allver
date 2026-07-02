@@ -5,6 +5,7 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
+import { useTranslation, getLocalLanguage, SUPPORTED_LANGUAGES } from '../utils/i18n';
 
 const { width, height } = Dimensions.get('window');
 
@@ -68,6 +69,7 @@ import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const { t, i18n } = useTranslation();
   
   // Refs for web hidden file input elements
   const coverInputRef = useRef<any>(null);
@@ -93,11 +95,13 @@ export default function EditProfileScreen() {
   const [profilePhoto, setProfilePhoto] = useState('');
   const [coverPhoto, setCoverPhoto] = useState('');
   const [specialization, setSpecialization] = useState<string[]>([]);
+  const [selectedLanguageCode, setSelectedLanguageCode] = useState('en');
 
   // Picker Modals Visibility
   const [experienceModalVisible, setExperienceModalVisible] = useState(false);
   const [countryModalVisible, setCountryModalVisible] = useState(false);
   const [stateModalVisible, setStateModalVisible] = useState(false);
+  const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [photoPickerVisible, setPhotoPickerVisible] = useState<{ type: 'cover' | 'avatar', visible: boolean }>({ type: 'cover', visible: false });
 
   const showAlert = (title: string, message: string, buttons?: { text: string, onPress?: () => void }[]) => {
@@ -140,6 +144,7 @@ export default function EditProfileScreen() {
     setProfilePhoto(resolveAvatarUrl(user.avatarUrl) || '');
     setCoverPhoto(resolveAvatarUrl(user.cover) || '');
     setSpecialization(user.specialization || []);
+    setSelectedLanguageCode(user.language || getLocalLanguage() || 'en');
   }, []);
 
   const handleAddTag = () => {
@@ -313,7 +318,8 @@ export default function EditProfileScreen() {
       avatarUrl: profilePhoto,
       cover: coverPhoto,
       specialization,
-      role: currentUser?.role || 'Architect'
+      role: currentUser?.role || 'Architect',
+      language: selectedLanguageCode
     };
 
     try {
@@ -333,6 +339,9 @@ export default function EditProfileScreen() {
           localStorage.setItem('currentUser', JSON.stringify(updatedUser));
         }
         (global as any).currentUser = updatedUser;
+
+        // Instantly switch language in UI
+        i18n.changeLanguage(selectedLanguageCode);
 
         showAlert('Success', 'Profile updated successfully!', [
           { text: 'OK', onPress: () => router.back() }
@@ -798,6 +807,22 @@ export default function EditProfileScreen() {
                 <Text style={styles.phoneFieldHint}>This will appear on your public profile for client contact.</Text>
               </View>
 
+              {/* Language Preference */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>
+                  <Feather name="globe" size={14} style={{ marginRight: 6 }} /> {t('language').toUpperCase()} PREFERENCE
+                </Text>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>APP LANGUAGE</Text>
+                  <TouchableOpacity style={styles.dropdownTrigger} onPress={() => setLanguageModalVisible(true)}>
+                    <Text style={styles.dropdownTriggerTextSelected}>
+                      {SUPPORTED_LANGUAGES.find(l => l.code === selectedLanguageCode)?.nativeLabel || 'English'}
+                    </Text>
+                    <Feather name="chevron-down" size={16} color={COLORS.textMuted} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
               {/* Danger Zone */}
               <View style={[styles.card, { borderColor: '#FEE2E2', borderTopWidth: 1, borderBottomWidth: 1, borderLeftWidth: 0, borderRightWidth: 0, backgroundColor: '#FFF5F5', marginTop: 15 }]}>
                 <Text style={[styles.cardTitle, { color: '#EF4444' }]}><Feather name="alert-triangle" size={14} color="#EF4444" style={{ marginRight: 6 }} /> DANGER ZONE</Text>
@@ -922,6 +947,35 @@ export default function EditProfileScreen() {
                 >
                   <Text style={styles.modalOptionText}>{opt}</Text>
                   {state === opt ? <Feather name="check" size={16} color={COLORS.green} /> : null}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* LANGUAGE SELECTOR MODAL */}
+      <Modal visible={languageModalVisible} transparent={true} animationType="slide">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setLanguageModalVisible(false)}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Language</Text>
+              <TouchableOpacity onPress={() => setLanguageModalVisible(false)}>
+                <Feather name="x" size={20} color={COLORS.textDark} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={{ maxHeight: 300 }}>
+              {SUPPORTED_LANGUAGES.map((opt) => (
+                <TouchableOpacity 
+                  key={opt.code} 
+                  style={styles.modalOption} 
+                  onPress={() => {
+                    setSelectedLanguageCode(opt.code);
+                    setLanguageModalVisible(false);
+                  }}
+                >
+                  <Text style={styles.modalOptionText}>{opt.nativeLabel} ({opt.label})</Text>
+                  {selectedLanguageCode === opt.code ? <Feather name="check" size={16} color={COLORS.green} /> : null}
                 </TouchableOpacity>
               ))}
             </ScrollView>

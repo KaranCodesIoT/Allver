@@ -7,6 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { io } from 'socket.io-client';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
+import TransliteratedTextInput from '../components/TransliteratedTextInput';
 
 const { width } = Dimensions.get('window');
 
@@ -1758,7 +1759,7 @@ export default function ChatRoomScreen() {
                 <Feather name="plus" size={24} color={COLORS.textMuted} />
               </TouchableOpacity>
 
-              <TextInput
+              <TransliteratedTextInput
                 style={styles.textInput}
                 placeholder="Message"
                 placeholderTextColor="#8696A0"

@@ -6,6 +6,8 @@ import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { BACKEND_URL } from '../../constants/Config';
+import { useTranslation } from '../../utils/i18n';
+import TransliteratedTextInput from '../../components/TransliteratedTextInput';
 
 const { width } = Dimensions.get('window');
 
@@ -55,6 +57,7 @@ const WORK_TYPE_OPTIONS = [
 
 export default function PostProjectScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   
   // User Authentication State
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -543,16 +546,16 @@ export default function PostProjectScreen() {
             <Feather name="check" size={40} color={COLORS.white} />
           </View>
           <Text style={styles.successTitle}>
-            {successType === 'labour_work' ? 'Work Added!' : successType === 'client' ? 'Project Posted!' : 'Published Successfully!'}
+            {successType === 'labour_work' ? t('workAdded') : successType === 'client' ? t('projectPosted') : t('publishedSuccessfully')}
           </Text>
           <Text style={styles.successMessage}>
             {successType === 'labour_work'
-              ? 'Your work has been saved to your Portfolio Highlights! Clients and contractors can now see it on your profile.'
+              ? t('labourWorkSuccessDesc')
               : successType === 'client' 
-                ? 'Your project has been successfully published. Contractors and architects will contact you shortly.'
+                ? t('clientProjectSuccessDesc')
                 : successType === 'architect_design'
-                  ? 'Your blueprint design has been published to the Design catalog.'
-                  : 'Your post has been successfully published to the Discover feed.'}
+                  ? t('architectDesignSuccessDesc')
+                  : t('architectMediaSuccessDesc')}
           </Text>
         </View>
       </SafeAreaView>
@@ -574,7 +577,7 @@ export default function PostProjectScreen() {
           </TouchableOpacity>
         ) : null}
         <Text style={styles.headerTitle}>
-          {isArchitect ? 'Architect Studio' : isContractor ? 'Post Project' : (currentUser?.role === 'Labour' ? 'Add Work' : 'Post Project')}
+          {isArchitect ? t('architectStudio') : isContractor ? t('postProject') : (currentUser?.role === 'Labour' ? t('addWork') : t('postProject'))}
         </Text>
       </View>
 
@@ -586,8 +589,8 @@ export default function PostProjectScreen() {
             {selectedType === null ? (
               // Option Selection Screen
               <View style={styles.selectionView}>
-                <Text style={styles.studioTitle}>{isContractor ? 'Post Your Work' : 'Create New Content'}</Text>
-                <Text style={styles.studioSubtitle}>{isContractor ? 'Select content type to showcase on Discover' : 'Select the content type to publish to the network'}</Text>
+                <Text style={styles.studioTitle}>{isContractor ? t('postYourWork') : t('createNewContent')}</Text>
+                <Text style={styles.studioSubtitle}>{isContractor ? t('postYourWorkDesc') : t('createNewContentDesc')}</Text>
 
                 {/* Option 1: Images */}
                 <TouchableOpacity 
@@ -599,8 +602,8 @@ export default function PostProjectScreen() {
                     <Feather name="image" size={22} color={COLORS.green} />
                   </View>
                   <View style={styles.optionInfo}>
-                    <Text style={styles.optionTitle}>Upload Images</Text>
-                    <Text style={styles.optionSub}>{isContractor ? 'Share project photos & site progress' : 'Share site progress photos to your feed'}</Text>
+                    <Text style={styles.optionTitle}>{t('uploadImages')}</Text>
+                    <Text style={styles.optionSub}>{isContractor ? t('contractorImagesDesc') : t('architectImagesDesc')}</Text>
                   </View>
                   <Feather name="chevron-right" size={18} color={COLORS.textMuted} />
                 </TouchableOpacity>
@@ -615,8 +618,8 @@ export default function PostProjectScreen() {
                     <Feather name="video" size={22} color={COLORS.blue} />
                   </View>
                   <View style={styles.optionInfo}>
-                    <Text style={styles.optionTitle}>Upload Videos</Text>
-                    <Text style={styles.optionSub}>{isContractor ? 'Share project walkthrough & progress videos' : 'Share site walkthrough clips to your feed'}</Text>
+                    <Text style={styles.optionTitle}>{t('uploadVideos')}</Text>
+                    <Text style={styles.optionSub}>{isContractor ? t('contractorVideosDesc') : t('architectVideosDesc')}</Text>
                   </View>
                   <Feather name="chevron-right" size={18} color={COLORS.textMuted} />
                 </TouchableOpacity>
@@ -632,8 +635,8 @@ export default function PostProjectScreen() {
                     <FontAwesome5 name="pencil-ruler" size={18} color={COLORS.gold} />
                   </View>
                   <View style={styles.optionInfo}>
-                    <Text style={styles.optionTitle}>Upload Design</Text>
-                    <Text style={styles.optionSub}>Publish blueprint plans and project layouts</Text>
+                    <Text style={styles.optionTitle}>{t('uploadDesign')}</Text>
+                    <Text style={styles.optionSub}>{t('architectDesignDesc')}</Text>
                   </View>
                   <Feather name="chevron-right" size={18} color={COLORS.textMuted} />
                 </TouchableOpacity>
@@ -660,7 +663,7 @@ export default function PostProjectScreen() {
                     )}
                   </View>
                   <Text style={styles.uploadSectionTitle}>
-                    {selectedType === 'design' ? 'Publish Blueprint Design' : 'Publish to Feed (Discover)'}
+                    {selectedType === 'design' ? t('publishBlueprint') : t('publishToFeed')}
                   </Text>
                 </View>
 
@@ -678,8 +681,8 @@ export default function PostProjectScreen() {
                       <Feather name="plus-circle" size={20} color={COLORS.green} style={{ marginRight: 8 }} />
                       <Text style={styles.mediaSelectorBtnText}>
                         {selectedType === 'design' 
-                          ? 'Select Design Layout from Device' 
-                          : `Select ${selectedType === 'images' ? 'Images' : 'Videos'} from Device`}
+                          ? t('selectDesignLayout') 
+                          : (selectedType === 'images' ? t('selectImagesDevice') : t('selectVideosDevice'))}
                       </Text>
                     </>
                   )}
@@ -688,7 +691,7 @@ export default function PostProjectScreen() {
                 {/* Media Preview Row */}
                 {selectedMedia.length > 0 && (
                   <View style={styles.previewContainer}>
-                    <Text style={styles.previewTitle}>Selected File Preview</Text>
+                    <Text style={styles.previewTitle}>{t('selectedFilePreview')}</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.previewScroll}>
                       {selectedMedia.map((uri, index) => {
                         const isVideo = uri.toLowerCase().endsWith('.mp4') || uri.toLowerCase().endsWith('.mov') || uri.toLowerCase().endsWith('.avi');
@@ -715,8 +718,8 @@ export default function PostProjectScreen() {
                 <View style={styles.inputsBlock}>
                   {selectedType === 'design' && (
                     <>
-                      <Text style={styles.label}>Design Title</Text>
-                      <TextInput
+                      <Text style={styles.label}>{t('designTitle')}</Text>
+                      <TransliteratedTextInput
                         style={styles.input}
                         placeholder="e.g. Modern Scandinavian Living Room"
                         placeholderTextColor={COLORS.textMuted}
@@ -727,14 +730,14 @@ export default function PostProjectScreen() {
                   )}
 
                   <Text style={styles.label}>
-                    {selectedType === 'design' ? 'Design Description' : 'Post Description'}
+                    {selectedType === 'design' ? t('designDescription') : t('postDescription')}
                   </Text>
-                  <TextInput
+                  <TransliteratedTextInput
                     style={[styles.input, styles.textArea]}
                     placeholder={
                       selectedType === 'design'
-                        ? 'Describe the design concepts, colors, area, and estimated build cost...'
-                        : 'Share updates, thoughts on this facade, or notes about this project site work...'
+                        ? t('designDescriptionPlaceholder')
+                        : t('postDescriptionPlaceholder')
                     }
                     placeholderTextColor={COLORS.textMuted}
                     multiline={true}
@@ -746,43 +749,47 @@ export default function PostProjectScreen() {
                   {/* Optional Quotation Form for Designs */}
                   {selectedType === 'design' && (
                     <View style={styles.quotationFormSection}>
-                      <Text style={styles.sectionDividerText}>Cost Quotation (Optional)</Text>
-                      <Text style={styles.sectionDividerSubText}>Provide estimated price ranges for this design layout (e.g. 4.5 L - 5.8 L)</Text>
+                      <Text style={styles.sectionDividerText}>{t('costQuotation')}</Text>
+                      <Text style={styles.sectionDividerSubText}>{t('costQuotationDesc')}</Text>
                       
-                      <Text style={styles.smallLabel}>Civil & Structure Cost</Text>
-                      <TextInput
+                      <Text style={styles.smallLabel}>{t('civilCost')}</Text>
+                      <TransliteratedTextInput
                         style={styles.smallInput}
                         placeholder="e.g. 4.5 L - 5.8 L"
                         placeholderTextColor={COLORS.textMuted}
                         value={civilStructure}
                         onChangeText={setCivilStructure}
+                        disableTransliteration={true}
                       />
 
-                      <Text style={styles.smallLabel}>Flooring & Tiling Cost</Text>
-                      <TextInput
+                      <Text style={styles.smallLabel}>{t('flooringCost')}</Text>
+                      <TransliteratedTextInput
                         style={styles.smallInput}
                         placeholder="e.g. 1.2 L - 1.8 L"
                         placeholderTextColor={COLORS.textMuted}
                         value={flooringTiling}
                         onChangeText={setFlooringTiling}
+                        disableTransliteration={true}
                       />
 
-                      <Text style={styles.smallLabel}>Electrical & Plumbing Cost</Text>
-                      <TextInput
+                      <Text style={styles.smallLabel}>{t('electricalCost')}</Text>
+                      <TransliteratedTextInput
                         style={styles.smallInput}
                         placeholder="e.g. 0.8 L - 1.2 L"
                         placeholderTextColor={COLORS.textMuted}
                         value={electricalPlumbing}
                         onChangeText={setElectricalPlumbing}
+                        disableTransliteration={true}
                       />
 
-                      <Text style={styles.smallLabel}>Modular Woodwork Cost</Text>
-                      <TextInput
+                      <Text style={styles.smallLabel}>{t('woodworkCost')}</Text>
+                      <TransliteratedTextInput
                         style={styles.smallInput}
                         placeholder="e.g. 2.5 L - 3.8 L"
                         placeholderTextColor={COLORS.textMuted}
                         value={modularWoodwork}
                         onChangeText={setModularWoodwork}
+                        disableTransliteration={true}
                       />
                     </View>
                   )}
@@ -799,7 +806,7 @@ export default function PostProjectScreen() {
                     ) : (
                       <>
                         <Text style={styles.submitBtnText}>
-                          {selectedType === 'design' ? 'Post Design' : 'Publish to Feed'}
+                          {selectedType === 'design' ? t('postDesign') : t('publishToFeed')}
                         </Text>
                         <Feather name="arrow-right" size={18} color={COLORS.white} style={{ marginLeft: 6 }} />
                       </>
@@ -818,23 +825,23 @@ export default function PostProjectScreen() {
                 <Feather name="tool" size={18} color={COLORS.green} />
               </View>
               <Text style={styles.bannerText}>
-                Showcase your completed work to attract more clients. Add photos, describe the project, and build your portfolio.
+                {t('labourPostBanner')}
               </Text>
             </View>
 
             <View style={styles.formContainer}>
               {/* Work Title */}
-              <Text style={styles.label}>Work Title</Text>
-              <TextInput
+              <Text style={styles.label}>{t('workTitle')}</Text>
+              <TransliteratedTextInput
                 style={styles.input}
-                placeholder="e.g. House Painting, Tile Installation, Plumbing Work"
+                placeholder={t('workTitlePlaceholder')}
                 placeholderTextColor={COLORS.textMuted}
                 value={workTitle}
                 onChangeText={setWorkTitle}
               />
 
               {/* Work Type */}
-              <Text style={styles.label}>Work Type</Text>
+              <Text style={styles.label}>{t('workType')}</Text>
               <View style={styles.categoriesRow}>
                 {WORK_TYPE_OPTIONS.map((type) => {
                   const isSelected = workType === type;
@@ -859,12 +866,12 @@ export default function PostProjectScreen() {
               </View>
 
               {/* Location */}
-              <Text style={styles.label}>Location</Text>
+              <Text style={styles.label}>{t('location')}</Text>
               <View style={styles.inputWrapper}>
                 <Feather name="map-pin" size={16} color={COLORS.textMuted} style={styles.inputIcon} />
-                <TextInput
+                <TransliteratedTextInput
                   style={styles.inputWithIcon}
-                  placeholder="e.g. Mumbai, Maharashtra"
+                  placeholder={t('locationPlaceholder')}
                   placeholderTextColor={COLORS.textMuted}
                   value={workLocation}
                   onChangeText={setWorkLocation}
@@ -872,9 +879,9 @@ export default function PostProjectScreen() {
               </View>
 
               {/* Photos/Videos */}
-              <Text style={styles.label}>Photos / Videos</Text>
+              <Text style={styles.label}>{t('photosVideos')}</Text>
               <Text style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, marginTop: -4 }}>
-                Upload 1–10 images or videos of your work
+                {t('uploadMediaDesc')}
               </Text>
               <TouchableOpacity
                 style={styles.mediaSelectorBtn}
@@ -888,7 +895,7 @@ export default function PostProjectScreen() {
                   <>
                     <Feather name="plus-circle" size={20} color={COLORS.green} style={{ marginRight: 8 }} />
                     <Text style={styles.mediaSelectorBtnText}>
-                      {workMedia.length > 0 ? `Add More (${workMedia.length}/10)` : 'Select from Device'}
+                      {workMedia.length > 0 ? `${t('addMore')} (${workMedia.length}/10)` : t('selectFromDevice')}
                     </Text>
                   </>
                 )}
@@ -897,7 +904,7 @@ export default function PostProjectScreen() {
               {/* Media Preview */}
               {workMedia.length > 0 && (
                 <View style={styles.previewContainer}>
-                  <Text style={styles.previewTitle}>Selected Files ({workMedia.length})</Text>
+                  <Text style={styles.previewTitle}>{t('selectedFiles')} ({workMedia.length})</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.previewScroll}>
                     {workMedia.map((uri, index) => {
                        const isVideo = uri.toLowerCase().endsWith('.mp4') || uri.toLowerCase().endsWith('.mov') || uri.toLowerCase().endsWith('.avi');
@@ -921,10 +928,10 @@ export default function PostProjectScreen() {
               )}
 
               {/* Description (optional) */}
-              <Text style={styles.label}>Description <Text style={{ fontWeight: '400', color: COLORS.textMuted }}>(optional)</Text></Text>
-              <TextInput
+              <Text style={styles.label}>{t('description')} <Text style={{ fontWeight: '400', color: COLORS.textMuted }}>({t('optional')})</Text></Text>
+              <TransliteratedTextInput
                 style={[styles.input, styles.textArea]}
-                placeholder='e.g. "Completed 2BHK painting work in 15 days."'
+                placeholder={t('labourDescriptionPlaceholder')}
                 placeholderTextColor={COLORS.textMuted}
                 multiline={true}
                 numberOfLines={3}
@@ -933,12 +940,12 @@ export default function PostProjectScreen() {
               />
 
               {/* Duration (optional) */}
-              <Text style={styles.label}>Duration <Text style={{ fontWeight: '400', color: COLORS.textMuted }}>(optional)</Text></Text>
+              <Text style={styles.label}>{t('duration')} <Text style={{ fontWeight: '400', color: COLORS.textMuted }}>({t('optional')})</Text></Text>
               <View style={styles.inputWrapper}>
                 <Feather name="clock" size={16} color={COLORS.textMuted} style={styles.inputIcon} />
-                <TextInput
+                <TransliteratedTextInput
                   style={styles.inputWithIcon}
-                  placeholder="e.g. 15 Days or 1 Month"
+                  placeholder={t('durationPlaceholder')}
                   placeholderTextColor={COLORS.textMuted}
                   value={workDuration}
                   onChangeText={setWorkDuration}
@@ -957,7 +964,7 @@ export default function PostProjectScreen() {
                 ) : (
                   <>
                     <Feather name="check-circle" size={18} color={COLORS.white} style={{ marginRight: 6 }} />
-                    <Text style={styles.submitBtnText}>Add to Portfolio</Text>
+                    <Text style={styles.submitBtnText}>{t('addToPortfolio')}</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -972,24 +979,24 @@ export default function PostProjectScreen() {
                 <Feather name="info" size={18} color={COLORS.green} />
               </View>
               <Text style={styles.bannerText}>
-                Describe your project details clearly. Accurate details attract better matching professionals and competitive quotes.
+                {t('clientPostBanner')}
               </Text>
             </View>
 
             {/* Form Fields */}
             <View style={styles.formContainer}>
               {/* Project Title */}
-              <Text style={styles.label}>Project Title</Text>
-              <TextInput
+              <Text style={styles.label}>{t('projectTitle')}</Text>
+              <TransliteratedTextInput
                 style={styles.input}
-                placeholder="e.g. Modern 3BHK Villa Construction"
+                placeholder={t('projectTitlePlaceholder')}
                 placeholderTextColor={COLORS.textMuted}
                 value={title}
                 onChangeText={setTitle}
               />
 
               {/* Project Category Select */}
-              <Text style={styles.label}>Select Category</Text>
+              <Text style={styles.label}>{t('selectCategory')}</Text>
               <View style={styles.categoriesRow}>
                 {CATEGORIES.map((cat) => {
                   const isSelected = category === cat;
@@ -1014,12 +1021,12 @@ export default function PostProjectScreen() {
               </View>
 
               {/* Location */}
-              <Text style={styles.label}>Project Location</Text>
+              <Text style={styles.label}>{t('projectLocation')}</Text>
               <View style={styles.inputWrapper}>
                 <Feather name="map-pin" size={16} color={COLORS.textMuted} style={styles.inputIcon} />
-                <TextInput
+                <TransliteratedTextInput
                   style={styles.inputWithIcon}
-                  placeholder="e.g. Mumbai, Maharashtra"
+                  placeholder={t('locationPlaceholder')}
                   placeholderTextColor={COLORS.textMuted}
                   value={location}
                   onChangeText={setLocation}
@@ -1027,25 +1034,26 @@ export default function PostProjectScreen() {
               </View>
 
               {/* Budget */}
-              <Text style={styles.label}>Estimated Budget (INR)</Text>
+              <Text style={styles.label}>{t('estimatedBudget')}</Text>
               <View style={styles.inputWrapper}>
                 <Text style={styles.currencySymbol}>₹</Text>
-                <TextInput
+                <TransliteratedTextInput
                   style={styles.inputWithIcon}
-                  placeholder="e.g. 10L - 15L or 25,00,000"
+                  placeholder={t('budgetPlaceholder')}
                   placeholderTextColor={COLORS.textMuted}
                   value={budget}
                   onChangeText={setBudget}
+                  disableTransliteration={true}
                 />
               </View>
 
               {/* Timeline */}
-              <Text style={styles.label}>Timeline</Text>
+              <Text style={styles.label}>{t('timeline')}</Text>
               <View style={styles.inputWrapper}>
                 <Feather name="clock" size={16} color={COLORS.textMuted} style={styles.inputIcon} />
-                <TextInput
+                <TransliteratedTextInput
                   style={styles.inputWithIcon}
-                  placeholder="e.g. 90 Days or 3 Months"
+                  placeholder={t('timelinePlaceholder')}
                   placeholderTextColor={COLORS.textMuted}
                   value={timeline}
                   onChangeText={setTimeline}
@@ -1053,7 +1061,7 @@ export default function PostProjectScreen() {
               </View>
 
               {/* Requirements */}
-              <Text style={styles.label}>Requirements</Text>
+              <Text style={styles.label}>{t('requirements')}</Text>
               <View style={styles.categoriesRow}>
                 {REQUIREMENT_OPTIONS.map((req) => {
                   const isSelected = requirements.includes(req);
@@ -1084,10 +1092,10 @@ export default function PostProjectScreen() {
               </View>
 
               {/* Description */}
-              <Text style={styles.label}>Project Description & Scope</Text>
-              <TextInput
+              <Text style={styles.label}>{t('projectDescriptionScope')}</Text>
+              <TransliteratedTextInput
                 style={[styles.input, styles.textArea]}
-                placeholder="Provide a brief description of the work needed, timeline, and material preferences..."
+                placeholder={t('projectDescriptionScopePlaceholder')}
                 placeholderTextColor={COLORS.textMuted}
                 multiline={true}
                 numberOfLines={4}
@@ -1106,7 +1114,7 @@ export default function PostProjectScreen() {
                   <ActivityIndicator size="small" color={COLORS.white} />
                 ) : (
                   <>
-                    <Text style={styles.submitBtnText}>Publish Project</Text>
+                    <Text style={styles.submitBtnText}>{t('publishProject')}</Text>
                     <Feather name="arrow-right" size={18} color={COLORS.white} style={{ marginLeft: 6 }} />
                   </>
                 )}

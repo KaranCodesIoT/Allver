@@ -5,6 +5,8 @@ import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icon
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
+import { useTranslation } from '../utils/i18n';
+
 import * as Location from 'expo-location';
 
 const { width } = Dimensions.get('window');
@@ -52,6 +54,8 @@ interface CalendarDay {
 export default function LabourDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { t } = useTranslation();
+
 
   // Load params with fallbacks
   const id = (params.id as string) || '60c72b2f9b1d8a2a4c8b0004';
@@ -794,21 +798,21 @@ export default function LabourDetailScreen() {
               >
                 <Feather name={isFollowing ? "check" : "user-plus"} size={12} color={isFollowing ? COLORS.textDark : COLORS.white} style={{ marginRight: 4 }} />
                 <Text style={[styles.followBtnText, isFollowing && { color: COLORS.textDark }]}>
-                  {isFollowing ? 'In Network' : 'Add to Network'}
+                  {isFollowing ? t('inNetwork') : t('addToNetwork')}
                 </Text>
               </TouchableOpacity>
             )}
 
             <TouchableOpacity style={styles.messageBtn} onPress={handleMessage} activeOpacity={0.7}>
               <Feather name="message-square" size={13} color={COLORS.teal} style={{ marginRight: 6 }} />
-              <Text style={styles.messageBtnText}>Message</Text>
+              <Text style={styles.messageBtnText}>{t('message')}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* ================= SPECIALIZATION SECTION ================= */}
         <View style={styles.specializationSection}>
-          <Text style={styles.sectionHeaderTitle}>Specialization</Text>
+          <Text style={styles.sectionHeaderTitle}>{t('specialization')}</Text>
           <View style={styles.specializationsWrap}>
             {(specializations && specializations.length > 0 ? specializations : [role]).map((spec, index) => (
               <View key={index} style={styles.specTag}>
@@ -823,9 +827,9 @@ export default function LabourDetailScreen() {
         {portfolioProjects.length > 0 && (
           <View style={{ marginHorizontal: 20, marginBottom: 20 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark }}>Portfolio Highlights</Text>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark }}>{t('portfolioHighlights')}</Text>
               <TouchableOpacity onPress={() => router.push({ pathname: '/portfolio-highlights', params: { userId: id } })}>
-                <Text style={{ fontSize: 13, color: COLORS.orange, fontWeight: '700' }}>View All ›</Text>
+                <Text style={{ fontSize: 13, color: COLORS.orange, fontWeight: '700' }}>{t('viewAll')} ›</Text>
               </TouchableOpacity>
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 16 }}>
@@ -869,30 +873,30 @@ export default function LabourDetailScreen() {
         <View style={styles.statsContainer}>
           <View style={styles.statBox}>
             <Feather name="calendar" size={14} color={COLORS.textMuted} style={{ marginBottom: 4 }} />
-            <Text style={styles.statLabel}>Total Days Worked</Text>
-            <Text style={styles.statValue}>{activeDaysCount} Days</Text>
-            <Text style={styles.statSubText}>(This Month)</Text>
+            <Text style={styles.statLabel}>{t('totalDaysWorked')}</Text>
+            <Text style={styles.statValue}>{activeDaysCount} {t('days') || 'Days'}</Text>
+            <Text style={styles.statSubText}>({t('thisMonth')})</Text>
           </View>
 
           <View style={styles.statBox}>
             <MaterialCommunityIcons name="currency-inr" size={15} color={COLORS.textMuted} style={{ marginBottom: 3 }} />
-            <Text style={styles.statLabel}>Total Payment</Text>
+            <Text style={styles.statLabel}>{t('totalPayment')}</Text>
             <Text style={styles.statValue}>₹ {totalEarnings.toLocaleString()}</Text>
-            <Text style={styles.statSubText}>(This Month)</Text>
+            <Text style={styles.statSubText}>({t('thisMonth')})</Text>
           </View>
 
           <View style={styles.statBox}>
             <Feather name="folder-minus" size={14} color={COLORS.textMuted} style={{ marginBottom: 4 }} />
-            <Text style={styles.statLabel}>Advance Given</Text>
+            <Text style={styles.statLabel}>{t('advanceGiven')}</Text>
             <Text style={styles.statValue}>₹ {days.reduce((acc, d) => acc + (d.advance || 0), 0).toLocaleString()}</Text>
-            <Text style={styles.statSubText}>(This Month)</Text>
+            <Text style={styles.statSubText}>({t('thisMonth')})</Text>
           </View>
 
           <View style={styles.statBox}>
             <Feather name="file-text" size={14} color={COLORS.textMuted} style={{ marginBottom: 4 }} />
-            <Text style={styles.statLabel}>Pending Payment</Text>
+            <Text style={styles.statLabel}>{t('pendingPayment')}</Text>
             <Text style={styles.statValue}>₹ {(totalEarnings - days.reduce((acc, d) => acc + (d.advance || 0), 0)).toLocaleString()}</Text>
-            <Text style={styles.statSubText}>(This Month)</Text>
+            <Text style={styles.statSubText}>({t('thisMonth')})</Text>
           </View>
         </View>
 
@@ -904,7 +908,7 @@ export default function LabourDetailScreen() {
             activeOpacity={0.8}
           >
             <Text style={[styles.tabButtonText, activeTab === 'attendance' && styles.tabButtonTextActive]}>
-              Attendance
+              {t('attendance')}
             </Text>
           </TouchableOpacity>
 
@@ -914,7 +918,7 @@ export default function LabourDetailScreen() {
             activeOpacity={0.8}
           >
             <Text style={[styles.tabButtonText, activeTab === 'payments' && styles.tabButtonTextActive]}>
-              Payments
+              {t('payments')}
             </Text>
           </TouchableOpacity>
 
@@ -924,7 +928,7 @@ export default function LabourDetailScreen() {
             activeOpacity={0.8}
           >
             <Text style={[styles.tabButtonText, activeTab === 'documents' && styles.tabButtonTextActive]}>
-              Documents
+              {t('documents')}
             </Text>
           </TouchableOpacity>
         </View>

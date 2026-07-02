@@ -77,6 +77,12 @@ notificationSchema.post('save', async function(doc) {
         }
       };
 
+      // Only send real push notifications in production environment
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[Push Notification] [DEV MODE - NOT SENT] Would have sent to ${recipient.fullName}:`, JSON.stringify(message, null, 2));
+        return;
+      }
+
       try {
         const response = await fetch('https://exp.host/--/api/v2/push/send', {
           method: 'POST',
