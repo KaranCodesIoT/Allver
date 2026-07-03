@@ -672,31 +672,7 @@ export default function DashboardScreen() {
         </View>
 
 
-        {/* ================= SEARCH BAR ================= */}
-        <View style={styles.searchContainer}>
-          <View style={styles.searchBarWrapper}>
-            <TouchableOpacity onPress={() => handleSearch(searchQuery)}>
-              <Feather name="search" size={18} color={COLORS.textMuted} style={styles.searchIcon} />
-            </TouchableOpacity>
-            <TextInput 
-              style={styles.searchInput} 
-              placeholder="Search architects, contractors, labour, services..." 
-              placeholderTextColor={COLORS.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              onSubmitEditing={() => handleSearch(searchQuery)}
-              returnKeyType="search"
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 4 }}>
-                <Feather name="x" size={16} color={COLORS.textMuted} />
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity style={styles.filterBtn}>
-              <Feather name="sliders" size={18} color={COLORS.textDark} />
-            </TouchableOpacity>
-          </View>
-        </View>
+
 
         {/* ================= QUICK ACTIONS ================= */}
         <View style={styles.sectionContainer}>
@@ -771,29 +747,6 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Secondary Actions Row */}
-          <View style={styles.qaSecondaryRow}>
-            <TouchableOpacity 
-              style={[styles.qaSecondaryCard, { backgroundColor: '#FEF3C7', borderColor: '#FDE68A' }]}
-              onPress={() => router.push('/(tabs)/post-project')}
-            >
-              <View style={[styles.qaSecondaryIcon, { backgroundColor: '#FDE68A' }]}>
-                <Feather name="plus" size={14} color="#D97706" />
-              </View>
-              <Text style={styles.qaSecondaryText}>
-                {currentUser?.role === 'Labour' ? 'Add Work' : 'Post Project'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.qaSecondaryCard, { backgroundColor: '#F3E8FF', borderColor: '#E9D5FF' }]}
-              onPress={() => router.push('/project-progress')}
-            >
-              <View style={[styles.qaSecondaryIcon, { backgroundColor: '#E9D5FF' }]}>
-                <Feather name="clipboard" size={13} color="#7C3AED" />
-              </View>
-              <Text style={styles.qaSecondaryText}>Track Project</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
         {/* ================= MY PROJECTS ================= */}
@@ -973,147 +926,7 @@ export default function DashboardScreen() {
           </ScrollView>
         </View>
 
-        {/* ================= FEATURED PROFESSIONALS ================= */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Featured Professionals</Text>
-            <TouchableOpacity><Text style={styles.viewAllText}>View All</Text></TouchableOpacity>
-          </View>
 
-          {featuredLoading ? (
-            <View style={{ paddingHorizontal: 16, paddingVertical: 30, alignItems: 'center' }}>
-              <ActivityIndicator size="small" color={COLORS.blue} />
-              <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 8 }}>Finding the best matches...</Text>
-            </View>
-          ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalCardsScroll}>
-              {filteredProfessionals.map((prof, idx) => {
-                const profName = prof.fullName || prof.name || 'Unknown';
-                const profAvatar = resolveAvatarUrl(prof.avatarUrl) || prof.avatar || '';
-                const profCity = prof.city || '';
-                const profRating = prof.rating || 0;
-                const profReviews = prof.reviews || 0;
-                const isVerified = prof.isVerified;
-
-                // Determine color by role
-                const roleColorMap: Record<string, string> = {
-                  'Contractor': '#2563EB',
-                  'Architect': '#10B981',
-                  'Labour': '#F97316',
-                  'Client': '#7C3AED',
-                };
-                const cardColor = roleColorMap[prof.role] || '#6B7280';
-
-                if (prof.type === 'client' && prof.activeProject) {
-                  // ============ CLIENT CARD ============
-                  return (
-                    <View key={`client-${prof._id || idx}-${idx}`} style={[styles.professionalCard, { borderColor: '#E9D5FF' }]}>
-                      {/* Project Type Badge */}
-                      <View style={[styles.clientTypeBadge, { backgroundColor: '#F3E8FF' }]}>
-                        <Text style={[styles.clientTypeBadgeText, { color: '#7C3AED' }]}>
-                          {prof.activeProject.projectType || 'Project'}
-                        </Text>
-                      </View>
-
-                      {/* Project Title */}
-                      <Text style={styles.clientProjectTitle} numberOfLines={2}>
-                        {prof.activeProject.title}
-                      </Text>
-
-                      {/* Client Name */}
-                      <View style={styles.iconLabelRow}>
-                        <Feather name="user" size={11} color={COLORS.textMuted} style={styles.cardInfoIcon} />
-                        <Text style={styles.projectDetailText} numberOfLines={1}>{profName}</Text>
-                      </View>
-
-                      {/* Location */}
-                      <View style={styles.iconLabelRow}>
-                        <Feather name="map-pin" size={11} color={COLORS.textMuted} style={styles.cardInfoIcon} />
-                        <Text style={styles.projectDetailText}>{prof.activeProject.location || profCity}</Text>
-                      </View>
-
-                      {/* Budget */}
-                      {prof.activeProject.budget && (
-                        <View style={styles.iconLabelRow}>
-                          <FontAwesome name="rupee" size={10} color={COLORS.textMuted} style={styles.cardInfoIcon} />
-                          <Text style={[styles.projectDetailText, { fontWeight: '700', color: COLORS.textDark }]}>
-                            {prof.activeProject.budget}
-                          </Text>
-                        </View>
-                      )}
-
-                      <View style={{ flex: 1 }} />
-
-                      {/* View Project Button */}
-                      <TouchableOpacity 
-                        style={[styles.profBtn, { borderColor: '#7C3AED' }]}
-                        onPress={() => handleViewProfile(prof)}
-                      >
-                        <Text style={[styles.profBtnText, { color: '#7C3AED' }]}>View Project</Text>
-                      </TouchableOpacity>
-                    </View>
-                  );
-                }
-
-                // ============ PROFESSIONAL CARD (Contractor / Architect / Labour) ============
-                return (
-                  <View key={`prof-${prof._id || idx}-${idx}`} style={styles.professionalCard}>
-                    {/* Header Info */}
-                    <View style={styles.profCardHeader}>
-                      <Image source={{ uri: profAvatar }} style={styles.profAvatar} />
-                      <View style={styles.profTitleCol}>
-                        <View style={styles.nameVerifiedRow}>
-                          <Text style={styles.profName} numberOfLines={1}>{profName}</Text>
-                          {isVerified && (
-                            <MaterialCommunityIcons name="decagram-check" size={14} color="#10B981" style={styles.verifiedIcon} />
-                          )}
-                        </View>
-                        <Text style={styles.profSubText}>{prof.contractorType || prof.skillType || prof.role}</Text>
-                        
-                        {/* Rating */}
-                        <View style={styles.ratingRow}>
-                          <FontAwesome name="star" size={12} color={COLORS.starGold} />
-                          <Text style={styles.ratingValueText}>{profRating}</Text>
-                          <Text style={styles.reviewsCountText}>({profReviews})</Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    <View style={styles.projectDivider} />
-
-                    {/* Stats Row */}
-                    <View style={styles.profStatsRow}>
-                      <Feather name="file-text" size={13} color={COLORS.textMuted} style={styles.profStatIcon} />
-                      <Text style={styles.profStatText}>{prof.projects || 0} Projects</Text>
-                    </View>
-
-                    {profCity ? (
-                      <View style={[styles.profStatsRow, { marginBottom: 10 }]}>
-                        <Feather name="map-pin" size={13} color={COLORS.textMuted} style={styles.profStatIcon} />
-                        <Text style={styles.profStatText}>{profCity}</Text>
-                      </View>
-                    ) : null}
-
-                    {/* View Profile Button */}
-                    <TouchableOpacity 
-                      style={[styles.profBtn, { borderColor: cardColor }]} 
-                      onPress={() => handleViewProfile(prof)}
-                    >
-                      <Text style={[styles.profBtnText, { color: cardColor }]}>View Profile</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-
-              {filteredProfessionals.length === 0 && !featuredLoading && (
-                <View style={styles.emptyCard}>
-                  <Feather name="globe" size={24} color={COLORS.textMuted} />
-                  <Text style={styles.emptyText}>Explore professionals across India to expand your network.</Text>
-                </View>
-              )}
-            </ScrollView>
-          )}
-        </View>
 
         {/* ================= BROWSE BY SERVICE ================= */}
         <View style={styles.sectionContainer}>
