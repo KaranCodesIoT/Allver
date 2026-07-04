@@ -14,6 +14,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { BACKEND_URL } from '@/constants/Config';
+import { getStoredUser } from '@/constants/Auth';
 
 // Keep the splash screen visible until we hide it
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -213,17 +214,29 @@ export default function RootLayout() {
   }, [stage]);
 
   useEffect(() => {
-    // Stage 1: Keep native splash screen visible for 500ms
-    const splashTimer = setTimeout(async () => {
+    const prepare = async () => {
       try {
-        await SplashScreen.hideAsync();
-      } catch (e) {
-        console.warn(e);
+        // Load stored user asynchronously before hiding splash screen
+        const storedUserStr = await getStoredUser();
+        if (storedUserStr) {
+          (global as any).currentUser = JSON.parse(storedUserStr);
+          console.log('[RootLayout] Loaded stored user session:', (global as any).currentUser?.fullName);
+        }
+      } catch (error) {
+        console.error('[RootLayout] Failed to load stored user session:', error);
+      } finally {
+        try {
+          await SplashScreen.hideAsync();
+        } catch (e) {
+          console.warn(e);
+        }
+        setStage('ready');
       }
-      setStage('ready');
-    }, 500);
-
-    return () => clearTimeout(splashTimer);
+    };
+    
+    // Allow a minimum visual splash delay of 500ms
+    const timer = setTimeout(prepare, 500);
+    return () => clearTimeout(timer);
   }, []);
 
   if (stage === 'splash') {

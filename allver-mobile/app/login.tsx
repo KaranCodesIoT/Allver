@@ -8,6 +8,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
+import { saveToken, saveStoredUser } from '../constants/Auth';
+import { OTPWidget } from '@msg91comm/sendotp-react-native';
 
 const { width, height } = Dimensions.get('window');
 
@@ -74,15 +76,13 @@ export default function LoginScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
-
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-          localStorage.setItem('currentUser', JSON.stringify(data.user));
-        }
+        await saveToken(data.token);
+        await saveStoredUser(data.user);
         (global as any).currentUser = data.user;
 
         if (data.user?.role === 'Architect') {
@@ -91,7 +91,7 @@ export default function LoginScreen() {
             data.user.firmName ||
             (data.user.specialization?.length > 0) ||
             (data.user.portfolioImages?.length > 0);
-          router.push(done ? '/(tabs)' : '/architect-profile');
+          router.replace(done ? '/(tabs)' : '/architect-profile');
         } else if (data.user?.role === 'Contractor') {
           const done =
             data.user.contractorType ||
@@ -99,15 +99,158 @@ export default function LoginScreen() {
             (data.user.workCategory?.length > 0) ||
             (data.user.serviceLocation?.length > 0) ||
             data.user.experience;
-          router.push(done ? '/(tabs)' : '/contractor-profile');
+          router.replace(done ? '/(tabs)' : '/contractor-profile');
         } else {
-          router.push('/(tabs)');
+          router.replace('/(tabs)');
         }
       } else {
         Alert.alert('Login Failed', data.message || 'Please try again.');
       }
-    } catch {
+    } catch (err) {
+      console.error(err);
       Alert.alert('Network Error', 'Could not connect to the server.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Phone OTP Login States & Handlers
+  const [loginMode, setLoginMode] = useState<'email' | 'phone'>('email');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otp, setOtp] = useState('');
+  const [reqId, setReqId] = useState<string | null>(null);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpTimer, setOtpTimer] = useState(0);
+  const [isPhoneFocused, setIsPhoneFocused] = useState(false);
+  const [isOtpFocused, setIsOtpFocused] = useState(false);
+
+  // Initialize MSG91 Mobile SDK on mount
+  React.useEffect(() => {
+    const widgetId = "3667626c6f73373934343034";
+    const tokenAuth = "511561ThJeUXSNqb2s6a465acdP1";
+    try {
+      OTPWidget.initializeWidget(widgetId, tokenAuth);
+      console.log('[Login] MSG91 Mobile SDK initialized successfully');
+    } catch (err) {
+      console.error('[Login] Failed to initialize MSG91 Mobile SDK:', err);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    let interval: any;
+    if (otpTimer > 0 && otpSent) {
+      interval = setInterval(() => {
+        setOtpTimer((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [otpTimer, otpSent]);
+
+  const handleSendOtp = async () => {
+    if (!phoneNumber) {
+      Alert.alert('Phone Number Required', 'Please enter your phone number.');
+      return;
+    }
+    
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit phone number.');
+      return;
+    }
+
+    const formattedPhone = cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone;
+
+    setIsLoading(true);
+    try {
+      console.log('[Login] Sending OTP via Mobile SDK for:', formattedPhone);
+      const response = await OTPWidget.sendOTP({ identifier: formattedPhone });
+      console.log('[Login] MSG91 SDK sendOTP Response:', response);
+
+      if (response && (response.type === 'success' || response.success || response.reqId)) {
+        setReqId(response.reqId);
+        setOtpSent(true);
+        setOtpTimer(30);
+        Alert.alert('OTP Sent', `A verification code has been sent to +${formattedPhone}`);
+      } else {
+        Alert.alert('Error', response?.message || 'Failed to send OTP. Please try again.');
+      }
+    } catch (err: any) {
+      console.error('[Login] SDK sendOTP Error:', err);
+      Alert.alert('SDK Error', err?.message || 'Could not trigger OTP. Ensure Mobile Integration is configured.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otp) {
+      Alert.alert('OTP Required', 'Please enter the verification code.');
+      return;
+    }
+    if (!reqId) {
+      Alert.alert('Session Expired', 'Please request a new OTP.');
+      return;
+    }
+
+    const cleanPhone = phoneNumber.replace(/\D/g, '');
+    const formattedPhone = cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone;
+
+    setIsLoading(true);
+    try {
+      console.log('[Login] Verifying OTP via Mobile SDK...');
+      const response = await OTPWidget.verifyOTP({ reqId, otp });
+      console.log('[Login] MSG91 SDK verifyOTP Response:', response);
+
+      const accessToken = response?.['access-token'] || response?.accessToken || response?.data;
+
+      if (accessToken) {
+        console.log('[Login] Mobile SDK Verified. Exchanging accessToken with backend...');
+        const responseBackend = await fetch(`${BACKEND_URL}/auth/verify-otp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accessToken,
+            phoneNumber: formattedPhone
+          }),
+        });
+
+        const data = await responseBackend.json();
+
+        if (responseBackend.ok && data.success) {
+          await saveToken(data.token);
+          await saveStoredUser(data.user);
+          
+          (global as any).currentUser = data.user;
+
+          if (data.user?.role === 'Architect') {
+            const done =
+              data.user.experience ||
+              data.user.firmName ||
+              (data.user.specialization?.length > 0) ||
+              (data.user.portfolioImages?.length > 0);
+            router.replace(done ? '/(tabs)' : '/architect-profile');
+          } else if (data.user?.role === 'Contractor') {
+            const done =
+              data.user.contractorType ||
+              data.user.teamSize ||
+              (data.user.workCategory?.length > 0) ||
+              (data.user.serviceLocation?.length > 0) ||
+              data.user.experience;
+            router.replace(done ? '/(tabs)' : '/contractor-profile');
+          } else {
+            router.replace('/(tabs)');
+          }
+        } else {
+          Alert.alert('Login Failed', data.message || 'Authentication with server failed.');
+        }
+      } else {
+        Alert.alert('Verification Failed', response?.message || 'Incorrect OTP. Please try again.');
+      }
+    } catch (err: any) {
+      console.error('[Login] SDK verifyOTP Error:', err);
+      Alert.alert('Verification Error', err?.message || 'Incorrect OTP. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -158,73 +301,204 @@ export default function LoginScreen() {
 
             {/* ─── FORM CARD ─── */}
             <View style={styles.formCard}>
-              {/* Email */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email <Text style={styles.req}>*</Text></Text>
-                <View style={[
-                  styles.inputWrap,
-                  isEmailFocused ? styles.inputWrapActive : styles.inputWrapInactive
-                ]}>
-                  <Feather name="mail" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your email"
-                    placeholderTextColor={COLORS.textMuted}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    value={email}
-                    onChangeText={setEmail}
-                    onFocus={() => setIsEmailFocused(true)}
-                    onBlur={() => setIsEmailFocused(false)}
-                  />
-                </View>
+              {/* Login Mode Toggle tabs */}
+              <View style={styles.tabContainer}>
+                <TouchableOpacity
+                  style={[styles.tabButton, loginMode === 'email' && styles.tabButtonActive]}
+                  onPress={() => setLoginMode('email')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.tabButtonText, loginMode === 'email' && styles.tabButtonTextActive]}>
+                    Email Login
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.tabButton, loginMode === 'phone' && styles.tabButtonActive]}
+                  onPress={() => setLoginMode('phone')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.tabButtonText, loginMode === 'phone' && styles.tabButtonTextActive]}>
+                    Phone OTP Login
+                  </Text>
+                </TouchableOpacity>
               </View>
 
-              {/* Password */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Password <Text style={styles.req}>*</Text></Text>
-                <View style={[
-                  styles.inputWrap,
-                  isPasswordFocused ? styles.inputWrapActive : styles.inputWrapInactive
-                ]}>
-                  <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your password"
-                    placeholderTextColor={COLORS.textMuted}
-                    secureTextEntry={!showPassword}
-                    value={password}
-                    onChangeText={setPassword}
-                    onFocus={() => setIsPasswordFocused(true)}
-                    onBlur={() => setIsPasswordFocused(false)}
-                  />
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                    <Feather name={showPassword ? 'eye' : 'eye-off'} size={18} color={COLORS.textMuted} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Forgot Password */}
-              <TouchableOpacity style={styles.forgotBtn} onPress={() => setResetModalVisible(true)}>
-                <Text style={styles.forgotText}>Forgot Password?</Text>
-              </TouchableOpacity>
-
-              {/* Login Button */}
-              <TouchableOpacity
-                style={[styles.primaryBtn, isLoading && { opacity: 0.7 }]}
-                onPress={handleLogin}
-                disabled={isLoading}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.primaryBtnText}>
-                  {isLoading ? 'Logging In...' : 'Log In'}
-                </Text>
-                {!isLoading && (
-                  <View style={styles.arrowCircle}>
-                    <Feather name="arrow-right" size={16} color={COLORS.gold} />
+              {loginMode === 'email' ? (
+                <>
+                  {/* Email */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Email <Text style={styles.req}>*</Text></Text>
+                    <View style={[
+                      styles.inputWrap,
+                      isEmailFocused ? styles.inputWrapActive : styles.inputWrapInactive
+                    ]}>
+                      <Feather name="mail" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Enter your email"
+                        placeholderTextColor={COLORS.textMuted}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        value={email}
+                        onChangeText={setEmail}
+                        onFocus={() => setIsEmailFocused(true)}
+                        onBlur={() => setIsEmailFocused(false)}
+                      />
+                    </View>
                   </View>
-                )}
-              </TouchableOpacity>
+
+                  {/* Password */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Password <Text style={styles.req}>*</Text></Text>
+                    <View style={[
+                      styles.inputWrap,
+                      isPasswordFocused ? styles.inputWrapActive : styles.inputWrapInactive
+                    ]}>
+                      <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Enter your password"
+                        placeholderTextColor={COLORS.textMuted}
+                        secureTextEntry={!showPassword}
+                        value={password}
+                        onChangeText={setPassword}
+                        onFocus={() => setIsPasswordFocused(true)}
+                        onBlur={() => setIsPasswordFocused(false)}
+                      />
+                      <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                        <Feather name={showPassword ? 'eye' : 'eye-off'} size={18} color={COLORS.textMuted} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Forgot Password */}
+                  <TouchableOpacity style={styles.forgotBtn} onPress={() => setResetModalVisible(true)}>
+                    <Text style={styles.forgotText}>Forgot Password?</Text>
+                  </TouchableOpacity>
+
+                  {/* Login Button */}
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, isLoading && { opacity: 0.7 }]}
+                    onPress={handleLogin}
+                    disabled={isLoading}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.primaryBtnText}>
+                      {isLoading ? 'Logging In...' : 'Log In'}
+                    </Text>
+                    {!isLoading && (
+                      <View style={styles.arrowCircle}>
+                        <Feather name="arrow-right" size={16} color={COLORS.gold} />
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  {/* Phone Number Input */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Phone Number <Text style={styles.req}>*</Text></Text>
+                    <View style={[
+                      styles.inputWrap,
+                      isPhoneFocused ? styles.inputWrapActive : styles.inputWrapInactive
+                    ]}>
+                      <Feather name="phone" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="10-digit mobile number"
+                        placeholderTextColor={COLORS.textMuted}
+                        keyboardType="phone-pad"
+                        maxLength={15}
+                        value={phoneNumber}
+                        onChangeText={(text) => {
+                          setPhoneNumber(text);
+                          if (otpSent) {
+                            setOtpSent(false);
+                            setReqId(null);
+                            setOtp('');
+                          }
+                        }}
+                        onFocus={() => setIsPhoneFocused(true)}
+                        onBlur={() => setIsPhoneFocused(false)}
+                        editable={!otpSent && !isLoading}
+                      />
+                    </View>
+                  </View>
+
+                  {/* OTP Input */}
+                  {otpSent && (
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.label}>Verification Code (OTP) <Text style={styles.req}>*</Text></Text>
+                      <View style={[
+                        styles.inputWrap,
+                        isOtpFocused ? styles.inputWrapActive : styles.inputWrapInactive
+                      ]}>
+                        <Feather name="shield" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+                        <TextInput
+                          style={styles.input}
+                          placeholder="Enter OTP"
+                          placeholderTextColor={COLORS.textMuted}
+                          keyboardType="number-pad"
+                          maxLength={6}
+                          value={otp}
+                          onChangeText={setOtp}
+                          onFocus={() => setIsOtpFocused(true)}
+                          onBlur={() => setIsOtpFocused(false)}
+                        />
+                      </View>
+                      
+                      {/* Resend OTP Row */}
+                      <View style={styles.otpActionRow}>
+                        {otpTimer > 0 ? (
+                          <Text style={styles.otpTimerText}>Resend code in {otpTimer}s</Text>
+                        ) : (
+                          <TouchableOpacity onPress={handleSendOtp} disabled={isLoading}>
+                            <Text style={styles.otpResendLink}>Resend OTP</Text>
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity onPress={() => { setOtpSent(false); setOtp(''); }} style={styles.changePhoneBtn}>
+                          <Text style={styles.changePhoneText}>Change Number</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Action Button */}
+                  {!otpSent ? (
+                    <TouchableOpacity
+                      style={[styles.primaryBtn, isLoading && { opacity: 0.7 }]}
+                      onPress={handleSendOtp}
+                      disabled={isLoading}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.primaryBtnText}>
+                        {isLoading ? 'Sending...' : 'Send OTP'}
+                      </Text>
+                      {!isLoading && (
+                        <View style={styles.arrowCircle}>
+                          <Feather name="arrow-right" size={16} color={COLORS.gold} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.primaryBtn, isLoading && { opacity: 0.7 }]}
+                      onPress={handleVerifyOtp}
+                      disabled={isLoading}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.primaryBtnText}>
+                        {isLoading ? 'Verifying...' : 'Verify & Log In'}
+                      </Text>
+                      {!isLoading && (
+                        <View style={styles.arrowCircle}>
+                          <Feather name="arrow-right" size={16} color={COLORS.gold} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </>
+              )}
             </View>
 
             {/* Footer */}
@@ -575,5 +849,59 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 2,
     letterSpacing: 1,
+  },
+  /* Tab Selector */
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#EDEFF2',
+    borderRadius: 16,
+    padding: 4,
+    marginBottom: 8,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 12,
+  },
+  tabButtonActive: {
+    backgroundColor: '#FFFFFF',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 3 },
+      android: { elevation: 2 },
+    }),
+  },
+  tabButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#8E9CAE',
+  },
+  tabButtonTextActive: {
+    color: COLORS.teal,
+    fontWeight: '700',
+  },
+  /* OTP Details */
+  otpActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  otpTimerText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+  },
+  otpResendLink: {
+    fontSize: 13,
+    color: COLORS.teal,
+    fontWeight: '700',
+  },
+  changePhoneBtn: {
+    alignSelf: 'flex-end',
+  },
+  changePhoneText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    textDecorationLine: 'underline',
   },
 });

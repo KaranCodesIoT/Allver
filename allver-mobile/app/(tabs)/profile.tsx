@@ -8,6 +8,7 @@ import { useRouter, useNavigation } from 'expo-router';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
+import { removeToken, removeStoredUser } from '../../constants/Auth';
 
 const { width } = Dimensions.get('window');
 
@@ -876,7 +877,13 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await removeToken();
+      await removeStoredUser();
+    } catch (e) {
+      console.warn('Logout secure storage clear failed:', e);
+    }
     if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
       localStorage.removeItem('currentUser');
     }
