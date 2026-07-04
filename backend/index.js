@@ -11,7 +11,8 @@ const crypto = require('crypto');
 require('dotenv').config();
 console.log('--- Startup Environment ---');
 console.log('NODE_ENV:', process.env.NODE_ENV);
-console.log('---------------------------');
+console.log('HF_TOKEN Loaded:', process.env.HF_TOKEN ? 'YES (' + process.env.HF_TOKEN.substring(0, 5) + '...)' : 'NO');
+console.log('---------------------------'); // Reloaded with new token
 
 
 // Trim environment variables to prevent CRLF or whitespace issues on Windows / Render
@@ -265,6 +266,16 @@ mongoose.connect(process.env.MONGODB_URI)
       console.log('Successfully checked and seeded mock notification activities for all users!');
     } catch (seedErr) {
       console.error('Error seeding mock notifications:', seedErr);
+    }
+
+    // Clean up existing legacy chat notifications from database
+    try {
+      const deletedNotificationsCount = await Notification.deleteMany({
+        text: { $regex: /New Message|\[View Chat\]/ }
+      });
+      console.log(`Cleaned up ${deletedNotificationsCount.deletedCount} legacy chat notifications from DB.`);
+    } catch (cleanupErr) {
+      console.error('Error cleaning up legacy notifications:', cleanupErr);
     }
 
     // Clean up dummy seeder users and their posts
@@ -888,6 +899,65 @@ app.post('/api/login', async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Error logging in user: ' + (error.message || error) });
+  }
+});
+
+// User OTP Login Verification route
+app.post('/auth/verify-otp', async (req, res) => {
+  try {
+    const { accessToken, phoneNumber } = req.body;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({ success: false, message: 'Phone number is required.' });
+    }
+
+    const cleanPhone = phoneNumber.replace(/\D/g, ''); // strip non-digits
+    
+    // Search User by phoneNumber or phone fields
+    let user = await User.findOne({
+      $or: [
+        { phoneNumber: cleanPhone },
+        { phoneNumber: phoneNumber },
+        { phone: cleanPhone },
+        { phone: phoneNumber }
+      ]
+    });
+
+    // If still not found, try stripping leading country code (91)
+    if (!user && cleanPhone.startsWith('91') && cleanPhone.length > 10) {
+      const nationalPhone = cleanPhone.substring(2);
+      user = await User.findOne({
+        $or: [
+          { phoneNumber: nationalPhone },
+          { phone: nationalPhone }
+        ]
+      });
+    }
+
+    if (!user) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No account registered with this phone number. Please sign up first!' 
+      });
+    }
+
+    // Update lastActive on successful login
+    user.lastActive = new Date();
+    await user.save();
+
+    // Successful login - return user object and token (which is user._id)
+    const userObj = user.toObject();
+    delete userObj.password;
+
+    res.status(200).json({ 
+      success: true,
+      message: 'Login successful', 
+      token: user._id,
+      user: userObj
+    });
+  } catch (error) {
+    console.error('Verify OTP error:', error);
+    res.status(500).json({ success: false, message: 'Error verifying OTP: ' + (error.message || error) });
   }
 });
 
@@ -1809,6 +1879,33 @@ app.get('/api/project-workspaces/user/:userId', async (req, res) => {
       .populate('contractRequest')
       .sort({ createdAt: -1 });
 
+    // If a requesterId is provided and differs from the userId being queried,
+    // strip private labour data (attendance, payments) from the response ONLY IF the requester
+    // is not the contractor or professional assigned to that workspace.
+    const requesterId = req.query.requesterId;
+    if (requesterId && requesterId !== userId) {
+      const sanitized = workspaces.map(w => {
+        const plain = w.toObject ? w.toObject() : { ...w };
+        
+        // Check if requester is the assigned contractor or professional
+        const isContractorOrProfessional = 
+          (plain.contractor?._id || plain.contractor)?.toString() === requesterId ||
+          (plain.professional?._id || plain.professional)?.toString() === requesterId;
+
+        if (!isContractorOrProfessional) {
+          if (plain.labourManagement) {
+            plain.labourManagement = {
+              ...plain.labourManagement,
+              attendance: [],
+              payments: []
+            };
+          }
+        }
+        return plain;
+      });
+      return res.status(200).json({ workspaces: sanitized });
+    }
+
     res.status(200).json({ workspaces });
 
   } catch (error) {
@@ -2003,67 +2100,8 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
 
     await workspace.save();
 
-    // Trigger notification immediately for New Chat Message in Workspace
-    try {
-      const senderUser = await User.findById(sender);
-      const textPreview = text || (attachment && attachment.name ? `sent a file: ${attachment.name}` : 'sent an attachment');
-      const notificationText = `💬 New Message\n${senderUser.fullName} (in project): ${textPreview}\n\n[View Chat]`;
+    // Message/chat notifications are disabled per user request
 
-      const members = new Set();
-      if (workspace.client && workspace.client.toString() !== sender) members.add(workspace.client.toString());
-      if (workspace.professional && workspace.professional.toString() !== sender) members.add(workspace.professional.toString());
-      if (workspace.contractor && workspace.contractor.toString() !== sender) members.add(workspace.contractor.toString());
-      if (workspace.architect && workspace.architect.toString() !== sender) members.add(workspace.architect.toString());
-      if (workspace.labourTeam) {
-        workspace.labourTeam.forEach(l => {
-          if (l.toString() !== sender) members.add(l.toString());
-        });
-      }
-
-      const io = req.app.get('io');
-      for (const recipientId of members) {
-        let isRecipientInRoom = false;
-        if (io) {
-          const roomSockets = io.sockets.adapter.rooms.get(id.toString());
-          if (roomSockets) {
-            for (const socketId of roomSockets) {
-              const sock = io.sockets.sockets.get(socketId);
-              if (sock && sock.userId === recipientId) {
-                isRecipientInRoom = true;
-                break;
-              }
-            }
-          }
-        }
-
-        if (!isRecipientInRoom) {
-          const notification = new Notification({
-            recipientId,
-            senderId: sender,
-            text: notificationText
-          });
-          await notification.save();
-
-          if (io) {
-            io.to(recipientId).emit('new_notification', {
-              _id: notification._id,
-              recipientId,
-              senderId: {
-                _id: senderUser._id,
-                fullName: senderUser.fullName,
-                avatarUrl: senderUser.avatarUrl,
-                role: senderUser.role
-              },
-              text: notification.text,
-              isRead: false,
-              createdAt: notification.createdAt
-            });
-          }
-        }
-      }
-    } catch (notifErr) {
-      console.error('Error triggering workspace message notifications:', notifErr);
-    }
 
     const updatedWorkspace = await ProjectWorkspace.findById(id)
       .populate('client', 'fullName email phoneNumber role city avatarUrl')
@@ -2715,6 +2753,11 @@ app.post('/api/project-workspaces/:id/ratings', async (req, res) => {
       return res.status(404).json({ message: 'Workspace not found' });
     }
 
+    // Only the client of this workspace is allowed to submit ratings
+    if (workspace.client?.toString() !== from.toString()) {
+      return res.status(403).json({ message: 'Forbidden: Only the client of this project can rate members.' });
+    }
+
     if (workspace.status !== 'Completed') {
       return res.status(400).json({ message: 'Ratings can only be submitted once the project is Completed' });
     }
@@ -3124,6 +3167,7 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
         if (ownRecordIdx > -1) {
           existingRecords[ownRecordIdx].latitude = gpsRecord.latitude;
           existingRecords[ownRecordIdx].longitude = gpsRecord.longitude;
+          existingRecords[ownRecordIdx].isMarked = false;
         } else {
           // No existing record for this labour yet — add a GPS-only entry
           existingRecords.push({
@@ -3131,10 +3175,10 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
             status: gpsRecord.status || 'Present',
             hours: gpsRecord.hours || 0,
             latitude: gpsRecord.latitude,
-            longitude: gpsRecord.longitude
+            longitude: gpsRecord.longitude,
+            isMarked: false
           });
         }
-        workspace.labourManagement.attendance[existingDateIndex].records = existingRecords;
         workspace.markModified('labourManagement');
       } else {
         // No attendance entry for this date yet — create one with GPS data only
@@ -3145,86 +3189,162 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
             status: gpsRecord.status || 'Present',
             hours: gpsRecord.hours || 0,
             latitude: gpsRecord.latitude,
-            longitude: gpsRecord.longitude
+            longitude: gpsRecord.longitude,
+            isMarked: false
           }],
           markedBy: senderId
         });
       }
     } else {
       // Contractor — full write access to all records
+      const markedRecords = records.map(r => ({
+        ...r,
+        isMarked: true
+      }));
+
       if (existingDateIndex > -1) {
-        workspace.labourManagement.attendance[existingDateIndex].records = records;
+        // Merge records to keep other labourers' GPS check-ins intact
+        const existingRecords = workspace.labourManagement.attendance[existingDateIndex].records || [];
+        markedRecords.forEach(mr => {
+          const idx = existingRecords.findIndex(er => (er.labourId?._id || er.labourId)?.toString() === mr.labourId?.toString());
+          if (idx > -1) {
+            existingRecords[idx] = {
+              ...(existingRecords[idx].toObject ? existingRecords[idx].toObject() : existingRecords[idx]),
+              ...mr
+            };
+          } else {
+            existingRecords.push(mr);
+          }
+        });
+        workspace.labourManagement.attendance[existingDateIndex].records = existingRecords;
         workspace.labourManagement.attendance[existingDateIndex].markedBy = senderId;
       } else {
         workspace.labourManagement.attendance.push({
           date,
-          records,
+          records: markedRecords,
           markedBy: senderId
         });
       }
+      workspace.markModified('labourManagement');
     }
 
     await workspace.save();
 
-    // Trigger notification immediately for Attendance Submitted
+    // Trigger notification immediately for Attendance Submitted / GPS Checked In
     try {
       const senderUser = await User.findById(senderId);
       const formattedDate = new Date(date).toLocaleDateString();
-      const notificationText = `📋 Attendance Submitted\nLabour attendance for ${formattedDate} has been marked by Contractor ${senderUser.fullName}\n\n[View Attendance]`;
-
       const io = req.app.get('io');
 
-      // Notify the client
-      const notification = new Notification({
-        recipientId: workspace.client,
-        senderId: senderId,
-        text: notificationText
-      });
-      await notification.save();
+      if (isLabourMember && !isContractor) {
+        // Labour checked in via GPS -> Notify the contractor assigned to the project
+        const contractorId = workspace.contractor || workspace.professional;
+        if (contractorId) {
+          const contractorNotifText = `📍 Labour Checked In\nLabourer ${senderUser.fullName} has checked in with GPS location for date ${date}.\n\n[View Attendance]`;
+          const contractorNotif = new Notification({
+            recipientId: contractorId,
+            senderId: senderId,
+            text: contractorNotifText
+          });
+          await contractorNotif.save();
 
-      if (io) {
-        io.to(workspace.client.toString()).emit('new_notification', {
-          _id: notification._id,
-          recipientId: workspace.client,
-          senderId: {
-            _id: senderUser._id,
-            fullName: senderUser.fullName,
-            avatarUrl: senderUser.avatarUrl,
-            role: senderUser.role
-          },
-          text: notification.text,
-          isRead: false,
-          createdAt: notification.createdAt
-        });
-      }
-
-      // Notify each individual labourer
-      if (records && records.length > 0) {
-        for (const record of records) {
-          const lId = record.labourId;
-          if (lId) {
-            const labourNotifText = `📋 Attendance Recorded\nYour attendance for ${formattedDate} has been marked as ${record.status} (${record.hours} hours) by Contractor ${senderUser.fullName}\n\n[View Attendance]`;
-            const labourNotif = new Notification({
-              recipientId: lId,
-              senderId: senderId,
-              text: labourNotifText
+          if (io) {
+            io.to(contractorId.toString()).emit('new_notification', {
+              _id: contractorNotif._id,
+              recipientId: contractorId,
+              senderId: {
+                _id: senderUser._id,
+                fullName: senderUser.fullName,
+                avatarUrl: senderUser.avatarUrl,
+                role: senderUser.role
+              },
+              text: contractorNotif.text,
+              isRead: false,
+              createdAt: contractorNotif.createdAt
             });
-            await labourNotif.save();
+          }
+        }
 
-            if (io) {
-              io.to(lId.toString()).emit('new_notification', {
-                _id: labourNotif._id,
+        // Notify client as well
+        if (workspace.client) {
+          const clientNotifText = `📍 Labour Checked In\nLabourer ${senderUser.fullName} has checked in with GPS location for date ${date}.\n\n[View Attendance]`;
+          const clientNotif = new Notification({
+            recipientId: workspace.client,
+            senderId: senderId,
+            text: clientNotifText
+          });
+          await clientNotif.save();
+
+          if (io) {
+            io.to(workspace.client.toString()).emit('new_notification', {
+              _id: clientNotif._id,
+              recipientId: workspace.client,
+              senderId: {
+                _id: senderUser._id,
+                fullName: senderUser.fullName,
+                avatarUrl: senderUser.avatarUrl,
+                role: senderUser.role
+              },
+              text: clientNotif.text,
+              isRead: false,
+              createdAt: clientNotif.createdAt
+            });
+          }
+        }
+      } else {
+        // Contractor marked attendance -> Notify Client
+        const notificationText = `📋 Attendance Submitted\nLabour attendance for ${formattedDate} has been marked by Contractor ${senderUser.fullName}\n\n[View Attendance]`;
+        const notification = new Notification({
+          recipientId: workspace.client,
+          senderId: senderId,
+          text: notificationText
+        });
+        await notification.save();
+
+        if (io && workspace.client) {
+          io.to(workspace.client.toString()).emit('new_notification', {
+            _id: notification._id,
+            recipientId: workspace.client,
+            senderId: {
+              _id: senderUser._id,
+              fullName: senderUser.fullName,
+              avatarUrl: senderUser.avatarUrl,
+              role: senderUser.role
+            },
+            text: notification.text,
+            isRead: false,
+            createdAt: notification.createdAt
+          });
+        }
+
+        // Notify each individual labourer
+        if (records && records.length > 0) {
+          for (const record of records) {
+            const lId = record.labourId;
+            if (lId) {
+              const labourNotifText = `📋 Attendance Recorded\nYour attendance for ${formattedDate} has been marked as ${record.status} (${record.hours} hours) by Contractor ${senderUser.fullName}\n\n[View Attendance]`;
+              const labourNotif = new Notification({
                 recipientId: lId,
-                senderId: {
-                  _id: senderUser._id,
-                  fullName: senderUser.fullName,
-                  avatarUrl: senderUser.avatarUrl,
-                  role: senderUser.role
-                },
-                text: labourNotif.text,
-                isRead: false,
-                createdAt: labourNotif.createdAt
+                senderId: senderId,
+                text: labourNotifText
               });
+              await labourNotif.save();
+
+              if (io) {
+                io.to(lId.toString()).emit('new_notification', {
+                  _id: labourNotif._id,
+                  recipientId: lId,
+                  senderId: {
+                    _id: senderUser._id,
+                    fullName: senderUser.fullName,
+                    avatarUrl: senderUser.avatarUrl,
+                    role: senderUser.role
+                  },
+                  text: labourNotif.text,
+                  isRead: false,
+                  createdAt: labourNotif.createdAt
+                });
+              }
             }
           }
         }
@@ -3596,7 +3716,10 @@ app.get('/api/following/:userId', async (req, res) => {
 app.get('/api/notifications/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    let notifications = await Notification.find({ recipientId: userId })
+    let notifications = await Notification.find({
+      recipientId: userId,
+      text: { $not: /New Message|\[View Chat\]/ }
+    })
       .sort({ createdAt: -1 })
       .populate('senderId', 'fullName avatarUrl role');
 
@@ -3627,11 +3750,48 @@ app.get('/api/notifications/:userId', async (req, res) => {
         }
         notifs.push({ recipientId: u._id, text: `🎉 Welcome to Allver! Start building, connecting, and growing.`, isRead: true, createdAt: new Date(now - 1000 * 60 * 60 * 48) });
         await Notification.insertMany(notifs);
-        notifications = await Notification.find({ recipientId: userId }).sort({ createdAt: -1 });
+        notifications = await Notification.find({
+          recipientId: userId,
+          text: { $not: /New Message|\[View Chat\]/ }
+        }).sort({ createdAt: -1 });
       }
     }
 
-    res.status(200).json({ success: true, notifications });
+    // Compute isMarked for labour check-in notifications if recipient is a contractor
+    const ProjectWorkspace = require('./models/ProjectWorkspace');
+    const workspaces = await ProjectWorkspace.find({
+      $or: [
+        { contractor: userId },
+        { professional: userId }
+      ]
+    });
+
+    const parsedNotifications = notifications.map(item => {
+      const plainNotif = item.toObject ? item.toObject() : item;
+      if (plainNotif.text && plainNotif.text.includes('Labour Checked In')) {
+        const match = plainNotif.text.match(/for date (\d{4}-\d{2}-\d{2})/);
+        if (match) {
+          const dateStr = match[1];
+          const labourId = plainNotif.senderId?._id || plainNotif.senderId;
+          
+          let isMarked = false;
+          for (const w of workspaces) {
+            const att = w.labourManagement?.attendance?.find(a => a.date === dateStr);
+            if (att) {
+              const rec = att.records?.find(r => (r.labourId?._id || r.labourId)?.toString() === labourId?.toString());
+              if (rec && rec.isMarked === true) {
+                isMarked = true;
+                break;
+              }
+            }
+          }
+          plainNotif.isMarked = isMarked;
+        }
+      }
+      return plainNotif;
+    });
+
+    res.status(200).json({ success: true, notifications: parsedNotifications });
   } catch (error) {
     res.status(500).json({ message: 'Error getting notifications: ' + error.message });
   }
@@ -3641,7 +3801,11 @@ app.get('/api/notifications/:userId', async (req, res) => {
 app.get('/api/notifications/unread-count/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const count = await Notification.countDocuments({ recipientId: userId, isRead: false });
+    const count = await Notification.countDocuments({
+      recipientId: userId,
+      isRead: false,
+      text: { $not: /New Message|\[View Chat\]/ }
+    });
     res.status(200).json({ success: true, unreadCount: count });
   } catch (error) {
     res.status(500).json({ message: 'Error getting unread count: ' + error.message });
@@ -3656,6 +3820,90 @@ app.post('/api/notifications/read/:userId', async (req, res) => {
     res.status(200).json({ success: true, message: 'All notifications marked as read' });
   } catch (error) {
     res.status(500).json({ message: 'Error marking notifications as read: ' + error.message });
+  }
+});
+
+// Speech-to-Text Transcription Route using Hugging Face Whisper API
+app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No audio file provided' });
+    }
+
+    console.log(`[Transcribe] Received audio file: ${req.file.originalname}, size: ${req.file.size} bytes`);
+
+    // Standard Node.js HTTPS request helper to avoid built-in fetch bugs on Windows/Render
+    const https = require('https');
+    const queryHuggingFace = (audioBuffer) => {
+      return new Promise((resolve, reject) => {
+        const options = {
+          hostname: 'router.huggingface.co',
+          path: '/hf-inference/models/openai/whisper-large-v3',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'audio/x-m4a',
+          }
+        };
+
+        if (process.env.HF_TOKEN) {
+          options.headers['Authorization'] = `Bearer ${process.env.HF_TOKEN}`;
+        }
+
+        const hfReq = https.request(options, (hfRes) => {
+          let data = '';
+          hfRes.on('data', (chunk) => { data += chunk; });
+          hfRes.on('end', () => {
+            const trimmed = data.trim();
+            if (trimmed.startsWith('<!DOCTYPE html>') || trimmed.includes('<html')) {
+              let errorMsg = 'Hugging Face API returned HTML. ';
+              if (!process.env.HF_TOKEN) {
+                errorMsg += 'Please ensure you have created a free Hugging Face API key and added it as HF_TOKEN in your backend/.env file (e.g., HF_TOKEN=hf_...).';
+              } else {
+                errorMsg += `This might be due to an invalid HF_TOKEN or request limit (Status: ${hfRes.statusCode}).`;
+              }
+              return reject(new Error(errorMsg));
+            }
+
+            try {
+              const parsed = JSON.parse(data);
+              resolve({ statusCode: hfRes.statusCode, body: parsed });
+            } catch (e) {
+              console.error('[Transcribe Debug] HF Status:', hfRes.statusCode);
+              console.error('[Transcribe Debug] HF Headers:', hfRes.headers);
+              console.error('[Transcribe Debug] HF Body (first 1000 chars):', data.substring(0, 1000));
+              reject(new Error(`Failed to parse Hugging Face response (Status: ${hfRes.statusCode}, Raw: ${data.substring(0, 150)}): ${e.message}`));
+            }
+          });
+        });
+
+        hfReq.on('error', (err) => {
+          reject(err);
+        });
+
+        hfReq.write(audioBuffer);
+        hfReq.end();
+      });
+    };
+
+    const hfResult = await queryHuggingFace(req.file.buffer);
+    console.log('[Transcribe] Hugging Face Response:', hfResult);
+
+    if (hfResult.statusCode === 200) {
+      return res.status(200).json({
+        success: true,
+        text: hfResult.body.text || ''
+      });
+    } else {
+      console.error('[Transcribe] Hugging Face API Error:', hfResult.body);
+      return res.status(hfResult.statusCode).json({
+        success: false,
+        message: hfResult.body.error || 'Failed to transcribe audio. Whisper model may be loading, please try again.',
+        error: hfResult.body
+      });
+    }
+  } catch (error) {
+    console.error('[Transcribe] Error in transcribe route:', error);
+    return res.status(500).json({ message: 'Error transcribing audio: ' + error.message });
   }
 });
 
@@ -3934,59 +4182,8 @@ app.post('/api/conversations/:conversationId/messages', async (req, res) => {
     conversation.updatedAt = new Date();
     await conversation.save();
 
-    // Trigger notification immediately for New Chat Message (DM)
-    try {
-      const senderUser = await User.findById(senderId);
-      const textPreview = text || (attachment && attachment.name ? `sent a file: ${attachment.name}` : 'sent an attachment');
-      const notificationText = `💬 New Message\n${senderUser.fullName}: ${textPreview}\n\n[View Chat]`;
+    // Message/chat notifications are disabled per user request
 
-      conversation.participants.forEach(async (pId) => {
-        const receiverId = pId.toString();
-        if (receiverId !== senderId) {
-          const io = req.app.get('io');
-          let isReceiverInRoom = false;
-          if (io) {
-            const roomSockets = io.sockets.adapter.rooms.get(conversationId.toString());
-            if (roomSockets) {
-              for (const socketId of roomSockets) {
-                const sock = io.sockets.sockets.get(socketId);
-                if (sock && sock.userId === receiverId) {
-                  isReceiverInRoom = true;
-                  break;
-                }
-              }
-            }
-          }
-
-          if (!isReceiverInRoom) {
-            const notification = new Notification({
-              recipientId: receiverId,
-              senderId: senderId,
-              text: notificationText
-            });
-            await notification.save();
-
-            if (io) {
-              io.to(receiverId).emit('new_notification', {
-                _id: notification._id,
-                recipientId: receiverId,
-                senderId: {
-                  _id: senderUser._id,
-                  fullName: senderUser.fullName,
-                  avatarUrl: senderUser.avatarUrl,
-                  role: senderUser.role
-                },
-                text: notification.text,
-                isRead: false,
-                createdAt: notification.createdAt
-              });
-            }
-          }
-        }
-      });
-    } catch (notifErr) {
-      console.error('Error triggering new message notifications:', notifErr);
-    }
 
     // Get the saved message with its MongoDB _id
     const savedMessage = conversation.messages[conversation.messages.length - 1];
