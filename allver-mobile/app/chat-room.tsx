@@ -886,6 +886,7 @@ export default function ChatRoomScreen() {
     setShowMenu(false);
     const isArchitect = receiverRole?.toLowerCase().includes('architect');
     const isContractor = receiverRole?.toLowerCase().includes('contractor');
+    const isLabour = receiverRole?.toLowerCase().includes('labour');
     if (isArchitect) {
       router.push({
         pathname: '/architect-detail',
@@ -895,6 +896,20 @@ export default function ChatRoomScreen() {
       router.push({
         pathname: '/contractor-detail',
         params: { id: receiverId, name: receiverName, avatar: receiverAvatar, role: receiverRole }
+      });
+    } else if (isLabour) {
+      router.push({
+        pathname: '/labour-detail',
+        params: {
+          id: receiverId,
+          name: receiverName,
+          role: receiverRole,
+          avatar: receiverAvatar,
+          experience: 'Entry Level',
+          rating: '4.5',
+          reviews: '0',
+          location: 'Thane, Maharashtra'
+        }
       });
     } else {
       Alert.alert('View Profile', `${receiverName} is registered as a ${receiverRole || 'User'}.`);
@@ -1323,19 +1338,26 @@ export default function ChatRoomScreen() {
           >
             <Feather name="chevron-left" size={24} color={COLORS.textDark} />
           </TouchableOpacity>
-          <View style={styles.avatarWrapper}>
-            <Image
-              source={{ uri: receiverAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=120&auto=format&fit=crop' }}
-              style={styles.avatar}
-            />
-            {otherUserOnline && <View style={styles.onlineDot} />}
-          </View>
-          <View style={styles.headerTitles}>
-            <Text style={styles.headerName} numberOfLines={1}>{receiverName}</Text>
-            <Text style={styles.headerStatus}>
-              {isTyping ? 'typing...' : otherUserOnline ? 'online' : receiverRole || 'offline'}
-            </Text>
-          </View>
+
+          <TouchableOpacity 
+            onPress={handleViewProfile} 
+            activeOpacity={0.7}
+            style={styles.headerProfileClickable}
+          >
+            <View style={styles.avatarWrapper}>
+              <Image
+                source={{ uri: receiverAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=120&auto=format&fit=crop' }}
+                style={styles.avatar}
+              />
+              {otherUserOnline && <View style={styles.onlineDot} />}
+            </View>
+            <View style={styles.headerTitles}>
+              <Text style={styles.headerName} numberOfLines={1}>{receiverName}</Text>
+              <Text style={styles.headerStatus}>
+                {isTyping ? 'typing...' : otherUserOnline ? 'online' : receiverRole || 'offline'}
+              </Text>
+            </View>
+          </TouchableOpacity>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity style={styles.headerIconBtn}>
@@ -1805,6 +1827,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  headerProfileClickable: { flexDirection: 'row', alignItems: 'center', flex: 1, height: '100%', paddingLeft: 4 },
   backBtn: { padding: 4, marginRight: 2 },
   avatarWrapper: { position: 'relative', marginRight: 10 },
   avatar: { width: 38, height: 38, borderRadius: 19 },

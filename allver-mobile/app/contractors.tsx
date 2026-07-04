@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
@@ -103,6 +103,11 @@ export default function ContractorsScreen() {
   const [ratingQuery, setRatingQuery] = useState('');
   const [contractors, setContractors] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [expandedSkills, setExpandedSkills] = useState<Record<string, boolean>>({});
+
+  const toggleSkills = useCallback((id: string) => {
+    setExpandedSkills(prev => ({ ...prev, [id]: !prev[id] }));
+  }, []);
 
   useEffect(() => {
     const fetchContractors = async () => {
@@ -124,18 +129,24 @@ export default function ContractorsScreen() {
   // Filter contractors
   const filteredContractors = contractors.filter((item) => {
     const name = item.fullName || '';
-    const specs = Array.isArray(item.specialization) 
-      ? item.specialization.join(', ') 
+    const specs = Array.isArray(item.specialization)
+      ? item.specialization.join(', ')
       : (item.specialization || '');
-    const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          specs.toLowerCase().includes(searchQuery.toLowerCase());
-    
+    const skills = Array.isArray(item.workCategory)
+      ? item.workCategory.join(', ')
+      : (item.workCategory || '');
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = !q ||
+      name.toLowerCase().includes(q) ||
+      specs.toLowerCase().includes(q) ||
+      skills.toLowerCase().includes(q);
+
     const location = item.city || '';
     const matchesLocation = location.toLowerCase().includes(locationQuery.toLowerCase());
-    
+
     const rating = item.rating || 4.5;
     const matchesRating = ratingQuery ? rating >= parseFloat(ratingQuery) : true;
-    
+
     return matchesSearch && matchesLocation && matchesRating;
   });
 
@@ -288,6 +299,40 @@ export default function ContractorsScreen() {
 
                   <Text style={styles.specializationText}>{specialization}</Text>
 
+                  {/* Skills Pills */}
+                  {(() => {
+                    const skills: string[] = Array.isArray(item.workCategory)
+                      ? item.workCategory
+                      : item.workCategory ? item.workCategory.split(',').map((s: string) => s.trim()) : [];
+                    if (skills.length === 0) return null;
+                    const MAX_VISIBLE = 3;
+                    const isExpanded = expandedSkills[item._id] || false;
+                    const visibleSkills = isExpanded ? skills : skills.slice(0, MAX_VISIBLE);
+                    const hasMore = skills.length > MAX_VISIBLE;
+                    return (
+                      <View style={styles.skillsSection}>
+                        <View style={styles.skillsRow}>
+                          {visibleSkills.map((skill, idx) => (
+                            <View key={idx} style={styles.skillPill}>
+                              <Text style={styles.skillPillText}>{skill}</Text>
+                            </View>
+                          ))}
+                          {hasMore && (
+                            <TouchableOpacity
+                              style={styles.seeMorePill}
+                              onPress={() => toggleSkills(item._id)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.seeMoreText}>
+                                {isExpanded ? 'See less' : `+${skills.length - MAX_VISIBLE} more`}
+                              </Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })()}
+
                   {/* Stats Footer inside Card */}
                   <View style={styles.cardStatsRow}>
                     <View style={styles.statItem}>
@@ -372,4 +417,12 @@ const styles = StyleSheet.create({
 
   emptyContainer: { alignItems: 'center', paddingVertical: 40 },
   emptyText: { fontSize: 14, color: COLORS.textMuted, textAlign: 'center' },
+
+  /* SKILLS */
+  skillsSection: { marginTop: 10 },
+  skillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  skillPill: { backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  skillPillText: { fontSize: 11, color: '#15803D', fontWeight: '600' },
+  seeMorePill: { backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  seeMoreText: { fontSize: 11, color: '#2563EB', fontWeight: '700' },
 });

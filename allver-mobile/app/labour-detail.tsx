@@ -65,6 +65,12 @@ export default function LabourDetailScreen() {
   const contractorName = (params.contractorName as string) || 'BuildWell Contractors';
   const workspaceId = (params.workspaceId as string) || '';
 
+  const cleanExperience = (() => {
+    let exp = experience || '';
+    exp = exp.replace(/Years/gi, '').replace(/Experience/gi, '').trim();
+    return exp ? `${exp} Years Experience` : 'Entry Level';
+  })();
+
   const [activeTab, setActiveTab] = useState<'attendance' | 'payments' | 'documents'>('attendance');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [allWorkspaces, setAllWorkspaces] = useState<any[]>([]);
@@ -694,7 +700,19 @@ export default function LabourDetailScreen() {
   };
 
   const handleMessage = () => {
-    Linking.openURL(`sms:+919876543210?body=Hello ${name}, I saw your labour profile under ${contractorName} on Allver and wanted to contact you.`);
+    if (!currentUser) {
+      Alert.alert('Login Required', 'Please log in to send messages.');
+      return;
+    }
+    router.push({
+      pathname: '/chat-room',
+      params: {
+        receiverId: id,
+        name: name,
+        role: role,
+        avatar: avatar,
+      }
+    });
   };
 
   const handleHire = () => {
@@ -738,39 +756,43 @@ export default function LabourDetailScreen() {
 
         {/* ================= PROFILE DETAILS CARD ================= */}
         <View style={styles.profileCard}>
-          <View style={styles.profileAvatarWrapper}>
-            <Image source={avatar ? { uri: avatar } : require('../assets/android-icon-foreground.png')} style={styles.avatarImage} contentFit={avatar ? "cover" : "contain"} />
-            <View style={styles.verifiedBadge}>
-              <Feather name="check" size={10} color={COLORS.white} />
+          {/* Top Info Section */}
+          <View style={styles.profileTopRow}>
+            <View style={styles.profileAvatarWrapper}>
+              <Image source={avatar ? { uri: avatar } : require('../assets/android-icon-foreground.png')} style={styles.avatarImage} contentFit={avatar ? "cover" : "contain"} />
+              <View style={styles.verifiedBadge}>
+                <Feather name="check" size={10} color={COLORS.white} />
+              </View>
+            </View>
+
+            <View style={styles.profileTextDetails}>
+              <View style={styles.nameRow}>
+                <Text style={styles.profileName} numberOfLines={1}>{name}</Text>
+                <Feather name="check-circle" size={14} color={COLORS.green} style={styles.verifiedCheckIcon} />
+              </View>
+              
+              <Text style={styles.profileRole}>{role}</Text>
+              
+              <View style={styles.ratingBadge}>
+                <Feather name="star" size={11} color={COLORS.gold} style={{ fill: COLORS.gold }} />
+                <Text style={styles.ratingText}>{rating} ({reviews} Reviews)</Text>
+              </View>
             </View>
           </View>
 
-          <View style={styles.profileTextDetails}>
-            <Text style={styles.profileName}>{name}</Text>
-            
-            <View style={styles.ratingRow}>
-              <Feather name="star" size={12} color={COLORS.gold} style={{ fill: COLORS.gold }} />
-              <Text style={styles.ratingText}>{rating} ({reviews} Reviews)</Text>
+          {/* Quick Metadata Badge Grid */}
+          <View style={styles.metaBadgeRow}>
+            <View style={styles.metaBadge}>
+              <Feather name="map-pin" size={11} color={COLORS.teal} style={styles.metaBadgeIcon} />
+              <Text style={styles.metaBadgeText}>{location}</Text>
             </View>
-
-            <View style={styles.metaRow}>
-              <Feather name="briefcase" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
-              <Text style={styles.metaText}>{role}</Text>
+            <View style={styles.metaBadge}>
+              <Feather name="award" size={11} color={COLORS.teal} style={styles.metaBadgeIcon} />
+              <Text style={styles.metaBadgeText}>{cleanExperience}</Text>
             </View>
-
-            <View style={styles.metaRow}>
-              <Feather name="map-pin" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
-              <Text style={styles.metaText}>{location}</Text>
-            </View>
-
-            <View style={styles.metaRow}>
-              <Feather name="award" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
-              <Text style={styles.metaText}>{experience}</Text>
-            </View>
-            
             {id && (
               <TouchableOpacity 
-                style={styles.followersContainer}
+                style={styles.metaBadge}
                 onPress={() => {
                   router.push({
                     pathname: '/followers-list',
@@ -778,30 +800,35 @@ export default function LabourDetailScreen() {
                   });
                 }}
               >
-                <Feather name="users" size={12} color={COLORS.textMuted} style={styles.metaIcon} />
-                <Text style={styles.followersText}>{followersCountVal} Networks</Text>
+                <Feather name="users" size={11} color={COLORS.teal} style={styles.metaBadgeIcon} />
+                <Text style={styles.metaBadgeText}>{followersCountVal} Networks</Text>
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Action Buttons */}
-          <View style={styles.headerActionsColumn}>
+          {/* Action Buttons Row */}
+          <View style={styles.profileActionsRow}>
             {id && currentUser && currentUser._id !== id && (
               <TouchableOpacity 
-                style={[styles.followBtn, isFollowing && styles.followingBtn]} 
+                style={[styles.primaryActionBtn, isFollowing && styles.followingActionBtn]} 
                 onPress={handleFollowPress}
                 activeOpacity={0.7}
               >
-                <Feather name={isFollowing ? "check" : "user-plus"} size={12} color={isFollowing ? COLORS.textDark : COLORS.white} style={{ marginRight: 4 }} />
-                <Text style={[styles.followBtnText, isFollowing && { color: COLORS.textDark }]}>
+                <Feather name={isFollowing ? "check" : "user-plus"} size={13} color={isFollowing ? COLORS.textDark : COLORS.white} style={{ marginRight: 4 }} />
+                <Text style={[styles.primaryActionBtnText, isFollowing && { color: COLORS.textDark }]}>
                   {isFollowing ? 'In Network' : 'Add to Network'}
                 </Text>
               </TouchableOpacity>
             )}
+            
+            <TouchableOpacity style={styles.secondaryActionBtn} onPress={handleHire} activeOpacity={0.7}>
+              <Feather name="phone" size={13} color={COLORS.teal} style={{ marginRight: 4 }} />
+              <Text style={styles.secondaryActionBtnText}>Call</Text>
+            </TouchableOpacity>
 
-            <TouchableOpacity style={styles.messageBtn} onPress={handleMessage} activeOpacity={0.7}>
-              <Feather name="message-square" size={13} color={COLORS.teal} style={{ marginRight: 6 }} />
-              <Text style={styles.messageBtnText}>Message</Text>
+            <TouchableOpacity style={styles.tertiaryActionBtn} onPress={handleMessage} activeOpacity={0.7}>
+              <Feather name="message-square" size={13} color={COLORS.blue} style={{ marginRight: 4 }} />
+              <Text style={styles.tertiaryActionBtnText}>Message</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -867,31 +894,31 @@ export default function LabourDetailScreen() {
 
         {/* ================= SUMMARY STATS (4 Cards) ================= */}
         <View style={styles.statsContainer}>
-          <View style={styles.statBox}>
-            <Feather name="calendar" size={14} color={COLORS.textMuted} style={{ marginBottom: 4 }} />
-            <Text style={styles.statLabel}>Total Days Worked</Text>
-            <Text style={styles.statValue}>{activeDaysCount} Days</Text>
+          <View style={[styles.statBox, styles.statBoxWork]}>
+            <Feather name="calendar" size={14} color="#059669" style={{ marginBottom: 4 }} />
+            <Text style={styles.statLabel}>Total Days</Text>
+            <Text style={[styles.statValue, { color: '#059669' }]}>{activeDaysCount} Days</Text>
             <Text style={styles.statSubText}>(This Month)</Text>
           </View>
 
-          <View style={styles.statBox}>
-            <MaterialCommunityIcons name="currency-inr" size={15} color={COLORS.textMuted} style={{ marginBottom: 3 }} />
-            <Text style={styles.statLabel}>Total Payment</Text>
-            <Text style={styles.statValue}>₹ {totalEarnings.toLocaleString()}</Text>
+          <View style={[styles.statBox, styles.statBoxPayment]}>
+            <MaterialCommunityIcons name="currency-inr" size={15} color="#2563EB" style={{ marginBottom: 3 }} />
+            <Text style={styles.statLabel}>Total Earned</Text>
+            <Text style={[styles.statValue, { color: '#2563EB' }]}>₹{totalEarnings.toLocaleString()}</Text>
             <Text style={styles.statSubText}>(This Month)</Text>
           </View>
 
-          <View style={styles.statBox}>
-            <Feather name="folder-minus" size={14} color={COLORS.textMuted} style={{ marginBottom: 4 }} />
-            <Text style={styles.statLabel}>Advance Given</Text>
-            <Text style={styles.statValue}>₹ {days.reduce((acc, d) => acc + (d.advance || 0), 0).toLocaleString()}</Text>
+          <View style={[styles.statBox, styles.statBoxAdvance]}>
+            <Feather name="folder-minus" size={14} color="#D97706" style={{ marginBottom: 4 }} />
+            <Text style={styles.statLabel}>Advance</Text>
+            <Text style={[styles.statValue, { color: '#D97706' }]}>₹{days.reduce((acc, d) => acc + (d.advance || 0), 0).toLocaleString()}</Text>
             <Text style={styles.statSubText}>(This Month)</Text>
           </View>
 
-          <View style={styles.statBox}>
-            <Feather name="file-text" size={14} color={COLORS.textMuted} style={{ marginBottom: 4 }} />
-            <Text style={styles.statLabel}>Pending Payment</Text>
-            <Text style={styles.statValue}>₹ {(totalEarnings - days.reduce((acc, d) => acc + (d.advance || 0), 0)).toLocaleString()}</Text>
+          <View style={[styles.statBox, styles.statBoxPending]}>
+            <Feather name="file-text" size={14} color="#DC2626" style={{ marginBottom: 4 }} />
+            <Text style={styles.statLabel}>Pending</Text>
+            <Text style={[styles.statValue, { color: '#DC2626' }]}>₹{(totalEarnings - days.reduce((acc, d) => acc + (d.advance || 0), 0)).toLocaleString()}</Text>
             <Text style={styles.statSubText}>(This Month)</Text>
           </View>
         </View>
@@ -1513,7 +1540,6 @@ const styles = StyleSheet.create({
 
   /* PROFILE DETAILS CARD */
   profileCard: {
-    flexDirection: 'row',
     marginHorizontal: 16,
     marginTop: 16,
     padding: 16,
@@ -1521,100 +1547,162 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: 16,
     backgroundColor: COLORS.white,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 5,
+    elevation: 2,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+  },
+  profileTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   profileAvatarWrapper: {
     position: 'relative',
   },
   avatarImage: { 
-    width: 66, 
-    height: 66, 
-    borderRadius: 33 
+    width: 72, 
+    height: 72, 
+    borderRadius: 36,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   verifiedBadge: {
     position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    bottom: 0,
+    right: 0,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: COLORS.green,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: COLORS.white,
   },
   profileTextDetails: { 
     flex: 1, 
-    marginLeft: 12 
+    marginLeft: 16,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
   },
   profileName: { 
-    fontSize: 15, 
+    fontSize: 18, 
     fontWeight: '800', 
-    color: COLORS.textDark, 
-    marginBottom: 4 
+    color: COLORS.textDark,
   },
-  ratingRow: { 
+  verifiedCheckIcon: {
+    marginTop: 1,
+  },
+  profileRole: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginBottom: 6,
+  },
+  ratingBadge: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     gap: 4, 
-    marginBottom: 6 
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
   },
   ratingText: { 
     fontSize: 11, 
     fontWeight: '700', 
-    color: COLORS.textDark 
+    color: '#D97706',
   },
-  metaRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 6, 
-    marginBottom: 2 
+  metaBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 14,
   },
-  metaIcon: { 
-    color: COLORS.textMuted 
+  metaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 5,
   },
-  metaText: { 
-    fontSize: 11, 
-    color: COLORS.textMuted,
+  metaBadgeIcon: {
+    color: COLORS.teal,
+  },
+  metaBadgeText: {
+    fontSize: 11,
+    color: COLORS.textDark,
     fontWeight: '600',
   },
-  headerActionsColumn: { 
-    width: 100, 
-    gap: 6, 
-    justifyContent: 'center' 
+  profileActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+    width: '100%',
   },
-  messageBtn: {
+  primaryActionBtn: {
+    flex: 1.2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#10B981',
+    borderRadius: 20,
+    height: 38,
+  },
+  followingActionBtn: {
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: COLORS.teal,
-    borderRadius: 15,
-    paddingVertical: 5,
-    backgroundColor: COLORS.white,
+    borderColor: COLORS.border,
   },
-  messageBtnText: { 
-    fontSize: 10, 
-    fontWeight: '700', 
-    color: COLORS.teal 
+  primaryActionBtnText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '700',
   },
-  hireBtn: {
+  secondaryActionBtn: {
+    flex: 0.9,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.teal,
-    borderRadius: 15,
-    paddingVertical: 5,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#10B981',
+    borderRadius: 20,
+    height: 38,
   },
-  hireBtnText: { 
-    fontSize: 10, 
-    fontWeight: '700', 
-    color: COLORS.white 
+  secondaryActionBtnText: {
+    color: '#047857',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  tertiaryActionBtn: {
+    flex: 0.9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+    borderRadius: 20,
+    height: 38,
+  },
+  tertiaryActionBtnText: {
+    color: '#1D4ED8',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   /* SUMMARY STATS ROW */
@@ -1626,34 +1714,50 @@ const styles = StyleSheet.create({
   },
   statBox: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 10,
+    borderColor: '#F1F5F9',
+    borderRadius: 12,
     backgroundColor: COLORS.white,
     alignItems: 'center',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.02,
-    shadowRadius: 3,
+    elevation: 2,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    borderLeftWidth: 3,
+  },
+  statBoxWork: {
+    borderLeftColor: '#10B981',
+  },
+  statBoxPayment: {
+    borderLeftColor: '#3B82F6',
+  },
+  statBoxAdvance: {
+    borderLeftColor: '#F59E0B',
+  },
+  statBoxPending: {
+    borderLeftColor: '#EF4444',
   },
   statLabel: { 
-    fontSize: 8, 
+    fontSize: 9, 
     color: COLORS.textMuted, 
     fontWeight: '700',
     textAlign: 'center',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   statValue: { 
     fontSize: 12, 
     fontWeight: '800', 
-    color: COLORS.textDark, 
-    marginVertical: 2 
+    marginVertical: 4,
+    textAlign: 'center',
   },
   statSubText: { 
     fontSize: 8, 
-    color: COLORS.textMuted 
+    color: COLORS.textMuted,
+    fontWeight: '600',
   },
 
   /* TABS BAR */
