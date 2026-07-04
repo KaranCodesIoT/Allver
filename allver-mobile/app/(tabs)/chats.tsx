@@ -59,8 +59,6 @@ export default function ChatsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
-
-  const [selectedFilter, setSelectedFilter] = useState<'All' | 'Projects' | 'Professionals' | 'System' | 'Unread'>('All');
   const [conversations, setConversations] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
@@ -259,19 +257,11 @@ export default function ChatsScreen() {
   };
 
   const filteredConversations = conversations.filter((chat) => {
-    // 1. Category Filter
-    if (selectedFilter === 'Projects' && chat.type !== 'Projects') return false;
-    if (selectedFilter === 'Professionals' && chat.type !== 'Professionals') return false;
-    if (selectedFilter === 'System' && chat.type !== 'System') return false;
-    if (selectedFilter === 'Unread' && chat.unreadCount === 0) return false;
-
-    // 2. Search Filter
     if (searchQuery.trim() !== '') {
       const query = searchQuery.toLowerCase();
       return (
         chat.name.toLowerCase().includes(query) ||
         chat.role.toLowerCase().includes(query) ||
-        chat.project.toLowerCase().includes(query) ||
         chat.message.toLowerCase().includes(query)
       );
     }
@@ -366,36 +356,7 @@ export default function ChatsScreen() {
           </View>
         </View>
 
-        {/* Category Filters Chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsScroll}>
-          {(['All', 'Projects', 'Professionals', 'System', 'Unread'] as const).map((filter) => {
-            const isSelected = selectedFilter === filter;
-            const filterLabels: Record<string, string> = {
-              All: t('all') || 'All',
-              Projects: t('projects') || 'Projects',
-              Professionals: t('professionals') || 'Professionals',
-              System: t('system') || 'System',
-              Unread: t('unread') || 'Unread',
-            };
-            return (
-              <TouchableOpacity
-                key={filter}
-                style={[styles.chip, isSelected && styles.chipActive]}
-                onPress={() => setSelectedFilter(filter)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
-                  {filterLabels[filter]}
-                </Text>
-                {filter === 'Unread' && totalUnreadCount > 0 && (
-                  <View style={[styles.chipBadge, isSelected && styles.chipBadgeActive]}>
-                    <Text style={[styles.chipBadgeText, isSelected && styles.chipBadgeTextActive]}>{totalUnreadCount}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+
 
         {/* Conversations List */}
         <View style={styles.listContainer}>
@@ -414,10 +375,6 @@ export default function ChatsScreen() {
                   <Text style={styles.chatTime}>{chat.time}</Text>
                 </View>
 
-                {/* Subtitle/Project badge */}
-                <View style={styles.projectBadge}>
-                  <Text style={styles.projectText}>{chat.project}</Text>
-                </View>
 
                 <View style={styles.messageRow}>
                   <Text style={[styles.messageText, chat.unreadCount > 0 && styles.messageTextUnread]} numberOfLines={1}>
@@ -561,54 +518,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
-  /* CHIPS */
-  chipsScroll: {
-    paddingHorizontal: 16,
-    gap: 8,
-    paddingBottom: 16,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.white,
-    gap: 6,
-  },
-  chipActive: {
-    backgroundColor: COLORS.yellow,
-    borderColor: COLORS.yellow,
-  },
-  chipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textDark,
-  },
-  chipTextActive: {
-    color: COLORS.white,
-  },
-  chipBadge: {
-    backgroundColor: COLORS.yellowLight,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 10,
-    minWidth: 16,
-    alignItems: 'center',
-  },
-  chipBadgeActive: {
-    backgroundColor: COLORS.white,
-  },
-  chipBadgeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: COLORS.yellow,
-  },
-  chipBadgeTextActive: {
-    color: COLORS.yellow,
-  },
+
 
   /* LIST */
   listContainer: {
@@ -669,19 +579,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: COLORS.textMuted,
   },
-  projectBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: COLORS.bgLight,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-    marginBottom: 6,
-  },
-  projectText: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-    fontWeight: '600',
-  },
+
   messageRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

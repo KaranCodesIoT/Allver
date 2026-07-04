@@ -424,6 +424,30 @@ export default function ProjectProgressScreen() {
     }
   };
 
+  const clickPhotoWithCamera = async () => {
+    const count = formImg ? formImg.split(',').filter(Boolean).length : 0;
+    if (count >= 5) {
+      Alert.alert('Limit Reached', 'You can upload a maximum of 5 images.');
+      return;
+    }
+
+    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert('Permission Denied', 'Permission to access camera is required!');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: false,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+      await uploadMediaFile(asset.uri, 'image', asset.fileName, asset.mimeType);
+    }
+  };
+
   const [localUpdates, setLocalUpdates] = useState<TimelineUpdate[]>([]);
   const [isTeamExpanded, setIsTeamExpanded] = useState(true);
 
@@ -559,6 +583,13 @@ export default function ProjectProgressScreen() {
       'Communication',
       'Responsiveness',
       'Accuracy'
+    ],
+    'Client → Labour': [
+      'Skill & efficiency',
+      'Punctuality & attendance',
+      'Discipline & behaviour',
+      'Work Quality',
+      'Overall rating'
     ]
   };
 
@@ -582,7 +613,7 @@ export default function ProjectProgressScreen() {
 
     if (!myRole) return [];
 
-    // 1. Client can rate Contractor and Architect
+    // Only Client can rate all other project members (Contractor, Architect, Labour team)
     if (myRole === 'Client') {
       if (contractorObj && getUserIdStr(contractorObj) !== currentUserId) {
         targets.push({ user: contractorObj, relation: 'Client → Contractor' });
@@ -590,32 +621,11 @@ export default function ProjectProgressScreen() {
       if (architectObj && getUserIdStr(architectObj) !== currentUserId) {
         targets.push({ user: architectObj, relation: 'Client → Architect' });
       }
-    }
-    // 2. Contractor can rate Client, Labour, Architect
-    else if (myRole === 'Contractor') {
-      if (clientObj && getUserIdStr(clientObj) !== currentUserId) {
-        targets.push({ user: clientObj, relation: 'Contractor → Client' });
-      }
-      if (architectObj && getUserIdStr(architectObj) !== currentUserId) {
-        targets.push({ user: architectObj, relation: 'Contractor → Architect' });
-      }
       labourTeamObjs.forEach((lab: any) => {
         if (getUserIdStr(lab) !== currentUserId) {
-          targets.push({ user: lab, relation: 'Contractor → Labour' });
+          targets.push({ user: lab, relation: 'Client → Labour' });
         }
       });
-    }
-    // 3. Labour can rate Contractor
-    else if (myRole === 'Labour') {
-      if (contractorObj && getUserIdStr(contractorObj) !== currentUserId) {
-        targets.push({ user: contractorObj, relation: 'Labour → Contractor' });
-      }
-    }
-    // 4. Architect can rate Contractor
-    else if (myRole === 'Architect') {
-      if (contractorObj && getUserIdStr(contractorObj) !== currentUserId) {
-        targets.push({ user: contractorObj, relation: 'Architect → Contractor' });
-      }
     }
 
     return targets;
@@ -1397,7 +1407,7 @@ export default function ProjectProgressScreen() {
   }, [workspace, workspaceId]);
 
 
-  const timelineUpdates = localUpdates;
+  const timelineUpdates = [...localUpdates].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   // Map database status to display status
   let displayStatus = projectStatus;
@@ -1623,66 +1633,68 @@ export default function ProjectProgressScreen() {
                 </View>
 
                 {/* Ratings & Reviews List */}
-                <View style={styles.ratingsListSection}>
-                  <Text style={styles.ratingsSectionTitle}>Ratings & Reviews</Text>
-                  {getRateableTargets().length === 0 ? (
-                    <Text style={styles.noRatingsText}>No other participants available to rate on this project.</Text>
-                  ) : (
-                    getRateableTargets().map((target) => {
-                      const isRated = isAlreadyRated(target.user._id);
-                      const userRating = workspace.ratings?.find(
-                        (r: any) => getUserIdStr(r.from) === currentUserId && getUserIdStr(r.to) === target.user._id
-                      );
+                {isWorkspaceClient && (
+                  <View style={styles.ratingsListSection}>
+                    <Text style={styles.ratingsSectionTitle}>Ratings & Reviews</Text>
+                    {getRateableTargets().length === 0 ? (
+                      <Text style={styles.noRatingsText}>No other participants available to rate on this project.</Text>
+                    ) : (
+                      getRateableTargets().map((target) => {
+                        const isRated = isAlreadyRated(target.user._id);
+                        const userRating = workspace.ratings?.find(
+                          (r: any) => getUserIdStr(r.from) === currentUserId && getUserIdStr(r.to) === target.user._id
+                        );
 
-                      return (
-                        <View key={target.user._id} style={styles.ratingTargetItem}>
-                          <Image 
-                            source={{ uri: resolveAvatarUrl(target.user.avatarUrl) || 'https://i.pravatar.cc/100?img=12' }} 
-                            style={styles.ratingTargetAvatar} 
-                            contentFit="cover" 
-                          />
-                          <View style={{ flex: 1, marginLeft: 12 }}>
-                            <Text style={styles.ratingTargetName}>{target.user.fullName}</Text>
-                            <Text style={styles.ratingTargetRole}>
-                              {target.user.role} · {target.relation}
-                            </Text>
-                            {isRated && (
-                              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
-                                <View style={{ flexDirection: 'row', gap: 2 }}>
-                                  {[1, 2, 3, 4, 5].map((s) => (
-                                    <FontAwesome5 
-                                      key={s} 
-                                      name="star" 
-                                      solid={s <= Math.round(userRating?.rating || 0)} 
-                                      size={10} 
-                                      color={s <= Math.round(userRating?.rating || 0) ? COLORS.primary : COLORS.textLight} 
-                                    />
-                                  ))}
+                        return (
+                          <View key={target.user._id} style={styles.ratingTargetItem}>
+                            <Image 
+                              source={{ uri: resolveAvatarUrl(target.user.avatarUrl) || 'https://i.pravatar.cc/100?img=12' }} 
+                              style={styles.ratingTargetAvatar} 
+                              contentFit="cover" 
+                            />
+                            <View style={{ flex: 1, marginLeft: 12 }}>
+                              <Text style={styles.ratingTargetName}>{target.user.fullName}</Text>
+                              <Text style={styles.ratingTargetRole}>
+                                {target.user.role} · {target.relation}
+                              </Text>
+                              {isRated && (
+                                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                                  <View style={{ flexDirection: 'row', gap: 2 }}>
+                                    {[1, 2, 3, 4, 5].map((s) => (
+                                      <FontAwesome5 
+                                        key={s} 
+                                        name="star" 
+                                        solid={s <= Math.round(userRating?.rating || 0)} 
+                                        size={10} 
+                                        color={s <= Math.round(userRating?.rating || 0) ? COLORS.primary : COLORS.textLight} 
+                                      />
+                                    ))}
+                                  </View>
+                                  <Text style={styles.ratingDetailText}>
+                                    ({userRating?.rating?.toFixed(1)})
+                                  </Text>
                                 </View>
-                                <Text style={styles.ratingDetailText}>
-                                  ({userRating?.rating?.toFixed(1)})
-                                </Text>
+                              )}
+                            </View>
+                            {isRated ? (
+                              <View style={styles.ratedBadge}>
+                                <Feather name="check" size={12} color={COLORS.green} style={{ marginRight: 2 }} />
+                                <Text style={styles.ratedBadgeText}>Submitted</Text>
                               </View>
+                            ) : (
+                              <TouchableOpacity 
+                                style={styles.rateBtn}
+                                onPress={() => handleOpenRatingModal(target)}
+                              >
+                                <Text style={styles.rateBtnText}>Rate</Text>
+                              </TouchableOpacity>
                             )}
                           </View>
-                          {isRated ? (
-                            <View style={styles.ratedBadge}>
-                              <Feather name="check" size={12} color={COLORS.green} style={{ marginRight: 2 }} />
-                              <Text style={styles.ratedBadgeText}>Submitted</Text>
-                            </View>
-                          ) : (
-                            <TouchableOpacity 
-                              style={styles.rateBtn}
-                              onPress={() => handleOpenRatingModal(target)}
-                            >
-                              <Text style={styles.rateBtnText}>Rate</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      );
-                    })
-                  )}
-                </View>
+                        );
+                      })
+                    )}
+                  </View>
+                )}
               </>
             )}
           </View>
@@ -1868,7 +1880,7 @@ export default function ProjectProgressScreen() {
 
               {/* Icon */}
               <View style={{ width: 26, height: 26, marginRight: 12, justifyContent: 'center', alignItems: 'center' }}>
-                {index === timelineUpdates.length - 1 && !isReadOnly && (
+                {index === 0 && !isReadOnly && (
                   <Animated.View
                     style={{
                       position: 'absolute',
@@ -1887,7 +1899,7 @@ export default function ProjectProgressScreen() {
                     { 
                       backgroundColor: update.iconBg, 
                       marginRight: 0,
-                      opacity: (index === timelineUpdates.length - 1 && !isReadOnly) ? blinkAnimStatus : 1
+                      opacity: (index === 0 && !isReadOnly) ? blinkAnimStatus : 1
                     }
                   ]}
                 >  
@@ -2075,55 +2087,25 @@ export default function ProjectProgressScreen() {
                 onChangeText={setFormDescription}
               />
 
-              <Text style={styles.modalLabel}>Category</Text>
-              <View style={styles.categoryRow}>
-                {['General', 'Task', 'Quotation', 'Payment'].map(cat => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[styles.categoryChip, formCategory === cat && styles.categoryChipActive]}
-                    onPress={() => setFormCategory(cat)}
-                  >
-                    <Text style={[styles.categoryChipText, formCategory === cat && styles.categoryChipTextActive]}>{cat}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
               <Text style={styles.modalLabel}>Media Attachments</Text>
               <View style={styles.mediaButtonsRow}>
                  <TouchableOpacity 
                   style={[
                     styles.mediaPickerBtn, 
                     formImg ? styles.mediaPickerBtnActive : null,
-                    (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 ? { opacity: 0.5 } : null
+                    (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 ? { opacity: 0.5 } : null,
+                    { flex: 1 }
                   ]} 
-                  onPress={() => {
-                    const count = formImg ? formImg.split(',').filter(Boolean).length : 0;
-                    if (count >= 5) {
-                      Alert.alert('Limit Reached', 'You can upload a maximum of 5 images.');
-                      return;
-                    }
-                    pickMedia('image');
-                  }}
+                  onPress={clickPhotoWithCamera}
                   disabled={uploadingMedia}
                 >
-                  <Feather name="image" size={16} color={formImg ? COLORS.white : COLORS.textDark} />
+                  <Feather name="camera" size={16} color={formImg ? COLORS.white : COLORS.textDark} />
                   <Text style={[styles.mediaPickerBtnText, formImg ? styles.mediaPickerBtnTextActive : null]}>
                     {(formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 
                       ? 'Max 5 Images' 
                       : (formImg ? formImg.split(',').filter(Boolean).length : 0) > 0 
-                        ? 'Add More' 
-                        : 'Add Image'}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.mediaPickerBtn, formVideo ? styles.mediaPickerBtnActive : null]} 
-                  onPress={() => pickMedia('video')}
-                  disabled={uploadingMedia}
-                >
-                  <Feather name="video" size={16} color={formVideo ? COLORS.white : COLORS.textDark} />
-                  <Text style={[styles.mediaPickerBtnText, formVideo ? styles.mediaPickerBtnTextActive : null]}>
-                    {formVideo ? 'Change Video' : 'Add Video'}
+                        ? `Capture More (${formImg.split(',').filter(Boolean).length}/5)`
+                        : 'Capture Photo'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -2168,24 +2150,6 @@ export default function ProjectProgressScreen() {
                   ) : null}
                 </View>
               ) : null}
-
-              <Text style={styles.modalLabel}>Image URL (optional)</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="https://example.com/photo.jpg"
-                placeholderTextColor={COLORS.textLight}
-                value={formImg}
-                onChangeText={setFormImg}
-              />
-
-              <Text style={styles.modalLabel}>Video URL (optional)</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="https://example.com/video.mp4"
-                placeholderTextColor={COLORS.textLight}
-                value={formVideo}
-                onChangeText={setFormVideo}
-              />
             </ScrollView>
 
             <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleAddUpdate} activeOpacity={0.85}>
@@ -2226,55 +2190,25 @@ export default function ProjectProgressScreen() {
                 onChangeText={setFormDescription}
               />
 
-              <Text style={styles.modalLabel}>Category</Text>
-              <View style={styles.categoryRow}>
-                {['General', 'Task', 'Quotation', 'Payment'].map(cat => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[styles.categoryChip, formCategory === cat && styles.categoryChipActive]}
-                    onPress={() => setFormCategory(cat)}
-                  >
-                    <Text style={[styles.categoryChipText, formCategory === cat && styles.categoryChipTextActive]}>{cat}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
               <Text style={styles.modalLabel}>Media Attachments</Text>
               <View style={styles.mediaButtonsRow}>
                  <TouchableOpacity 
                   style={[
                     styles.mediaPickerBtn, 
                     formImg ? styles.mediaPickerBtnActive : null,
-                    (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 ? { opacity: 0.5 } : null
+                    (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 ? { opacity: 0.5 } : null,
+                    { flex: 1 }
                   ]} 
-                  onPress={() => {
-                    const count = formImg ? formImg.split(',').filter(Boolean).length : 0;
-                    if (count >= 5) {
-                      Alert.alert('Limit Reached', 'You can upload a maximum of 5 images.');
-                      return;
-                    }
-                    pickMedia('image');
-                  }}
+                  onPress={clickPhotoWithCamera}
                   disabled={uploadingMedia}
                 >
-                  <Feather name="image" size={16} color={formImg ? COLORS.white : COLORS.textDark} />
+                  <Feather name="camera" size={16} color={formImg ? COLORS.white : COLORS.textDark} />
                   <Text style={[styles.mediaPickerBtnText, formImg ? styles.mediaPickerBtnTextActive : null]}>
                     {(formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 
                       ? 'Max 5 Images' 
                       : (formImg ? formImg.split(',').filter(Boolean).length : 0) > 0 
-                        ? 'Add More' 
-                        : 'Add Image'}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.mediaPickerBtn, formVideo ? styles.mediaPickerBtnActive : null]} 
-                  onPress={() => pickMedia('video')}
-                  disabled={uploadingMedia}
-                >
-                  <Feather name="video" size={16} color={formVideo ? COLORS.white : COLORS.textDark} />
-                  <Text style={[styles.mediaPickerBtnText, formVideo ? styles.mediaPickerBtnTextActive : null]}>
-                    {formVideo ? 'Change Video' : 'Add Video'}
+                        ? `Capture More (${formImg.split(',').filter(Boolean).length}/5)`
+                        : 'Capture Photo'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -2319,24 +2253,6 @@ export default function ProjectProgressScreen() {
                   ) : null}
                 </View>
               ) : null}
-
-              <Text style={styles.modalLabel}>Image URL (optional)</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="https://example.com/photo.jpg"
-                placeholderTextColor={COLORS.textLight}
-                value={formImg}
-                onChangeText={setFormImg}
-              />
-
-              <Text style={styles.modalLabel}>Video URL (optional)</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="https://example.com/video.mp4"
-                placeholderTextColor={COLORS.textLight}
-                value={formVideo}
-                onChangeText={setFormVideo}
-              />
             </ScrollView>
 
             <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleEditUpdate} activeOpacity={0.85}>
@@ -2636,14 +2552,14 @@ export default function ProjectProgressScreen() {
                   </TouchableOpacity>
 
                   <TouchableOpacity 
-                    style={[styles.modalActionBtn, styles.modalSubmitBtn, { marginTop: 0, borderRadius: 8 }]} 
+                    style={[styles.modalActionBtn, styles.modalSubmitBtn, { marginTop: 0, borderRadius: 8, paddingVertical: 0 }]} 
                     onPress={handleSubmitRating}
                     disabled={submittingRating}
                   >
                     {submittingRating ? (
                       <ActivityIndicator size="small" color={COLORS.white} />
                     ) : (
-                      <Text style={styles.modalSubmitBtnText}>Submit Review</Text>
+                      <Text style={[styles.modalSubmitBtnText, { fontSize: 13 }]}>Submit Review</Text>
                     )}
                   </TouchableOpacity>
                 </View>

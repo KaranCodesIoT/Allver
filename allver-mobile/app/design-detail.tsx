@@ -1197,22 +1197,33 @@ export default function DesignDetailScreen() {
           </ScrollView>
         </View>
 
-        {/* Contractors Who Can Build This Design Section */}
-        <View style={[styles.sectionWrap, { marginTop: 10 }]}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionHeaderTitle}>Contractors Who Can Build This Design</Text>
-            <TouchableOpacity onPress={() => router.push('/contractors')}>
-              <Text style={styles.viewAllText}>View All {'->'}</Text>
+        {/* Connect with Architects/Contractors Section */}
+        <View style={styles.connectSectionWrap}>
+          {/* Section Header Banner */}
+          <View style={styles.connectBannerHeader}>
+            <View style={styles.connectIconBadge}>
+              <Feather name="users" size={18} color={COLORS.white} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.connectSectionTitle}>Connect with Architects / Contractors</Text>
+              <Text style={styles.connectSectionSubtitle}>who can build this design for you</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.connectViewAllBtn}
+              onPress={() => router.push('/contractors')}
+            >
+              <Text style={styles.connectViewAllText}>View All</Text>
+              <Feather name="arrow-right" size={11} color={COLORS.green} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.carouselWrapper}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.connectCarouselWrapper}>
             {realContractors.length > 0 ? (
               realContractors.slice(0, 5).map((item) => (
                 <TouchableOpacity 
                   key={item._id} 
-                  style={styles.contractorCard}
-                  activeOpacity={0.8}
+                  style={styles.connectCard}
+                  activeOpacity={0.85}
                   onPress={() => {
                     router.push({
                       pathname: '/contractor-detail',
@@ -1230,15 +1241,17 @@ export default function DesignDetailScreen() {
                     });
                   }}
                 >
-                  <Image source={{ uri: resolveAvatarUrl(item.avatarUrl) || 'https://i.pravatar.cc/100?img=12' }} style={styles.contractorAvatar} contentFit="cover" />
-                  <Text style={styles.contractorName} numberOfLines={1}>{item.fullName}</Text>
-                  <View style={styles.contractorRating}>
-                    <Feather name="star" size={10} color={COLORS.gold} style={{ fill: COLORS.gold }} />
-                    <Text style={styles.contractorRatingText}>{item.rating?.toString() || '4.5'} ({item.reviewsCount || 8})</Text>
+                  <Image source={{ uri: resolveAvatarUrl(item.avatarUrl) || 'https://i.pravatar.cc/100?img=12' }} style={styles.connectCardAvatar} contentFit="cover" />
+                  <View style={styles.connectVerifiedDot} />
+                  <Text style={styles.connectCardName} numberOfLines={1}>{item.fullName}</Text>
+                  <View style={styles.connectCardRatingRow}>
+                    <Feather name="star" size={9} color={COLORS.gold} />
+                    <Text style={styles.connectCardRatingText}>{item.rating?.toString() || '4.5'}</Text>
+                    <Text style={styles.connectCardReviewText}>({item.reviewsCount || 8})</Text>
                   </View>
-                  <Text style={styles.contractorPrice}>Starts at ₹{item.minProjectValue || '6.5 L'}</Text>
+                  <Text style={styles.connectCardPrice}>₹{item.minProjectValue || '6.5 L'}+</Text>
                   <TouchableOpacity 
-                    style={styles.hireBtn}
+                    style={styles.connectHireBtn}
                     onPress={() => {
                       if (!currentUser) {
                         Alert.alert('Login Required', 'Please log in to hire a contractor.');
@@ -1259,26 +1272,31 @@ export default function DesignDetailScreen() {
                       });
                     }}
                   >
-                    <Text style={styles.hireBtnText}>Hire Now</Text>
+                    <Feather name="message-circle" size={10} color={COLORS.white} style={{ marginRight: 3 }} />
+                    <Text style={styles.connectHireBtnText}>Connect</Text>
                   </TouchableOpacity>
                 </TouchableOpacity>
               ))
             ) : (
               [
-                { name: 'BuildWell Construction', rate: '4.6 (98)', price: 'Starts at ₹8.5 L', avatar: 'https://i.pravatar.cc/100?img=12' },
-                { name: 'HomeCraft Builders', rate: '4.5 (76)', price: 'Starts at ₹8.8 L', avatar: 'https://i.pravatar.cc/100?img=13' },
-                { name: 'StructureLine Construc.', rate: '4.7 (120)', price: 'Starts at ₹8.2 L', avatar: 'https://i.pravatar.cc/100?img=14' }
+                { name: 'BuildWell Construction', rate: '4.6', reviews: '98', price: '8.5 L', avatar: 'https://i.pravatar.cc/100?img=12' },
+                { name: 'HomeCraft Builders', rate: '4.5', reviews: '76', price: '8.8 L', avatar: 'https://i.pravatar.cc/100?img=13' },
+                { name: 'StructureLine', rate: '4.7', reviews: '120', price: '8.2 L', avatar: 'https://i.pravatar.cc/100?img=14' },
+                { name: 'Urban Constructions', rate: '4.4', reviews: '54', price: '7.5 L', avatar: 'https://i.pravatar.cc/100?img=15' },
               ].map((item, idx) => (
-                <View key={idx} style={styles.contractorCard}>
-                  <Image source={{ uri: item.avatar }} style={styles.contractorAvatar} contentFit="cover" />
-                  <Text style={styles.contractorName} numberOfLines={1}>{item.name}</Text>
-                  <View style={styles.contractorRating}>
-                    <Feather name="star" size={10} color={COLORS.gold} style={{ fill: COLORS.gold }} />
-                    <Text style={styles.contractorRatingText}>{item.rate}</Text>
+                <View key={idx} style={styles.connectCard}>
+                  <Image source={{ uri: item.avatar }} style={styles.connectCardAvatar} contentFit="cover" />
+                  <View style={styles.connectVerifiedDot} />
+                  <Text style={styles.connectCardName} numberOfLines={1}>{item.name}</Text>
+                  <View style={styles.connectCardRatingRow}>
+                    <Feather name="star" size={9} color={COLORS.gold} />
+                    <Text style={styles.connectCardRatingText}>{item.rate}</Text>
+                    <Text style={styles.connectCardReviewText}>({item.reviews})</Text>
                   </View>
-                  <Text style={styles.contractorPrice}>{item.price}</Text>
-                  <TouchableOpacity style={styles.hireBtn}>
-                    <Text style={styles.hireBtnText}>Hire Now</Text>
+                  <Text style={styles.connectCardPrice}>₹{item.price}+</Text>
+                  <TouchableOpacity style={styles.connectHireBtn}>
+                    <Feather name="message-circle" size={10} color={COLORS.white} style={{ marginRight: 3 }} />
+                    <Text style={styles.connectHireBtnText}>Connect</Text>
                   </TouchableOpacity>
                 </View>
               ))
@@ -1288,35 +1306,7 @@ export default function DesignDetailScreen() {
 
       </ScrollView>
 
-      {/* Bottom Floating Action Buttons */}
-      <View style={styles.bottomBarActions}>
-        <TouchableOpacity style={styles.similarBtn}>
-          <Feather name="grid" size={16} color={COLORS.textDark} style={{ marginRight: 6 }} />
-          <Text style={styles.similarBtnText}>Get Similar Design</Text>
-        </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.contactDesignerBtn} 
-          onPress={() => {
-            if (!currentUser) {
-              Alert.alert('Login Required', 'Please log in to send messages.');
-              return;
-            }
-            router.push({
-              pathname: '/chat-room',
-              params: {
-                receiverId: authorId,
-                name: authorName,
-                role: authorRole || 'Architect',
-                avatar: authorAvatar || '',
-              }
-            });
-          }}
-        >
-          <Feather name="message-square" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
-          <Text style={styles.contactDesignerBtnText}>Message Designer</Text>
-        </TouchableOpacity>
-      </View>
 
       {/* Unfollow Confirmation Modal */}
       <Modal
@@ -1445,7 +1435,7 @@ export default function DesignDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
-  scrollContent: { paddingBottom: 100 },
+  scrollContent: { paddingBottom: 24 },
 
   /* HEADER */
   header: {
@@ -1713,43 +1703,156 @@ const styles = StyleSheet.create({
   },
   hireBtnText: { color: COLORS.white, fontSize: 9, fontWeight: '700' },
 
-  /* BOTTOM FLOATING BAR */
-  bottomBarActions: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 70,
-    backgroundColor: COLORS.white,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+
+
+  /* CONNECT SECTION */
+  connectSectionWrap: {
+    marginTop: 16,
+    marginHorizontal: 20,
+    marginBottom: 8,
+  },
+  connectBannerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    gap: 12,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+    gap: 10,
   },
-  similarBtn: {
-    flex: 1,
-    height: 44,
+  connectIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: COLORS.green,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORS.green,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  connectSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#065F46',
+    letterSpacing: 0.1,
+  },
+  connectSectionSubtitle: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#6B7280',
+    marginTop: 1,
+  },
+  connectViewAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.green + '55',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  connectViewAllText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.green,
+  },
+  connectCarouselWrapper: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  connectCard: {
+    width: 118,
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 8,
-    flexDirection: 'row',
-    justifyContent: 'center',
+    borderRadius: 14,
+    padding: 12,
     alignItems: 'center',
     backgroundColor: COLORS.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+    position: 'relative',
   },
-  similarBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.textDark },
-  contactDesignerBtn: {
-    flex: 1.4,
-    height: 44,
+  connectCardAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: '#D1FAE5',
+  },
+  connectVerifiedDot: {
+    position: 'absolute',
+    top: 28,
+    right: 34,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: COLORS.green,
+    borderWidth: 2,
+    borderColor: COLORS.white,
+  },
+  connectCardName: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginTop: 8,
+    textAlign: 'center',
+    width: '100%',
+  },
+  connectCardRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 4,
+  },
+  connectCardRatingText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.textDark,
+  },
+  connectCardReviewText: {
+    fontSize: 9,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  connectCardPrice: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.green,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  connectHireBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: COLORS.green,
     borderRadius: 8,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginTop: 8,
+    width: '100%',
+    shadowColor: COLORS.green,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  contactDesignerBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.white },
+  connectHireBtnText: {
+    color: COLORS.white,
+    fontSize: 10,
+    fontWeight: '700',
+  },
 
   /* EDITING VIEWS */
   editInput: {
