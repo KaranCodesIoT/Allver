@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Dimensions, Alert, Modal, Linking, ScrollView, Animated } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Dimensions, Alert, Modal, Linking, ScrollView, Animated, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -92,6 +92,17 @@ export default function ChatRoomScreen() {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const recordingTimerRef = useRef<any>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Speech-to-Text state
+  const [showSttModal, setShowSttModal] = useState(false);
+  const [selectedSttLang, setSelectedSttLang] = useState<{ code: string; name: string } | null>(null);
+  const [isSttRecording, setIsSttRecording] = useState(false);
+  const [sttRecording, setSttRecording] = useState<Audio.Recording | null>(null);
+  const [sttDuration, setSttDuration] = useState(0);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const sttTimerRef = useRef<any>(null);
+  const webSpeechRecRef = useRef<any>(null);
+
 
   // Voice playback state
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
@@ -480,6 +491,207 @@ export default function ChatRoomScreen() {
       setIsRecording(false);
       setRecording(null);
       setRecordingDuration(0);
+    }
+  };
+
+  // ========== SPEECH TO TEXT (STT) ==========
+  const handleStartSttRecording = async (lang: { code: string; name: string } | null = null) => {
+    try {
+      setShowSttModal(true);
+
+      if (Platform.OS === 'web') {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+          Alert.alert('Speech Recognition Not Supported', 'Your browser does not support Speech Recognition. Please use Google Chrome or Safari.');
+          setShowSttModal(false);
+          return;
+        }
+
+        const recognition = new SpeechRecognition();
+        if (lang) {
+          recognition.lang = lang.code;
+        }
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
+        recognition.continuous = true;
+
+        let accumulatedTranscript = '';
+        recognition.onresult = (event: any) => {
+          const resultIndex = event.resultIndex;
+          const transcript = event.results[resultIndex][0].transcript;
+          accumulatedTranscript += ' ' + transcript;
+        };
+
+        recognition.onerror = (event: any) => {
+          console.error('[Web Speech Error]', event.error);
+        };
+
+        recognition.onend = () => {
+          if (accumulatedTranscript.trim()) {
+            setText(prev => (prev ? prev + ' ' : '') + accumulatedTranscript.trim());
+          }
+        };
+
+        webSpeechRecRef.current = recognition;
+        recognition.start();
+
+        setSelectedSttLang(lang || { code: 'auto', name: 'Auto-Detect' });
+        setIsSttRecording(true);
+        setSttDuration(0);
+        startPulseAnimation();
+
+        sttTimerRef.current = setInterval(() => {
+          setSttDuration(prev => prev + 1);
+        }, 1000);
+        return;
+      }
+
+      // Native Mobile fallback
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission Needed', 'Microphone access is required for Speech to Text.');
+        setShowSttModal(false);
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+
+      setSelectedSttLang(lang || { code: 'auto', name: 'Auto-Detect' });
+      setSttRecording(newRecording);
+      setIsSttRecording(true);
+      setSttDuration(0);
+      
+      // Start pulse animation
+      startPulseAnimation();
+
+      sttTimerRef.current = setInterval(() => {
+        setSttDuration(prev => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Failed to start STT recording:', err);
+      Alert.alert('Error', 'Could not access microphone.');
+      setShowSttModal(false);
+    }
+  };
+
+  const handleCancelSttRecording = async () => {
+    try {
+      if (sttTimerRef.current) clearInterval(sttTimerRef.current);
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+      setIsSttRecording(false);
+      setSttDuration(0);
+
+      if (Platform.OS === 'web') {
+        if (webSpeechRecRef.current) {
+          webSpeechRecRef.current.onresult = null;
+          webSpeechRecRef.current.onend = null;
+          webSpeechRecRef.current.abort();
+          webSpeechRecRef.current = null;
+        }
+        setSelectedSttLang(null);
+        setShowSttModal(false);
+        return;
+      }
+
+      if (sttRecording) {
+        await sttRecording.stopAndUnloadAsync();
+        setSttRecording(null);
+      }
+      setSelectedSttLang(null);
+      setShowSttModal(false);
+    } catch (err) {
+      console.error('Error cancelling STT recording:', err);
+      setIsSttRecording(false);
+      setSttRecording(null);
+    }
+  };
+
+  const handleStopSttRecordingAndTranscribe = async () => {
+    if (Platform.OS === 'web') {
+      try {
+        if (sttTimerRef.current) clearInterval(sttTimerRef.current);
+        pulseAnim.stopAnimation();
+        pulseAnim.setValue(1);
+        setIsSttRecording(false);
+
+        if (webSpeechRecRef.current) {
+          webSpeechRecRef.current.stop();
+          webSpeechRecRef.current = null;
+        }
+      } catch (err) {
+        console.error('Error stopping web speech recognition:', err);
+      } finally {
+        setSelectedSttLang(null);
+        setShowSttModal(false);
+      }
+      return;
+    }
+
+    // Native Mobile (Fall back to Hugging Face transcription endpoint)
+    if (!sttRecording) return;
+
+    try {
+      if (sttTimerRef.current) clearInterval(sttTimerRef.current);
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(1);
+      setIsSttRecording(false);
+
+      await sttRecording.stopAndUnloadAsync();
+      const uri = sttRecording.getURI();
+      setSttRecording(null);
+      
+      if (!uri) {
+        Alert.alert('Recording Error', 'No speech was recorded.');
+        setSelectedSttLang(null);
+        setShowSttModal(false);
+        return;
+      }
+
+      setIsTranscribing(true);
+
+      const formData = new FormData();
+      formData.append('audio', {
+        uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
+        type: 'audio/x-m4a',
+        name: 'speech.m4a'
+      } as any);
+
+      console.log('[STT Client] Uploading to backend...');
+      const response = await fetch(`${BACKEND_URL}/api/transcribe`, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      const data = await response.json();
+      console.log('[STT Client] Backend Response:', data);
+
+      if (response.ok && data.success) {
+        if (data.text && data.text.trim()) {
+          setText(prev => (prev ? prev + ' ' : '') + data.text.trim());
+        } else {
+          Alert.alert('Speech Recognition', 'Could not recognize any speech. Please try speaking louder or choosing the correct language.');
+        }
+      } else {
+        Alert.alert('Speech Recognition Error', data.message || 'Could not transcribe speech. Please try again.');
+      }
+    } catch (err) {
+      console.error('Error transcribing audio:', err);
+      Alert.alert('Error', 'Transcription service failed. Ensure the server is online.');
+    } finally {
+      setIsTranscribing(false);
+      setSelectedSttLang(null);
+      setShowSttModal(false);
     }
   };
 
@@ -1748,6 +1960,53 @@ export default function ChatRoomScreen() {
         </TouchableOpacity>
       </Modal>
 
+      {/* ===== SPEECH TO TEXT MODAL ===== */}
+      <Modal visible={showSttModal} transparent animationType="fade" onRequestClose={handleCancelSttRecording}>
+        <View style={styles.sttOverlay}>
+          <View style={styles.sttCard}>
+            <Text style={styles.sttTitle}>Speech to Text</Text>
+            
+            {isTranscribing ? (
+              <View style={styles.transcribingContainer}>
+                <ActivityIndicator size="large" color="#F59E0B" />
+                <Text style={styles.transcribingText}>Transcribing your voice... Please wait.</Text>
+              </View>
+            ) : (
+              <View style={styles.listeningContainer}>
+                <Text style={styles.listeningLangText}>Auto-Detecting Language</Text>
+                
+                <View style={styles.micPulseOutline}>
+                  <Animated.View style={[
+                    styles.micButtonActive,
+                    { transform: [{ scale: pulseAnim }] }
+                  ]}>
+                    <Feather name="mic" size={28} color="#FFFFFF" />
+                  </Animated.View>
+                </View>
+
+                <Text style={styles.listeningText}>Listening... Speak now</Text>
+                <Text style={styles.listeningDuration}>{formatDuration(sttDuration)}</Text>
+
+                <View style={styles.listeningActionRow}>
+                  <TouchableOpacity 
+                    style={[styles.listeningBtn, styles.listeningCancelBtn]} 
+                    onPress={handleCancelSttRecording}
+                  >
+                    <Text style={styles.listeningCancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.listeningBtn, styles.listeningDoneBtn]} 
+                    onPress={handleStopSttRecordingAndTranscribe}
+                  >
+                    <Text style={styles.listeningDoneBtnText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* ===== INPUT FOOTER ===== */}
       <View>
         {isRecording ? (
@@ -1798,7 +2057,7 @@ export default function ChatRoomScreen() {
 
             <TouchableOpacity
               style={[styles.sendBtn, !text.trim() && styles.sendBtnMic]}
-              onPress={text.trim() ? handleSend : handleStartRecording}
+              onPress={text.trim() ? handleSend : () => handleStartSttRecording(null)}
               activeOpacity={0.8}
             >
               <Feather name={text.trim() ? 'send' : 'mic'} size={20} color={COLORS.white} />
@@ -2291,5 +2550,160 @@ const styles = StyleSheet.create({
   photoGridImage: {
     width: '100%',
     height: '100%',
+  },
+
+  /* Speech-to-Text styles */
+  sttOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sttCard: {
+    width: width * 0.85,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  sttTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  sttSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  langGrid: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 20,
+  },
+  langButton: {
+    width: '47%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  langName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  langNative: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 4,
+  },
+  sttCloseButton: {
+    paddingVertical: 12,
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  sttCloseButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  listeningContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    width: '100%',
+  },
+  micPulseOutline: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  micButtonActive: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listeningLangText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#EF4444',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  listeningText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 16,
+  },
+  listeningDuration: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#475569',
+    fontVariant: ['tabular-nums'],
+    marginBottom: 24,
+  },
+  listeningActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 12,
+  },
+  listeningBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listeningCancelBtn: {
+    backgroundColor: '#F1F5F9',
+  },
+  listeningCancelBtnText: {
+    color: '#475569',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  listeningDoneBtn: {
+    backgroundColor: '#F59E0B',
+  },
+  listeningDoneBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  transcribingContainer: {
+    alignItems: 'center',
+    paddingVertical: 30,
+  },
+  transcribingText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#475569',
+    marginTop: 16,
+    textAlign: 'center',
   },
 });

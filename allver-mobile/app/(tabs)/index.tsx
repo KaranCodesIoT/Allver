@@ -678,7 +678,6 @@ export default function DashboardScreen() {
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           
-          {/* All 3 cards in a flex-wrap grid */}
           <View style={styles.qaTopRow}>
             {/* Find Contractor */}
             <TouchableOpacity 
@@ -688,16 +687,13 @@ export default function DashboardScreen() {
             >
               <View style={styles.qaCardHeader}>
                 <View style={[styles.qaIconWrap, { backgroundColor: '#ECFDF5' }]}>
-                  <FontAwesome5 name="hard-hat" size={18} color="#10B981" />
+                  <FontAwesome5 name="hard-hat" size={16} color="#10B981" />
                 </View>
-                <View style={styles.qaCardTextCol}>
-                  <Text style={styles.qaCardTitle}>Find Contractor</Text>
-                  <Text style={styles.qaCardDesc}>Hire trusted contractors for your project.</Text>
-                </View>
+                <Text style={styles.qaCardTitle}>Contractor</Text>
               </View>
               <View style={styles.qaCardFooter}>
                 <View style={[styles.qaPill, { backgroundColor: '#10B981' }]}>
-                  <Text style={styles.qaPillText}>Hire Now ↗</Text>
+                  <Text style={styles.qaPillText}>Hire ↗</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -710,12 +706,9 @@ export default function DashboardScreen() {
             >
               <View style={styles.qaCardHeader}>
                 <View style={[styles.qaIconWrap, { backgroundColor: '#EFF6FF' }]}>
-                  <FontAwesome5 name="drafting-compass" size={16} color="#2563EB" />
+                  <FontAwesome5 name="drafting-compass" size={14} color="#2563EB" />
                 </View>
-                <View style={styles.qaCardTextCol}>
-                  <Text style={styles.qaCardTitle}>Find Architect</Text>
-                  <Text style={styles.qaCardDesc}>Discover architects for design & planning.</Text>
-                </View>
+                <Text style={styles.qaCardTitle}>Architect</Text>
               </View>
               <View style={styles.qaCardFooter}>
                 <View style={[styles.qaPill, { backgroundColor: '#2563EB' }]}>
@@ -732,16 +725,13 @@ export default function DashboardScreen() {
             >
               <View style={styles.qaCardHeader}>
                 <View style={[styles.qaIconWrap, { backgroundColor: '#FFF7ED' }]}>
-                  <FontAwesome5 name="users" size={18} color="#F97316" />
+                  <FontAwesome5 name="users" size={16} color="#F97316" />
                 </View>
-                <View style={styles.qaCardTextCol}>
-                  <Text style={styles.qaCardTitle}>Skilled Labour</Text>
-                  <Text style={styles.qaCardDesc}>Connect with verified skilled workers.</Text>
-                </View>
+                <Text style={styles.qaCardTitle}>Labour</Text>
               </View>
               <View style={styles.qaCardFooter}>
                 <View style={[styles.qaPill, { backgroundColor: '#F97316' }]}>
-                  <Text style={styles.qaPillText}>Find Labour ↗</Text>
+                  <Text style={styles.qaPillText}>Find ↗</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -1209,38 +1199,18 @@ const styles = StyleSheet.create({
   /* QUICK ACTIONS */
   qaTopRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     paddingHorizontal: 16,
-    gap: 10,
+    gap: 8,
     marginBottom: 10,
   },
-  qaBottomRow: {
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
   qaCard: {
-    width: '48%',
+    flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: 12,
+    padding: 8,
     borderWidth: 1.5,
     justifyContent: 'space-between',
-    height: 140,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  qaCardWide: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-    borderWidth: 1.5,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    height: 112,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -1248,64 +1218,44 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   qaCardHeader: {
-    flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
+    gap: 4,
   },
   qaIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  qaCardTextCol: {
-    flex: 1,
-  },
   qaCardTitle: {
     fontFamily: Fonts.sans,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 3,
-  },
-  qaCardDesc: {
-    fontFamily: Fonts.sans,
-    fontSize: 10,
-    color: '#6B7280',
-    lineHeight: 14,
+    marginTop: 4,
   },
   qaCardFooter: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'flex-end',
-  },
-  qaCount: {
-    fontFamily: Fonts.sans,
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  qaCountLabel: {
-    fontFamily: Fonts.sans,
-    fontSize: 9,
-    color: '#9CA3AF',
-    fontWeight: '600',
+    justifyContent: 'flex-start',
+    marginTop: 4,
   },
   qaPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    gap: 3,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    gap: 2,
   },
   qaPillText: {
     fontFamily: Fonts.sans,
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '700',
   },
+
   qaSecondaryRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,

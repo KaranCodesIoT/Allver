@@ -31,6 +31,7 @@ interface NotificationItem {
   text: string;
   isRead: boolean;
   createdAt: string;
+  isMarked?: boolean;
 }
 
 export default function NotificationsScreen() {
@@ -225,6 +226,37 @@ export default function NotificationsScreen() {
                   <Text style={styles.roleTag}>{sender.role}</Text>
                   <Text style={styles.timeText}>• {formatTime(item.createdAt)}</Text>
                 </View>
+
+                {currentUser?.role === 'Contractor' && item.text.includes('Labour Checked In') && (
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: item.isMarked ? '#94A3B8' : '#10B981',
+                      paddingVertical: 6,
+                      paddingHorizontal: 12,
+                      borderRadius: 6,
+                      alignItems: 'center',
+                      marginTop: 8,
+                      alignSelf: 'flex-start'
+                    }}
+                    disabled={!!item.isMarked}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      router.push({
+                        pathname: '/labour-detail',
+                        params: {
+                          id: sender._id,
+                          name: sender.fullName,
+                          role: sender.role,
+                          avatar: resolveAvatarUrl(sender.avatarUrl)
+                        }
+                      });
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
+                      {item.isMarked ? '✓ Marked' : 'Mark Attendance'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
 
               {!item.isRead && <View style={styles.unreadDot} />}

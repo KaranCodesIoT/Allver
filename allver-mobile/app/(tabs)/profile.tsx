@@ -901,7 +901,28 @@ export default function ProfileScreen() {
         return;
       }
 
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      let loc;
+      try {
+        loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      } catch (err) {
+        console.warn('[GPS Fallback] getCurrentPositionAsync failed, trying getLastKnownPositionAsync...', err);
+        try {
+          loc = await Location.getLastKnownPositionAsync();
+        } catch (err2) {
+          console.warn('[GPS Fallback] getLastKnownPositionAsync failed too...', err2);
+        }
+      }
+
+      if (!loc) {
+        console.log('[GPS Fallback] Using mock coordinates (Mumbai)');
+        loc = {
+          coords: {
+            latitude: 19.0760,
+            longitude: 72.8777
+          }
+        };
+      }
+
       const lat = loc.coords.latitude;
       const lng = loc.coords.longitude;
 
@@ -1047,13 +1068,17 @@ export default function ProfileScreen() {
               hours: `${match.hours?.toFixed(1) || '0.0'} Hours`,
               status: match.status,
               advance: 0,
+              latitude: match.latitude,
+              longitude: match.longitude,
               rawDay: {
                 day: new Date(att.date).getDate(),
                 isCurrentMonth: new Date(att.date).getMonth() === currentMonth && new Date(att.date).getFullYear() === currentYear,
                 status: match.status,
                 hours: match.hours,
                 advance: 0,
-                remarks: match.remarks || '-'
+                remarks: match.remarks || '-',
+                latitude: match.latitude,
+                longitude: match.longitude
               }
             });
           }
@@ -1070,6 +1095,8 @@ export default function ProfileScreen() {
               hours: p.type === 'Advance' ? `Advance: ₹${p.amount}` : `Paid: ₹${p.amount}`,
               status: p.type === 'Advance' ? 'Half Day' : 'Present', // Use visual status icons as mapping
               advance: p.amount || 0,
+              latitude: undefined,
+              longitude: undefined,
               rawDay: {
                 day: pDate.getDate(),
                 isCurrentMonth: pDate.getMonth() === currentMonth && pDate.getFullYear() === currentYear,
@@ -1100,6 +1127,8 @@ export default function ProfileScreen() {
         hours: act.hours,
         status: act.status,
         advance: act.advance || 0,
+        latitude: act.latitude,
+        longitude: act.longitude,
         rawDay: act.rawDay
       };
     });
@@ -1340,7 +1369,7 @@ export default function ProfileScreen() {
                 </View>
                 <View style={styles.pill}>
                   <FontAwesome5 name="th-large" size={12} color={COLORS.primary} />
-                  <Text style={styles.pillText}>{user.projects} Projects</Text>
+                  <Text style={styles.pillText}>{clientProjects.length} Projects</Text>
                 </View>
                 <View style={styles.pill}>
                   <Ionicons name="location-outline" size={14} color={COLORS.primary} />
@@ -1630,30 +1659,43 @@ export default function ProfileScreen() {
                           onPress={() => handleDayPress(act.rawDay)}
                           activeOpacity={0.7}
                         >
-                          <View style={styles.timelineMainInfo}>
-                            <Text style={styles.timelineDate}>{act.date}</Text>
-                            <Text style={styles.timelineHours}>{act.hours}</Text>
-                            <View style={[
-                              styles.statusBadge,
-                              act.status === 'Present' ? styles.badgePresent : act.status === 'Half Day' ? styles.badgeHalf : act.status === 'Overtime' ? styles.badgeOvertime : styles.badgeAbsent
-                            ]}>
-                              <Text style={[
-                                  styles.statusBadgeText,
-                                  act.status === 'Present' ? { color: COLORS.green } : act.status === 'Half Day' ? { color: COLORS.orange } : act.status === 'Overtime' ? { color: COLORS.blue } : { color: COLORS.red }
-                              ]}>{act.status}</Text>
+                          <View style={{ flex: 1 }}>
+                            {/* Top row: Date and Status Badge */}
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <Text style={styles.timelineDate}>{act.date}</Text>
+                              <View style={[
+                                styles.statusBadge,
+                                act.status === 'Present' ? styles.badgePresent : act.status === 'Half Day' ? styles.badgeHalf : act.status === 'Overtime' ? styles.badgeOvertime : styles.badgeAbsent
+                              ]}>
+                                <Text style={[
+                                    styles.statusBadgeText,
+                                    act.status === 'Present' ? { color: COLORS.green } : act.status === 'Half Day' ? { color: COLORS.orange } : act.status === 'Overtime' ? { color: COLORS.blue } : { color: COLORS.red }
+                                ]}>{act.status}</Text>
+                              </View>
+                            </View>
+
+                            {/* Middle row: Hours & GPS Stamp */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginTop: 2 }}>
+                              <Text style={styles.timelineHours}>{act.hours} Hours</Text>
+                              {act.latitude && act.longitude ? (
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                  <Feather name="map-pin" size={10} color="#10B981" style={{ marginRight: 3 }} />
+                                  <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '500' }}>
+                                    {act.latitude.toFixed(4)}, {act.longitude.toFixed(4)}
+                                  </Text>
+                                </View>
+                              ) : null}
                             </View>
                           </View>
 
-                          <View style={styles.timelineRightInfo}>
-                            {act.advance > 0 ? (
-                              <View style={{ alignItems: 'flex-end' }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 12 }}>
+                            {act.advance > 0 && (
+                              <View style={{ alignItems: 'flex-end', marginRight: 4 }}>
                                 <Text style={styles.advanceLabel}>Advance</Text>
                                 <Text style={styles.advanceValue}>₹{act.advance}</Text>
                               </View>
-                            ) : (
-                              <Text style={styles.noAdvanceText}>-</Text>
                             )}
-                            <Feather name="chevron-right" size={16} color={COLORS.textMuted} style={{ marginLeft: 8 }} />
+                            <Feather name="chevron-right" size={16} color={COLORS.textMuted} />
                           </View>
                         </TouchableOpacity>
 
@@ -1706,7 +1748,8 @@ export default function ProfileScreen() {
                       item.status === 'Completed' && styles.completedProjectCard,
                       item.status === 'Cancelled' && styles.cancelledProjectCard
                     ]}
-                    activeOpacity={0.7}
+                    activeOpacity={currentUser?.role === 'Labour' ? 1.0 : 0.7}
+                    disabled={currentUser?.role === 'Labour'}
                     onPress={() => {
                       if (item.status === 'Hiring') {
                         router.push({
@@ -2073,18 +2116,17 @@ export default function ProfileScreen() {
       </Modal>
 
       {/* ================= VIEW MODAL OVERLAY (READ ONLY) ================= */}
-      {selectedDay && (
-        <View style={styles.attendanceOverlayContainer}>
-          <TouchableOpacity 
-            style={styles.attendanceOverlayBg} 
-            activeOpacity={1} 
-            onPress={() => setSelectedDay(null)} 
-          />
-          
+      <Modal
+        visible={!!selectedDay}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedDay(null)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' }}>
           <View style={styles.attendanceModalCard}>
             {/* Modal Header */}
             <View style={styles.attendanceModalHeader}>
-              <Text style={styles.attendanceModalTitle}>Attendance Record - {getMonthName(currentMonth)} {selectedDay.day}</Text>
+              <Text style={styles.attendanceModalTitle}>Attendance Record - {getMonthName(currentMonth)} {selectedDay?.day}</Text>
               <TouchableOpacity onPress={() => setSelectedDay(null)}>
                 <Feather name="x" size={20} color={COLORS.textDark} />
               </TouchableOpacity>
@@ -2092,14 +2134,14 @@ export default function ProfileScreen() {
 
             {/* Status Information */}
             <Text style={styles.attendanceInputLabel}>Attendance Status</Text>
-            <View style={[styles.attendanceStatusSelectBtn, { borderColor: selectedDay.status === 'Present' ? '#059669' : selectedDay.status === 'Half Day' ? COLORS.primary : selectedDay.status === 'Overtime' ? COLORS.blue : COLORS.red, backgroundColor: 'rgba(0,0,0,0.03)', alignSelf: 'flex-start', marginVertical: 8, paddingHorizontal: 12 }]}>
+            <View style={[styles.attendanceStatusSelectBtn, { borderColor: selectedDay?.status === 'Present' ? '#059669' : selectedDay?.status === 'Half Day' ? COLORS.primary : selectedDay?.status === 'Overtime' ? COLORS.blue : COLORS.red, backgroundColor: 'rgba(0,0,0,0.03)', alignSelf: 'flex-start', marginVertical: 8, paddingHorizontal: 12 }]}>
               <View style={[
                 styles.statusDot, 
                 { position: 'relative', marginTop: 0, marginRight: 6 },
-                selectedDay.status === 'Present' ? styles.dotPresent : selectedDay.status === 'Half Day' ? styles.dotHalf : selectedDay.status === 'Overtime' ? styles.dotOvertime : selectedDay.status === 'Absent' ? styles.dotAbsent : null
+                selectedDay?.status === 'Present' ? styles.dotPresent : selectedDay?.status === 'Half Day' ? styles.dotHalf : selectedDay?.status === 'Overtime' ? styles.dotOvertime : selectedDay?.status === 'Absent' ? styles.dotAbsent : null
               ]} />
-              <Text style={[styles.attendanceStatusSelectText, { color: selectedDay.status === 'Present' ? '#059669' : selectedDay.status === 'Half Day' ? COLORS.primary : selectedDay.status === 'Overtime' ? COLORS.blue : COLORS.red, fontWeight: '800' }]}>
-                {selectedDay.status || 'No Record'}
+              <Text style={[styles.attendanceStatusSelectText, { color: selectedDay?.status === 'Present' ? '#059669' : selectedDay?.status === 'Half Day' ? COLORS.primary : selectedDay?.status === 'Overtime' ? COLORS.blue : COLORS.red, fontWeight: '800' }]}>
+                {selectedDay?.status || 'No Record'}
               </Text>
             </View>
 
@@ -2108,14 +2150,14 @@ export default function ProfileScreen() {
               <View style={styles.attendanceFormCol}>
                 <Text style={styles.attendanceInputLabel}>Hours Worked</Text>
                 <View style={[styles.attendanceInputWrapper, { backgroundColor: '#F1F5F9' }]}>
-                  <Text style={{ color: COLORS.textDark, fontSize: 13, paddingHorizontal: 8 }}>{selectedDay.hours !== undefined ? `${selectedDay.hours.toFixed(1)} Hours` : '-'}</Text>
+                  <Text style={{ color: COLORS.textDark, fontSize: 13, paddingHorizontal: 8 }}>{selectedDay?.hours !== undefined ? `${selectedDay.hours.toFixed(1)} Hours` : '-'}</Text>
                 </View>
               </View>
 
               <View style={styles.attendanceFormCol}>
                 <Text style={styles.attendanceInputLabel}>Advance Given</Text>
                 <View style={[styles.attendanceInputWrapper, { backgroundColor: '#F1F5F9' }]}>
-                  <Text style={{ color: COLORS.textDark, fontSize: 13, paddingHorizontal: 8 }}>{selectedDay.advance !== undefined ? `₹ ${selectedDay.advance}` : '-'}</Text>
+                  <Text style={{ color: COLORS.textDark, fontSize: 13, paddingHorizontal: 8 }}>{selectedDay?.advance !== undefined ? `₹ ${selectedDay.advance}` : '-'}</Text>
                 </View>
               </View>
             </View>
@@ -2123,7 +2165,7 @@ export default function ProfileScreen() {
             {/* Remarks */}
             <Text style={styles.attendanceInputLabel}>Remarks</Text>
             <View style={[styles.attendanceInputWrapper, { height: 40, backgroundColor: '#F1F5F9', justifyContent: 'center' }]}>
-              <Text style={{ color: COLORS.textDark, fontSize: 13, paddingHorizontal: 8 }} numberOfLines={1}>{selectedDay.remarks || '-'}</Text>
+              <Text style={{ color: COLORS.textDark, fontSize: 13, paddingHorizontal: 8 }} numberOfLines={1}>{selectedDay?.remarks || '-'}</Text>
             </View>
 
             {/* Close Button */}
@@ -2135,20 +2177,29 @@ export default function ProfileScreen() {
                 >
                   <Text style={{ color: '#1E293B', fontWeight: '700', fontSize: 13 }}>Close</Text>
                 </TouchableOpacity>
-                {!selectedDay?.latitude && (
-                  <TouchableOpacity 
-                    style={{ flex: 1.5, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }} 
-                    onPress={handleLabourCheckIn}
-                  >
-                    <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Check In (GPS)</Text>
-                  </TouchableOpacity>
-                )}
+                {(() => {
+                  if (!selectedDay) return null;
+                  const todayDate = new Date();
+                  todayDate.setHours(0, 0, 0, 0);
+                  const cellDate = new Date(currentYear, currentMonth, selectedDay.day);
+                  cellDate.setHours(0, 0, 0, 0);
+                  const isPastOrToday = cellDate <= todayDate;
+                  
+                  return isPastOrToday && !selectedDay?.latitude ? (
+                    <TouchableOpacity 
+                      style={{ flex: 1.5, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }} 
+                      onPress={handleLabourCheckIn}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Check In (GPS)</Text>
+                    </TouchableOpacity>
+                  ) : null;
+                })()}
               </View>
             </View>
 
           </View>
         </View>
-      )}
+      </Modal>
 
       {/* Month/Year Picker Modal */}
       <Modal
@@ -2895,11 +2946,10 @@ const styles = StyleSheet.create({
   },
   timelineItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 8,
+    alignItems: 'flex-start',
+    paddingVertical: 12,
     paddingLeft: 36,
     position: 'relative',
-    height: 48,
   },
   timelineNode: {
     position: 'absolute',
