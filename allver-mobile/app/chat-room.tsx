@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { io } from 'socket.io-client';
+import SocketService from '../utils/SocketService';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
 import TransliteratedTextInput from '../components/TransliteratedTextInput';
@@ -277,22 +277,21 @@ export default function ChatRoomScreen() {
   // 3. Socket.io
   useEffect(() => {
     if (!conversationId) return;
-    const s = io(BACKEND_URL, { transports: ['websocket'], forceNew: true });
+    const s = SocketService;
     setSocket(s);
 
-    s.on('connect', () => {
-      s.emit('join_room', { roomId: conversationId });
-      s.emit('go_online', { userId: currentUser._id });
-      
-      // Query if the other user is online initially
-      s.emit('check_online', { userId: receiverId }, (res: any) => {
-        if (res && typeof res.isOnline === 'boolean') {
-          setOtherUserOnline(res.isOnline);
-        }
-      });
+    // Join room
+    s.emit('join_room', { roomId: conversationId });
+    s.emit('go_online', { userId: currentUser._id });
+    
+    // Query if the other user is online initially
+    s.emit('check_online', { userId: receiverId }, (res: any) => {
+      if (res && typeof res.isOnline === 'boolean') {
+        setOtherUserOnline(res.isOnline);
+      }
     });
 
-    s.on('receive_message', (data) => {
+    const handleReceiveMessage = (data: any) => {
       if (data.workspaceId === conversationId) {
         const msgSender = data.message?.sender;
         const msgSenderId = msgSender && typeof msgSender === 'object' 
@@ -318,15 +317,38 @@ export default function ChatRoomScreen() {
           return [...prev, { ...data.message, status: 'delivered' }];
         });
       }
-    });
+    };
 
-    s.on('user_typing', ({ userId }) => { if (userId !== currentUser._id) setIsTyping(true); });
-    s.on('user_stop_typing', ({ userId }) => { if (userId !== currentUser._id) setIsTyping(false); });
-    s.on('user_online', ({ userId }) => { if (userId === receiverId) setOtherUserOnline(true); });
-    s.on('user_offline', ({ userId }) => { if (userId === receiverId) setOtherUserOnline(false); });
+    const handleUserTyping = ({ userId }: { userId: string }) => {
+      if (userId !== currentUser._id) setIsTyping(true);
+    };
 
-    return () => { s.disconnect(); };
-  }, [conversationId]);
+    const handleUserStopTyping = ({ userId }: { userId: string }) => {
+      if (userId !== currentUser._id) setIsTyping(false);
+    };
+
+    const handleUserOnline = ({ userId }: { userId: string }) => {
+      if (userId === receiverId) setOtherUserOnline(true);
+    };
+
+    const handleUserOffline = ({ userId }: { userId: string }) => {
+      if (userId === receiverId) setOtherUserOnline(false);
+    };
+
+    s.on('receive_message', handleReceiveMessage);
+    s.on('user_typing', handleUserTyping);
+    s.on('user_stop_typing', handleUserStopTyping);
+    s.on('user_online', handleUserOnline);
+    s.on('user_offline', handleUserOffline);
+
+    return () => {
+      s.off('receive_message', handleReceiveMessage);
+      s.off('user_typing', handleUserTyping);
+      s.off('user_stop_typing', handleUserStopTyping);
+      s.off('user_online', handleUserOnline);
+      s.off('user_offline', handleUserOffline);
+    };
+  }, [conversationId, currentUser._id, receiverId]);
 
   const scrollToEnd = () => {
     setTimeout(() => { flatListRef.current?.scrollToEnd({ animated: true }); }, 100);

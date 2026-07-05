@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Alert, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -31,17 +31,20 @@ export default function ProjectApplicationsScreen() {
   const params = useLocalSearchParams();
   const requestId = params.requestId as string;
 
-  // Load project details passed from Home Screen
-  const title = (params.title as string) || '2BHK Interior Renovation';
-  const location = (params.location as string) || 'Mumbai';
-  const budget = (params.budget as string) || '₹10L - ₹15L';
-  const timeline = (params.timeline as string) || '90 Days';
-  const description = (params.description as string) || 'No description provided.';
-  const requirementsList = params.requirements ? (params.requirements as string).split(',') : [];
+  // Load project details passed from Home Screen into local state for editing support
+  const [projectTitle, setProjectTitle] = useState((params.title as string) || '2BHK Interior Renovation');
+  const [projectLocation, setProjectLocation] = useState((params.location as string) || 'Mumbai');
+  const [projectBudget, setProjectBudget] = useState((params.budget as string) || '₹10L - ₹15L');
+  const [projectTimeline, setProjectTimeline] = useState((params.timeline as string) || '90 Days');
+  const [projectDescription, setProjectDescription] = useState((params.description as string) || 'No description provided.');
+  const [projectRequirements, setProjectRequirements] = useState((params.requirements as string) || '');
+  const requirementsList = projectRequirements ? projectRequirements.split(',') : [];
 
   const [bids, setBids] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasAccepted, setHasAccepted] = useState(false);
+  const [hasAcceptedContractor, setHasAcceptedContractor] = useState(false);
+  const [hasAcceptedArchitect, setHasAcceptedArchitect] = useState(false);
   const [acceptedBidId, setAcceptedBidId] = useState<string | null>(null);
   const [acceptingBidId, setAcceptingBidId] = useState<string | null>(null);
 
@@ -58,10 +61,15 @@ export default function ProjectApplicationsScreen() {
         const data = await res.json();
         if (data.bids) {
           setBids(data.bids);
-          const accepted = data.bids.find((b: any) => b.status === 'Accepted');
-          if (accepted) {
-            setHasAccepted(true);
-            setAcceptedBidId(accepted._id);
+          const acceptedContractor = data.bids.find((b: any) => b.status === 'Accepted' && b.professional?.role === 'Contractor');
+          const acceptedArchitect = data.bids.find((b: any) => b.status === 'Accepted' && b.professional?.role === 'Architect');
+          setHasAcceptedContractor(!!acceptedContractor);
+          setHasAcceptedArchitect(!!acceptedArchitect);
+          setHasAccepted(!!acceptedContractor || !!acceptedArchitect);
+          if (acceptedContractor) {
+            setAcceptedBidId(acceptedContractor._id);
+          } else if (acceptedArchitect) {
+            setAcceptedBidId(acceptedArchitect._id);
           }
         }
       } catch (err) {
@@ -72,6 +80,96 @@ export default function ProjectApplicationsScreen() {
     };
     fetchBids();
   }, [requestId]);
+
+  // Edit & Delete Modal States & Handlers
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editBudget, setEditBudget] = useState('');
+  const [editTimeline, setEditTimeline] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const openEditModal = () => {
+    setEditTitle(projectTitle);
+    setEditLocation(projectLocation);
+    setEditBudget(projectBudget);
+    setEditTimeline(projectTimeline);
+    setEditDescription(projectDescription);
+    setEditModalVisible(true);
+  };
+
+  const handleUpdateProject = async () => {
+    if (!editTitle.trim() || !editLocation.trim() || !editBudget.trim() || !editDescription.trim()) {
+      Alert.alert('Required Fields', 'Please fill out all fields.');
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/contract-requests/${requestId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          location: editLocation.trim(),
+          budget: editBudget.trim(),
+          timeline: editTimeline.trim(),
+          description: editDescription.trim()
+        })
+      });
+
+      if (res.ok) {
+        setProjectTitle(editTitle.trim());
+        setProjectLocation(editLocation.trim());
+        setProjectBudget(editBudget.trim());
+        setProjectTimeline(editTimeline.trim());
+        setProjectDescription(editDescription.trim());
+        setEditModalVisible(false);
+        Alert.alert('Success', 'Project updated successfully.');
+      } else {
+        const data = await res.json();
+        Alert.alert('Error', data.message || 'Could not update project.');
+      }
+    } catch (err) {
+      console.error('Update project error:', err);
+      Alert.alert('Error', 'Could not update project. Check your connection.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteProject = () => {
+    Alert.alert(
+      'Delete Project',
+      'Are you sure you want to delete this project? This will permanently delete all applications and bids associated with it.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await fetch(`${BACKEND_URL}/api/contract-requests/${requestId}`, {
+                method: 'DELETE'
+              });
+              if (res.ok) {
+                Alert.alert('Deleted', 'Project deleted successfully.', [
+                  { text: 'OK', onPress: () => router.replace('/(tabs)/profile') }
+                ]);
+              } else {
+                const data = await res.json();
+                Alert.alert('Error', data.message || 'Could not delete project.');
+              }
+            } catch (err) {
+              console.error('Delete project error:', err);
+              Alert.alert('Error', 'Could not delete project. Check your network.');
+            }
+          }
+        }
+      ]
+    );
+  };
 
   const handleMessage = (bid: any) => {
     const prof = bid.professional;
@@ -87,17 +185,23 @@ export default function ProjectApplicationsScreen() {
   };
 
   const handleAcceptProposal = (bid: any) => {
-    if (hasAccepted) {
-      Alert.alert('Already Accepted', 'You have already accepted a bid for this project. Only one bid can be accepted at a time.');
+    const prof = bid.professional || {};
+    const profName = prof.fullName || 'Professional';
+    const isContractor = prof.role === 'Contractor';
+    const isArchitect = prof.role === 'Architect';
+
+    if (isContractor && hasAcceptedContractor) {
+      Alert.alert('Already Accepted', 'You have already accepted a contractor bid for this project.');
+      return;
+    }
+    if (isArchitect && hasAcceptedArchitect) {
+      Alert.alert('Already Accepted', 'You have already accepted an architect bid for this project.');
       return;
     }
 
-    const prof = bid.professional;
-    const profName = prof.fullName || 'Contractor';
-
     Alert.alert(
       'Accept Proposal',
-      `Are you sure you want to accept the bid from ${profName} for ${bid.cost}?\n\nThis will:\n• Start the project timeline\n• Notify ${profName} of acceptance\n• Send rejection notifications to all other applicants`,
+      `Are you sure you want to accept the bid from ${profName} for ${bid.cost}?\n\nThis will:\n• Add ${profName} to the project workspace\n• Notify them of acceptance\n• Reject all other pending ${prof.role || 'professional'} bids`,
       [
         { text: 'Cancel', style: 'cancel' },
         { 
@@ -118,14 +222,25 @@ export default function ProjectApplicationsScreen() {
               
               if (response.ok) {
                 const data = await response.json();
+                
+                if (isContractor) {
+                  setHasAcceptedContractor(true);
+                } else if (isArchitect) {
+                  setHasAcceptedArchitect(true);
+                }
                 setHasAccepted(true);
                 setAcceptedBidId(bid._id);
 
-                // Update local bid statuses
-                setBids(prev => prev.map(b => ({
-                  ...b,
-                  status: b._id === bid._id ? 'Accepted' : 'Rejected'
-                })));
+                // Update local bid statuses - only reject other bids of the same role
+                setBids(prev => prev.map(b => {
+                  if (b._id === bid._id) {
+                    return { ...b, status: 'Accepted' };
+                  }
+                  if (b.status === 'Pending' && b.professional?.role === prof.role) {
+                    return { ...b, status: 'Rejected' };
+                  }
+                  return b;
+                }));
 
                 Alert.alert(
                   '🎉 Bid Accepted!', 
@@ -144,7 +259,7 @@ export default function ProjectApplicationsScreen() {
                           endDate: endDateStr,
                           progress: '20',
                           status: 'Active',
-                          name: title,
+                          name: projectTitle,
                           contractor: profName,
                           contractorAvatar: prof.avatarUrl || '',
                           contractorRating: (prof.rating || '4.5').toString(),
@@ -200,9 +315,9 @@ export default function ProjectApplicationsScreen() {
               <Feather name="home" size={20} color={COLORS.purple} />
             </View>
             <View style={styles.projectTitleCol}>
-              <Text style={styles.projectTitle}>{title}</Text>
+              <Text style={styles.projectTitle}>{projectTitle}</Text>
               <Text style={styles.projectLocation}>
-                <Feather name="map-pin" size={12} color={COLORS.textMuted} /> {location}
+                <Feather name="map-pin" size={12} color={COLORS.textMuted} /> {projectLocation}
               </Text>
             </View>
           </View>
@@ -213,11 +328,11 @@ export default function ProjectApplicationsScreen() {
           <View style={styles.detailsRow}>
             <View style={styles.detailBox}>
               <Text style={styles.detailLabel}>Estimated Budget</Text>
-              <Text style={styles.detailValue}>{budget}</Text>
+              <Text style={styles.detailValue}>{projectBudget}</Text>
             </View>
             <View style={styles.detailBox}>
               <Text style={styles.detailLabel}>Timeline Required</Text>
-              <Text style={styles.detailValue}>{timeline}</Text>
+              <Text style={styles.detailValue}>{projectTimeline}</Text>
             </View>
           </View>
 
@@ -236,12 +351,35 @@ export default function ProjectApplicationsScreen() {
           )}
 
           {/* Description */}
-          {description ? (
+          {projectDescription ? (
             <>
               <Text style={styles.sectionLabel}>Project Description</Text>
-              <Text style={styles.projectDescription}>{description}</Text>
+              <Text style={styles.projectDescription}>{projectDescription}</Text>
             </>
           ) : null}
+
+          {/* Edit / Delete actions for Client */}
+          {!hasAccepted && (
+            <View style={styles.projectActionsRow}>
+              <TouchableOpacity 
+                style={styles.editProjectBtn} 
+                onPress={openEditModal}
+                activeOpacity={0.7}
+              >
+                <Feather name="edit-2" size={14} color={COLORS.purple} />
+                <Text style={styles.editProjectBtnText}>Edit Project</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.deleteProjectBtn} 
+                onPress={handleDeleteProject}
+                activeOpacity={0.7}
+              >
+                <Feather name="trash-2" size={14} color={COLORS.red} />
+                <Text style={styles.deleteProjectBtnText}>Delete Project</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* Accepted Banner */}
@@ -261,11 +399,11 @@ export default function ProjectApplicationsScreen() {
               pathname: '/project-compare',
               params: {
                 requestId: requestId || '',
-                title,
-                budget,
-                timeline,
-                description,
-                requirements: params.requirements || ''
+                title: projectTitle,
+                budget: projectBudget,
+                timeline: projectTimeline,
+                description: projectDescription,
+                requirements: projectRequirements
               }
             })}
           >
@@ -390,10 +528,10 @@ export default function ProjectApplicationsScreen() {
                     </TouchableOpacity>
 
                     <TouchableOpacity 
-                      style={[styles.acceptBtn, hasAccepted && { opacity: 0.5 }]} 
+                      style={[styles.acceptBtn, ((bid.professional?.role === 'Contractor' && hasAcceptedContractor) || (bid.professional?.role === 'Architect' && hasAcceptedArchitect)) && { opacity: 0.5 }]} 
                       onPress={() => handleAcceptProposal(bid)}
                       activeOpacity={0.9}
-                      disabled={hasAccepted || isAcceptingThis}
+                      disabled={((bid.professional?.role === 'Contractor' && hasAcceptedContractor) || (bid.professional?.role === 'Architect' && hasAcceptedArchitect)) || isAcceptingThis}
                     >
                       {isAcceptingThis ? (
                         <ActivityIndicator size="small" color={COLORS.white} />
@@ -413,7 +551,7 @@ export default function ProjectApplicationsScreen() {
                     style={styles.viewProgressBtn}
                     onPress={() => router.push({
                       pathname: '/project-progress',
-                      params: { name: title, contractor: profName }
+                      params: { name: projectTitle, contractor: profName }
                     })}
                   >
                     <Feather name="trending-up" size={16} color={COLORS.green} style={{ marginRight: 6 }} />
@@ -425,6 +563,97 @@ export default function ProjectApplicationsScreen() {
           })}
         </View>
       </ScrollView>
+
+      {/* Edit Project Modal */}
+      <Modal
+        visible={editModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit Project Details</Text>
+              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
+                <Feather name="x" size={24} color={COLORS.textDark} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalForm}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Project Title</Text>
+                <TextInput
+                  style={styles.modalTextInput}
+                  value={editTitle}
+                  onChangeText={setEditTitle}
+                  placeholder="e.g. 2BHK Interior Renovation"
+                  placeholderTextColor={COLORS.textMuted}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Location</Text>
+                <TextInput
+                  style={styles.modalTextInput}
+                  value={editLocation}
+                  onChangeText={setEditLocation}
+                  placeholder="e.g. Mumbai"
+                  placeholderTextColor={COLORS.textMuted}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Estimated Budget</Text>
+                <TextInput
+                  style={styles.modalTextInput}
+                  value={editBudget}
+                  onChangeText={setEditBudget}
+                  placeholder="e.g. ₹10L - ₹15L"
+                  placeholderTextColor={COLORS.textMuted}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Timeline Required</Text>
+                <TextInput
+                  style={styles.modalTextInput}
+                  value={editTimeline}
+                  onChangeText={setEditTimeline}
+                  placeholder="e.g. 90 Days"
+                  placeholderTextColor={COLORS.textMuted}
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Description</Text>
+                <TextInput
+                  style={[styles.modalTextInput, styles.modalTextArea]}
+                  value={editDescription}
+                  onChangeText={setEditDescription}
+                  multiline={true}
+                  numberOfLines={4}
+                  placeholder="Enter project details..."
+                  placeholderTextColor={COLORS.textMuted}
+                />
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.saveModalBtn, isUpdating && { opacity: 0.7 }]} 
+                onPress={handleUpdateProject}
+                disabled={isUpdating}
+                activeOpacity={0.8}
+              >
+                {isUpdating ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Text style={styles.saveModalBtnText}>Save Changes</Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -824,6 +1053,116 @@ const styles = StyleSheet.create({
   viewProgressText: {
     fontSize: 13,
     color: '#065F46',
+    fontWeight: '700',
+  },
+
+  /* CLIENT PROJECT ACTIONS */
+  projectActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingTop: 12,
+  },
+  editProjectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#7C3AED',
+    backgroundColor: '#F3E8FF',
+    gap: 6,
+  },
+  editProjectBtnText: {
+    color: '#7C3AED',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  deleteProjectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    backgroundColor: '#FEE2E2',
+    gap: 6,
+  },
+  deleteProjectBtnText: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  /* EDIT MODAL */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '90%',
+    paddingBottom: 30,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textDark,
+  },
+  modalForm: {
+    padding: 20,
+    gap: 16,
+  },
+  inputGroup: {
+    gap: 6,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textDark,
+  },
+  modalTextInput: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: COLORS.textDark,
+    backgroundColor: COLORS.bgLight,
+  },
+  modalTextArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  saveModalBtn: {
+    backgroundColor: COLORS.purple,
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  saveModalBtnText: {
+    color: COLORS.white,
+    fontSize: 15,
     fontWeight: '700',
   },
 });

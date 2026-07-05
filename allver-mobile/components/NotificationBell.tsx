@@ -4,6 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { BACKEND_URL } from '../constants/Config';
+import SocketService from '../utils/SocketService';
 
 interface NotificationBellProps {
   size?: number;
@@ -36,8 +37,15 @@ export default function NotificationBell({ size = 20, color = '#111827', style }
           const data = await response.json();
           if (data.success && data.notifications) {
             const filtered = data.notifications.filter((n: any) => {
-              const isNewProject = n.text && (n.text.includes('New Project') || n.text.includes('New Project Posted'));
-              return !isNewProject;
+              const text = n.text || '';
+              const isJobRelated = text.includes('New Project') || 
+                                 text.includes('New Project Posted') || 
+                                 text.includes('[View Project]') ||
+                                 text.includes('Applied') || 
+                                 text.includes('[View Application]') || 
+                                 text.includes('Project Invitation') || 
+                                 text.includes('[View Invitation]');
+              return !isJobRelated;
             });
             const unread = filtered.filter((n: any) => !n.isRead).length;
             setUnreadCount(unread);
@@ -63,9 +71,17 @@ export default function NotificationBell({ size = 20, color = '#111827', style }
 
   useEffect(() => {
     fetchUnreadCount();
-    // Poll every 10 seconds for notification updates
-    const interval = setInterval(fetchUnreadCount, 10000);
-    return () => clearInterval(interval);
+
+    const handleNewNotification = (data: any) => {
+      console.log('[NotificationBell] Socket notification received:', data);
+      fetchUnreadCount();
+    };
+
+    SocketService.on('new_notification', handleNewNotification);
+
+    return () => {
+      SocketService.off('new_notification', handleNewNotification);
+    };
   }, []);
 
   return (

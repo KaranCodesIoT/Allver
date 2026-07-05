@@ -15,7 +15,9 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { BACKEND_URL } from '@/constants/Config';
 import { I18nProvider } from '../utils/i18n';
-import { getStoredUser } from '@/constants/Auth';
+import { getStoredUser, getStoredLanguage } from '@/constants/Auth';
+import { UnreadMessageProvider } from '../context/UnreadMessageContext';
+import { UnreadActivityProvider } from '../context/UnreadActivityContext';
 
 // Keep the splash screen visible until we hide it
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -122,7 +124,21 @@ export default function RootLayout() {
     if (stage !== 'ready') return;
 
     const user = getCurrentUser();
-    if (!user || !user._id) return;
+    if (!user || !user._id) {
+      import('@/utils/SocketService')
+        .then(({ default: SocketService }) => {
+          SocketService.disconnect();
+        })
+        .catch(err => console.log('[RootLayout] Socket disconnect error:', err));
+      return;
+    }
+
+    // Initialize/re-verify global socket connection
+    import('@/utils/SocketService')
+      .then(({ default: SocketService }) => {
+        SocketService.initialize(user._id);
+      })
+      .catch(err => console.error('[RootLayout] SocketService import error:', err));
 
     // 1. Setup Push Notifications
     const setupPush = async () => {
@@ -217,6 +233,13 @@ export default function RootLayout() {
   useEffect(() => {
     const prepare = async () => {
       try {
+        // Load stored language asynchronously before hiding splash screen
+        const storedLanguage = await getStoredLanguage();
+        if (storedLanguage) {
+          (global as any).localLanguage = storedLanguage;
+          console.log('[RootLayout] Loaded stored language:', storedLanguage);
+        }
+
         // Load stored user asynchronously before hiding splash screen
         const storedUserStr = await getStoredUser();
         if (storedUserStr) {
@@ -224,7 +247,7 @@ export default function RootLayout() {
           console.log('[RootLayout] Loaded stored user session:', (global as any).currentUser?.fullName);
         }
       } catch (error) {
-        console.error('[RootLayout] Failed to load stored user session:', error);
+        console.error('[RootLayout] Failed to load stored user session or language:', error);
       } finally {
         try {
           await SplashScreen.hideAsync();
@@ -246,7 +269,9 @@ export default function RootLayout() {
 
   return (
     <I18nProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <UnreadMessageProvider>
+        <UnreadActivityProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <View style={{ flex: 1 }}>
           <Stack>
             <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -270,6 +295,7 @@ export default function RootLayout() {
             <Stack.Screen name="project-compare" options={{ headerShown: false }} />
             <Stack.Screen name="project-progress" options={{ headerShown: false }} />
             <Stack.Screen name="notifications" options={{ headerShown: false }} />
+            <Stack.Screen name="jobs" options={{ headerShown: false, title: 'Opportunity' }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
           <StatusBar style="auto" />
@@ -311,6 +337,8 @@ export default function RootLayout() {
           )}
         </View>
       </ThemeProvider>
+        </UnreadActivityProvider>
+      </UnreadMessageProvider>
     </I18nProvider>
   );
 }

@@ -92,3 +92,35 @@ export const removeStoredUser = async (): Promise<void> => {
     console.error('Error removing stored user:', error);
   }
 };
+
+const LANG_KEY = 'userLanguage';
+
+export const saveStoredLanguage = async (lang: string): Promise<void> => {
+  try {
+    if (Platform.OS === 'web') {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(LANG_KEY, lang);
+      }
+    } else {
+      await SecureStore.setItemAsync(LANG_KEY, lang);
+    }
+  } catch (error) {
+    console.error('Error saving language:', error);
+  }
+};
+
+export const getStoredLanguage = async (): Promise<string | null> => {
+  try {
+    if (Platform.OS === 'web') {
+      if (typeof localStorage !== 'undefined') {
+        return localStorage.getItem(LANG_KEY);
+      }
+      return null;
+    } else {
+      return await SecureStore.getItemAsync(LANG_KEY);
+    }
+  } catch (error) {
+    console.error('Error getting language:', error);
+    return null;
+  }
+};

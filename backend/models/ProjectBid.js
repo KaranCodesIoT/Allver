@@ -8,6 +8,8 @@ const projectBidSchema = new mongoose.Schema({
   duration: { type: String, required: true },      // e.g. "75 Days"
   durationDays: { type: Number, default: 0 },      // numeric days for comparison
   proposal: { type: String, default: '' },
+  siteVisitRequired: { type: Boolean, default: false },
+  portfolioAttachments: { type: [String], default: [] },
   status: {
     type: String,
     enum: ['Pending', 'Accepted', 'Rejected'],

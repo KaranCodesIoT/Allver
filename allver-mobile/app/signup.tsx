@@ -8,6 +8,7 @@ import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter, Link } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
 import { useTranslation, getLocalLanguage } from '../utils/i18n';
+import { saveToken, saveStoredUser } from '../constants/Auth';
 
 const COLORS = {
   green: '#1BC47D',
@@ -31,6 +32,17 @@ const ROLES = [
   { title: 'Client', icon: 'user', type: 'feather' },
 ];
 
+const showAlert = (title: string, message: string, buttons?: any[]) => {
+  if (Platform.OS === 'web') {
+    alert(`${title}\n\n${message}`);
+    if (buttons && buttons.length > 0 && buttons[0].onPress) {
+      buttons[0].onPress();
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
+
 export default function SignupScreen() {
   const router = useRouter();
   const { t } = useTranslation();
@@ -47,15 +59,15 @@ export default function SignupScreen() {
 
   const handleRegister = async () => {
     if (!fullName || !email || !password || !city) {
-      Alert.alert('Missing Fields', 'Please fill in all required fields.');
+      showAlert('Missing Fields', 'Please fill in all required fields.');
       return;
     }
     if (password.length < 6) {
-      Alert.alert('Weak Password', 'Password must be at least 6 characters.');
+      showAlert('Weak Password', 'Password must be at least 6 characters.');
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Passwords do not match.');
+      showAlert('Password Mismatch', 'Passwords do not match.');
       return;
     }
 
@@ -78,14 +90,33 @@ export default function SignupScreen() {
       const data = await response.json();
 
       if (response.ok) {
-        Alert.alert('Success', 'Account created successfully!', [
-          { text: 'OK', onPress: () => router.push('/login') },
+        // Automatically save the session token and user data on successful register
+        const signupToken = data.user?._id;
+        if (signupToken) {
+          await saveToken(signupToken);
+          await saveStoredUser(data.user);
+          (global as any).currentUser = data.user;
+        }
+
+        showAlert('Success', 'Account created successfully!', [
+          { 
+            text: 'OK', 
+            onPress: () => {
+              if (data.user?.role === 'Architect') {
+                router.replace('/architect-profile');
+              } else if (data.user?.role === 'Contractor') {
+                router.replace('/contractor-profile');
+              } else {
+                router.replace('/(tabs)');
+              }
+            } 
+          },
         ]);
       } else {
-        Alert.alert('Registration Failed', data.message || 'Something went wrong.');
+        showAlert('Registration Failed', data.message || 'Something went wrong.');
       }
-    } catch {
-      Alert.alert('Network Error', 'Could not connect to the server.');
+    } catch (err) {
+      showAlert('Network Error', 'Could not connect to the server.');
     } finally {
       setIsLoading(false);
     }

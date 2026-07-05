@@ -52,10 +52,12 @@ export const getDeviceLanguage = (): string => {
   }
 };
 
+import { saveStoredLanguage } from '../constants/Auth';
+
 // Local storage helpers
 export const getLocalLanguage = (): string | null => {
   if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-    return localStorage.getItem('user_language');
+    return localStorage.getItem('user_language') || localStorage.getItem('userLanguage');
   }
   return (global as any).localLanguage || null;
 };
@@ -63,8 +65,12 @@ export const getLocalLanguage = (): string | null => {
 export const setLocalLanguage = (lang: string) => {
   if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
     localStorage.setItem('user_language', lang);
+    localStorage.setItem('userLanguage', lang);
   }
   (global as any).localLanguage = lang;
+  if (Platform.OS !== 'web') {
+    saveStoredLanguage(lang).catch(err => console.warn('Error saving stored language:', err));
+  }
 };
 
 export const getCurrentUser = () => {

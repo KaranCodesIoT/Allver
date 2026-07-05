@@ -10,7 +10,7 @@ import { Link, useRouter } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import { saveToken, saveStoredUser } from '../constants/Auth';
-import { OTPWidget } from '@msg91comm/sendotp-react-native';
+// Removed MSG91 SendOTP Import
 
 const { width, height } = Dimensions.get('window');
 
@@ -50,6 +50,17 @@ const GoldLines = () => (
     <View style={[styles.goldLine, { bottom: -40, left: 10, height: 200, transform: [{ rotate: '55deg' }] }]} />
   </View>
 );
+
+const showAlert = (title: string, message: string, buttons?: any[]) => {
+  if (Platform.OS === 'web') {
+    alert(`${title}\n\n${message}`);
+    if (buttons && buttons.length > 0 && buttons[0].onPress) {
+      buttons[0].onPress();
+    }
+  } else {
+    Alert.alert(title, message, buttons);
+  }
+};
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -122,26 +133,13 @@ export default function LoginScreen() {
   };
 
   // Phone OTP Login States & Handlers
-  const [loginMode, setLoginMode] = useState<'email' | 'phone'>('email');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [loginMode, setLoginMode] = useState<'email' | 'phoneOtp'>('email');
+  const [otpPhone, setOtpPhone] = useState('');
   const [otp, setOtp] = useState('');
-  const [reqId, setReqId] = useState<string | null>(null);
   const [otpSent, setOtpSent] = useState(false);
   const [otpTimer, setOtpTimer] = useState(0);
-  const [isPhoneFocused, setIsPhoneFocused] = useState(false);
+  const [isOtpPhoneFocused, setIsOtpPhoneFocused] = useState(false);
   const [isOtpFocused, setIsOtpFocused] = useState(false);
-
-  // Initialize MSG91 Mobile SDK on mount
-  React.useEffect(() => {
-    const widgetId = "3667626c6f73373934343034";
-    const tokenAuth = "511561ThJeUXSNqb2s6a465acdP1";
-    try {
-      OTPWidget.initializeWidget(widgetId, tokenAuth);
-      console.log('[Login] MSG91 Mobile SDK initialized successfully');
-    } catch (err) {
-      console.error('[Login] Failed to initialize MSG91 Mobile SDK:', err);
-    }
-  }, []);
 
   React.useEffect(() => {
     let interval: any;
@@ -156,36 +154,39 @@ export default function LoginScreen() {
   }, [otpTimer, otpSent]);
 
   const handleSendOtp = async () => {
-    if (!phoneNumber) {
-      Alert.alert('Phone Number Required', 'Please enter your phone number.');
+    if (!otpPhone) {
+      showAlert('Phone Number Required', 'Please enter your phone number.');
       return;
     }
     
-    const cleanPhone = phoneNumber.replace(/\D/g, '');
-    if (cleanPhone.length < 10) {
-      Alert.alert('Invalid Phone Number', 'Please enter a valid 10-digit phone number.');
+    const cleanedPhone = otpPhone.replace(/[^\d+]/g, '');
+    if (cleanedPhone.length < 10) {
+      showAlert('Invalid Phone Number', 'Please enter a valid phone number.');
       return;
     }
 
-    const formattedPhone = cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone;
-
     setIsLoading(true);
     try {
-      console.log('[Login] Sending OTP via Mobile SDK for:', formattedPhone);
-      const response = await OTPWidget.sendOTP({ identifier: formattedPhone });
-      console.log('[Login] MSG91 SDK sendOTP Response:', response);
+      console.log('[Login] Sending Phone OTP for:', cleanedPhone);
+      const responseBackend = await fetch(`${BACKEND_URL}/auth/send-email-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber: cleanedPhone }),
+      });
 
-      if (response && (response.type === 'success' || response.success || response.reqId)) {
-        setReqId(response.reqId);
+      const response = await responseBackend.json();
+      console.log('[Login] Backend send-otp response:', response);
+
+      if (responseBackend.ok && response.success) {
         setOtpSent(true);
         setOtpTimer(30);
-        Alert.alert('OTP Sent', `A verification code has been sent to +${formattedPhone}`);
+        showAlert('OTP Sent', `A verification code has been sent to ${cleanedPhone}`);
       } else {
-        Alert.alert('Error', response?.message || 'Failed to send OTP. Please try again.');
+        showAlert('Error', response?.message || 'Failed to send OTP. Please try again.');
       }
     } catch (err: any) {
-      console.error('[Login] SDK sendOTP Error:', err);
-      Alert.alert('SDK Error', err?.message || 'Could not trigger OTP. Ensure Mobile Integration is configured.');
+      console.error('[Login] Send Phone OTP Error:', err);
+      showAlert('Network Error', 'Could not connect to the server.');
     } finally {
       setIsLoading(false);
     }
@@ -193,71 +194,61 @@ export default function LoginScreen() {
 
   const handleVerifyOtp = async () => {
     if (!otp) {
-      Alert.alert('OTP Required', 'Please enter the verification code.');
+      showAlert('OTP Required', 'Please enter the verification code.');
       return;
     }
-    if (!reqId) {
-      Alert.alert('Session Expired', 'Please request a new OTP.');
+    if (!otpPhone) {
+      showAlert('Session Expired', 'Please request a new OTP.');
       return;
     }
 
-    const cleanPhone = phoneNumber.replace(/\D/g, '');
-    const formattedPhone = cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone;
+    const cleanedPhone = otpPhone.replace(/[^\d+]/g, '');
 
     setIsLoading(true);
     try {
-      console.log('[Login] Verifying OTP via Mobile SDK...');
-      const response = await OTPWidget.verifyOTP({ reqId, otp });
-      console.log('[Login] MSG91 SDK verifyOTP Response:', response);
+      console.log('[Login] Verifying Phone OTP for:', cleanedPhone);
+      const responseBackend = await fetch(`${BACKEND_URL}/auth/verify-email-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: cleanedPhone,
+          otp: otp
+        }),
+      });
 
-      const accessToken = response?.['access-token'] || response?.accessToken || response?.data;
+      const data = await responseBackend.json();
+      console.log('[Login] Backend verify-otp response:', data);
 
-      if (accessToken) {
-        console.log('[Login] Mobile SDK Verified. Exchanging accessToken with backend...');
-        const responseBackend = await fetch(`${BACKEND_URL}/auth/verify-otp`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            accessToken,
-            phoneNumber: formattedPhone
-          }),
-        });
+      if (responseBackend.ok && data.success) {
+        await saveToken(data.token);
+        await saveStoredUser(data.user);
+        
+        (global as any).currentUser = data.user;
 
-        const data = await responseBackend.json();
-
-        if (responseBackend.ok && data.success) {
-          await saveToken(data.token);
-          await saveStoredUser(data.user);
-          
-          (global as any).currentUser = data.user;
-
-          if (data.user?.role === 'Architect') {
-            const done =
-              data.user.experience ||
-              data.user.firmName ||
-              (data.user.specialization?.length > 0) ||
-              (data.user.portfolioImages?.length > 0);
-            router.replace(done ? '/(tabs)' : '/architect-profile');
-          } else if (data.user?.role === 'Contractor') {
-            const done =
-              data.user.contractorType ||
-              data.user.teamSize ||
-              (data.user.workCategory?.length > 0) ||
-              (data.user.serviceLocation?.length > 0) ||
-              data.user.experience;
-            router.replace(done ? '/(tabs)' : '/contractor-profile');
-          } else {
-            router.replace('/(tabs)');
-          }
+        if (data.user?.role === 'Architect') {
+          const done =
+            data.user.experience ||
+            data.user.firmName ||
+            (data.user.specialization?.length > 0) ||
+            (data.user.portfolioImages?.length > 0);
+          router.replace(done ? '/(tabs)' : '/architect-profile');
+        } else if (data.user?.role === 'Contractor') {
+          const done =
+            data.user.contractorType ||
+            data.user.teamSize ||
+            (data.user.workCategory?.length > 0) ||
+            (data.user.serviceLocation?.length > 0) ||
+            data.user.experience;
+          router.replace(done ? '/(tabs)' : '/contractor-profile');
         } else {
-          Alert.alert('Login Failed', data.message || 'Authentication with server failed.');
+          router.replace('/(tabs)');
         }
       } else {
-        Alert.alert('Verification Failed', response?.message || 'Incorrect OTP. Please try again.');
+        showAlert('Login Failed', data.message || 'Incorrect OTP. Please try again.');
       }
     } catch (err: any) {
-      console.error('[Login] SDK verifyOTP Error:', err);
-      Alert.alert('Verification Error', err?.message || 'Incorrect OTP. Please try again.');
+      console.error('[Login] Verify Phone OTP Error:', err);
+      showAlert('Network Error', 'Could not connect to the server.');
     } finally {
       setIsLoading(false);
     }
@@ -320,16 +311,16 @@ export default function LoginScreen() {
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.tabButton, loginMode === 'phone' && styles.tabButtonActive]}
-                  onPress={() => setLoginMode('phone')}
+                  style={[styles.tabButton, loginMode === 'phoneOtp' && styles.tabButtonActive]}
+                  onPress={() => setLoginMode('phoneOtp')}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.tabButtonText, loginMode === 'phone' && styles.tabButtonTextActive]}>
+                  <Text style={[styles.tabButtonText, loginMode === 'phoneOtp' && styles.tabButtonTextActive]}>
                     Phone OTP Login
                   </Text>
                 </TouchableOpacity>
               </View>
-
+ 
               {loginMode === 'email' ? (
                 <>
                   {/* Email */}
@@ -353,7 +344,7 @@ export default function LoginScreen() {
                       />
                     </View>
                   </View>
-
+ 
                   {/* Password */}
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>{t('password') || 'Password'} <Text style={styles.req}>*</Text></Text>
@@ -377,12 +368,12 @@ export default function LoginScreen() {
                       </TouchableOpacity>
                     </View>
                   </View>
-
+ 
                   {/* Forgot Password */}
                   <TouchableOpacity style={styles.forgotBtn} onPress={() => setResetModalVisible(true)}>
                     <Text style={styles.forgotText}>{t('forgotPassword') || 'Forgot Password?'}</Text>
                   </TouchableOpacity>
-
+ 
                   {/* Login Button */}
                   <TouchableOpacity
                     style={[styles.primaryBtn, isLoading && { opacity: 0.7 }]}
@@ -402,36 +393,34 @@ export default function LoginScreen() {
                 </>
               ) : (
                 <>
-                  {/* Phone Number Input */}
+                  {/* Phone Input */}
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>{t('phoneNumber') || 'Phone Number'} <Text style={styles.req}>*</Text></Text>
                     <View style={[
                       styles.inputWrap,
-                      isPhoneFocused ? styles.inputWrapActive : styles.inputWrapInactive
+                      isOtpPhoneFocused ? styles.inputWrapActive : styles.inputWrapInactive
                     ]}>
                       <Feather name="phone" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                       <TextInput
                         style={styles.input}
-                        placeholder={t('phonePlaceholder') || '10-digit mobile number'}
+                        placeholder={t('enterPhoneNumber') || 'Enter your phone number'}
                         placeholderTextColor={COLORS.textMuted}
                         keyboardType="phone-pad"
-                        maxLength={15}
-                        value={phoneNumber}
+                        value={otpPhone}
                         onChangeText={(text) => {
-                          setPhoneNumber(text);
+                          setOtpPhone(text);
                           if (otpSent) {
                             setOtpSent(false);
-                            setReqId(null);
                             setOtp('');
                           }
                         }}
-                        onFocus={() => setIsPhoneFocused(true)}
-                        onBlur={() => setIsPhoneFocused(false)}
+                        onFocus={() => setIsOtpPhoneFocused(true)}
+                        onBlur={() => setIsOtpPhoneFocused(false)}
                         editable={!otpSent && !isLoading}
                       />
                     </View>
                   </View>
-
+ 
                   {/* OTP Input */}
                   {otpSent && (
                     <View style={styles.inputGroup}>
@@ -464,12 +453,12 @@ export default function LoginScreen() {
                           </TouchableOpacity>
                         )}
                         <TouchableOpacity onPress={() => { setOtpSent(false); setOtp(''); }} style={styles.changePhoneBtn}>
-                          <Text style={styles.changePhoneText}>{t('changeNumber') || 'Change Number'}</Text>
+                          <Text style={styles.changePhoneText}>{t('changePhone') || 'Change Phone'}</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
                   )}
-
+ 
                   {/* Action Button */}
                   {!otpSent ? (
                     <TouchableOpacity

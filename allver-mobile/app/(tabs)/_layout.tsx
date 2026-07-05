@@ -49,13 +49,20 @@ const CustomPostButton = ({ onPress, accessibilityState, style, label }: any) =>
       }}>
         <Feather name="plus" size={24} color="#FFFFFF" />
       </View>
-      <Text style={{
-        fontSize: 10,
-        fontWeight: '600',
-        color: isFocused ? COLORS.green : COLORS.textMuted,
-        position: 'absolute',
-        bottom: 2, // Horizontally align with default tab labels
-      }}>
+      <Text 
+        numberOfLines={1}
+        adjustsFontSizeToFit={true}
+        minimumFontScale={0.8}
+        style={{
+          fontSize: 10,
+          fontWeight: '600',
+          color: isFocused ? COLORS.green : COLORS.textMuted,
+          position: 'absolute',
+          bottom: 2, // Horizontally align with default tab labels
+          textAlign: 'center',
+          width: 85,
+        }}
+      >
         {label || 'Post Project'}
       </Text>
     </TouchableOpacity>
@@ -81,7 +88,7 @@ export default function TabLayout() {
     }
   }, []);
 
-  const postLabel = userRole === 'Labour' ? t('addWork') : t('postProject');
+  const postLabel = userRole === 'Labour' ? t('addWork') : userRole === 'Client' ? 'Post Contract' : t('postProject');
 
   // Calculate dynamic bottom padding and height based on system safe area bottom insets
   const bottomPadding = insets.bottom > 0 ? insets.bottom : 8;

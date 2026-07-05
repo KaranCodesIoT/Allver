@@ -8,6 +8,7 @@ import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useTranslation, SUPPORTED_LANGUAGES, getDeviceLanguage, getLocalLanguage } from '../utils/i18n';
+import { getToken, getStoredUser } from '../constants/Auth';
 
 const { width } = Dimensions.get('window');
 
@@ -62,13 +63,44 @@ export default function ChooseLanguageScreen() {
       i18n.changeLanguage(selectedCode);
 
       // Route based on auth state
-      if (currentUser) {
-        router.replace('/(tabs)');
-      } else {
-        router.replace('/signup');
+      const token = await getToken();
+      const storedUserStr = await getStoredUser();
+
+      if (token && storedUserStr) {
+        try {
+          const user = JSON.parse(storedUserStr);
+          (global as any).currentUser = user;
+          
+          console.log('[Language] Found active session. Redirecting to appropriate screen...');
+          if (user?.role === 'Architect') {
+            const done =
+              user.experience ||
+              user.firmName ||
+              (user.specialization?.length > 0) ||
+              (user.portfolioImages?.length > 0);
+            router.replace(done ? '/(tabs)' : '/architect-profile');
+          } else if (user?.role === 'Contractor') {
+            const done =
+              user.contractorType ||
+              user.teamSize ||
+              (user.workCategory?.length > 0) ||
+              (user.serviceLocation?.length > 0) ||
+              user.experience;
+            router.replace(done ? '/(tabs)' : '/contractor-profile');
+          } else {
+            router.replace('/(tabs)');
+          }
+          return;
+        } catch (e) {
+          console.error('[Language] Failed to parse stored user:', e);
+        }
       }
+
+      // Default: Go to signup
+      router.replace('/signup');
     } catch (err) {
       console.error(err);
+      router.replace('/signup');
     } finally {
       setLoading(false);
     }

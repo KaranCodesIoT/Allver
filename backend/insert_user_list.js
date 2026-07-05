@@ -25,7 +25,7 @@ const usersToInsert = [
   
   // Clients
   { fullName: 'Ankit Sharma', role: 'Client', email: 'ankit@gmail.com', password: 'ankit123', city: 'Mumbai', phoneNumber: '9876543216', projectType: 'Residential Bungalow' },
-  { fullName: 'Rohit Agarwal', role: 'Client', email: 'rohit@gmail.com', password: 'rohit123', city: 'Pune', phoneNumber: '9876543217', projectType: 'Appartment Renovation' },
+  { fullName: 'Rohit Agarwal', role: 'Client', email: 'rohit@gmail.com', password: 'rohit123', city: 'Pune', phoneNumber: '9876543217', projectType: 'Apartment Renovation' },
   { fullName: 'Vivek Tiwari', role: 'Client', email: 'vivek@gmail.com', password: 'vivek123', city: 'Mumbai', phoneNumber: '9876543218', projectType: 'Commercial Shop' },
   { fullName: 'Nitin Verma', role: 'Client', email: 'nitin@gmail.com', password: 'nitin123', city: 'Delhi', phoneNumber: '9876543219', projectType: 'Residential Villa' },
   { fullName: 'Akash Dubey', role: 'Client', email: 'akash@gmail.com', password: 'akash123', city: 'Bengaluru', phoneNumber: '9876543220', projectType: 'Office Fitout' }

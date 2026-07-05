@@ -73,7 +73,7 @@ export default function ProfileScreen() {
   const navigation = useNavigation();
   const { t } = useTranslation();
   const [user, setUser] = useState(DEFAULT_USER_DATA);
-  const [activeTab, setActiveTab] = useState<'projects' | 'media' | 'team' | 'reviews'>('projects');
+  const [activeTab, setActiveTab] = useState<string>('projects');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [liveFollowersCount, setLiveFollowersCount] = useState(0);
   const [liveFollowingCount, setLiveFollowingCount] = useState(0);
@@ -360,7 +360,8 @@ export default function ProfileScreen() {
           timeline: req.timeline,
           requirements: req.requirements,
           workspaceId: assocWorkspace?._id || null,
-          updates: assocWorkspace?.updates || []
+          updates: assocWorkspace?.updates || [],
+          bids: req.bids || []
         };
       });
 
@@ -1267,7 +1268,7 @@ export default function ProfileScreen() {
           {currentUser?.role === 'Client' ? (
             <View style={{ alignItems: 'center', marginBottom: 10 }}>
               {/* Name */}
-              <Text style={[styles.profileName, { textAlign: 'center', marginRight: 0, marginBottom: 4 }]}>{user.name}</Text>
+              <Text style={[styles.profileName, { flex: 0, textAlign: 'center', marginRight: 0, marginBottom: 4 }]}>{user.name}</Text>
               
               {/* City */}
               <Text style={[styles.subtitleText, { textAlign: 'center', marginBottom: 6, fontWeight: '500' }]}>{cityOnly}</Text>
@@ -1324,11 +1325,19 @@ export default function ProfileScreen() {
                 {user.name}  •  {currentUser?.role || 'Architect'}
               </Text>
 
-              {/* ===== FOLLOWERS / FOLLOWING ROW ===== */}
               {currentUser?._id && (
                 <View style={styles.followStatsRow}>
                   <TouchableOpacity
-                    style={styles.followStatCol}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: '#F9FAFB',
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderWidth: 1,
+                      borderColor: '#E5E7EB',
+                      borderRadius: 20,
+                    }}
                     onPress={() => {
                       router.push({
                         pathname: '/followers-list',
@@ -1336,23 +1345,9 @@ export default function ProfileScreen() {
                       });
                     }}
                   >
-                    <Text style={styles.followStatNumber}>{liveFollowersCount}</Text>
-                    <Text style={styles.followStatLabel}> Networks</Text>
-                  </TouchableOpacity>
-
-                  <View style={styles.followStatDivider} />
-
-                  <TouchableOpacity
-                    style={styles.followStatCol}
-                    onPress={() => {
-                      router.push({
-                        pathname: '/followers-list',
-                        params: { userId: currentUser._id, type: 'following', userName: 'My' }
-                      });
-                    }}
-                  >
-                    <Text style={styles.followStatNumber}>{liveFollowingCount}</Text>
-                    <Text style={styles.followStatLabel}> In Network</Text>
+                    <Text style={{ fontSize: 12, color: '#111827', fontWeight: '600' }}>
+                      {liveFollowersCount} {liveFollowersCount === 1 ? 'Network' : 'Networks'}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -1715,12 +1710,11 @@ export default function ProfileScreen() {
 
             </View>
           )}
-
           {/* ===== TABS ===== */}
           <View style={styles.tabSegmentContainer}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScrollRow}>
               {(currentUser?.role === 'Client'
-                ? ['projects']
+                ? ['projects', 'your contracts']
                 : currentUser?.role === 'Labour'
                   ? ['projects', 'reviews']
                   : ['projects', 'media', 'team', 'reviews']
@@ -1731,7 +1725,7 @@ export default function ProfileScreen() {
                   onPress={() => setActiveTab(tab)}
                 >
                   <Text style={[styles.tabButtonText, activeTab === tab && styles.activeTabButtonText]}>
-                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {tab === 'your contracts' ? 'Your contracts' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -1742,18 +1736,82 @@ export default function ProfileScreen() {
           <View style={styles.tabContentArea}>
             {activeTab === 'projects' && (
               <View style={styles.projectsListCol}>
-                {clientProjects.map((item, idx) => (
-                  <TouchableOpacity
-                    key={item.id || idx}
-                    style={[
-                      styles.clientProjectCard,
-                      item.status === 'Completed' && styles.completedProjectCard,
-                      item.status === 'Cancelled' && styles.cancelledProjectCard
-                    ]}
-                    activeOpacity={currentUser?.role === 'Labour' ? 1.0 : 0.7}
-                    disabled={currentUser?.role === 'Labour'}
-                    onPress={() => {
-                      if (item.status === 'Hiring') {
+                {clientProjects
+                  .filter((item) => currentUser?.role !== 'Client' || item.status !== 'Hiring')
+                  .map((item, idx) => (
+                    <TouchableOpacity
+                      key={item.id || idx}
+                      style={[
+                        styles.clientProjectCard,
+                        item.status === 'Completed' && styles.completedProjectCard,
+                        item.status === 'Cancelled' && styles.cancelledProjectCard
+                      ]}
+                      activeOpacity={currentUser?.role === 'Labour' ? 1.0 : 0.7}
+                      disabled={currentUser?.role === 'Labour'}
+                      onPress={() => {
+                        router.push({
+                          pathname: '/project-progress',
+                          params: {
+                            name: item.title,
+                            location: item.location,
+                            status: item.status,
+                            progress: (item.status === 'Completed' ? '100' : '60'),
+                            workspaceId: item.workspaceId || ''
+                          }
+                        });
+                      }}
+                    >
+                      {/* NEW UPDATE BADGE */}
+                      {checkNewUpdates(item.workspaceId, item.updates) && (
+                        <View style={styles.newUpdateBadge}>
+                          <View style={styles.newUpdateDot} />
+                          <Text style={styles.newUpdateText}>New Update</Text>
+                        </View>
+                      )}
+
+                      <Text style={styles.clientProjectCardName}>{item.title}</Text>
+                      <Text style={styles.clientProjectCardLoc}>{item.location}</Text>
+                      <View style={styles.projectStatusRow}>
+                        <View style={[styles.projectStatusDot, { 
+                          backgroundColor: item.status === 'Completed' 
+                            ? COLORS.green 
+                            : item.status === 'Cancelled'
+                              ? COLORS.red
+                              : item.status === 'In Progress' 
+                                ? COLORS.blue 
+                                : '#F59E0B' 
+                        }]} />
+                        <Text style={[styles.projectStatusText, { 
+                          color: item.status === 'Completed' 
+                            ? COLORS.green 
+                            : item.status === 'Cancelled'
+                              ? COLORS.red
+                              : item.status === 'In Progress' 
+                                ? COLORS.blue 
+                                : '#F59E0B' 
+                        }]}>{item.status}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                {clientProjects.filter((item) => currentUser?.role !== 'Client' || item.status !== 'Hiring').length === 0 && (
+                  <View style={{ padding: 30, alignItems: 'center' }}>
+                    <Text style={{ color: COLORS.textMuted, fontSize: 14 }}>
+                      {currentUser?.role === 'Client' ? 'No projects in progress' : 'No projects assigned yet'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {activeTab === 'your contracts' && (
+              <View style={styles.projectsListCol}>
+                {clientProjects
+                  .map((item, idx) => (
+                    <TouchableOpacity
+                      key={item.id || idx}
+                      style={styles.clientProjectCardDetail}
+                      activeOpacity={0.85}
+                      onPress={() => {
                         router.push({
                           pathname: '/project-applications',
                           params: {
@@ -1766,56 +1824,94 @@ export default function ProfileScreen() {
                             requirements: Array.isArray(item.requirements) ? item.requirements.join(',') : item.requirements || '',
                           }
                         });
-                      } else {
-                        router.push({
-                          pathname: '/project-progress',
-                          params: {
-                            name: item.title,
-                            location: item.location,
-                            status: item.status,
-                            progress: (item.status === 'Completed' ? '100' : '60'),
-                            workspaceId: item.workspaceId || ''
-                          }
-                        });
-                      }
-                    }}
-                  >
-                    {/* NEW UPDATE BADGE */}
-                    {checkNewUpdates(item.workspaceId, item.updates) && (
-                      <View style={styles.newUpdateBadge}>
-                        <View style={styles.newUpdateDot} />
-                        <Text style={styles.newUpdateText}>New Update</Text>
+                      }}
+                    >
+                      {/* Top Badges Row */}
+                      <View style={styles.cardBadgesRow}>
+                        <View style={styles.categoryBadge}>
+                          <Text style={styles.categoryBadgeText}>{item.projectType || 'General'}</Text>
+                        </View>
+                        <View style={styles.yourPostBadge}>
+                          <Text style={styles.yourPostBadgeText}>Your Post</Text>
+                        </View>
+                        <View style={[
+                          styles.statusBadgeHiring,
+                          item.status === 'Completed' && { backgroundColor: '#ECFDF5' },
+                          item.status === 'Cancelled' && { backgroundColor: '#FEF2F2' },
+                          item.status === 'In Progress' && { backgroundColor: '#EFF6FF' },
+                          item.status === 'Hiring' && { backgroundColor: '#F5F3FF' }
+                        ]}>
+                          <Text style={[
+                            styles.statusBadgeHiringText,
+                            item.status === 'Completed' && { color: COLORS.green },
+                            item.status === 'Cancelled' && { color: COLORS.red },
+                            item.status === 'In Progress' && { color: COLORS.blue },
+                            item.status === 'Hiring' && { color: '#7C3AED' }
+                          ]}>{item.status === 'Hiring' ? 'Pending' : item.status}</Text>
+                        </View>
+                        <View style={styles.locBadge}>
+                          <Feather name="map-pin" size={11} color={COLORS.textMuted} />
+                          <Text style={styles.locBadgeText} numberOfLines={1}>{item.location}</Text>
+                        </View>
                       </View>
-                    )}
 
-                    <Text style={styles.clientProjectCardName}>{item.title}</Text>
-                    <Text style={styles.clientProjectCardLoc}>{item.location}</Text>
-                    <View style={styles.projectStatusRow}>
-                      <View style={[styles.projectStatusDot, { 
-                        backgroundColor: item.status === 'Completed' 
-                          ? COLORS.green 
-                          : item.status === 'Cancelled'
-                            ? COLORS.red
-                            : item.status === 'In Progress' 
-                              ? COLORS.blue 
-                              : '#F59E0B' 
-                      }]} />
-                      <Text style={[styles.projectStatusText, { 
-                        color: item.status === 'Completed' 
-                          ? COLORS.green 
-                          : item.status === 'Cancelled'
-                            ? COLORS.red
-                            : item.status === 'In Progress' 
-                              ? COLORS.blue 
-                              : '#F59E0B' 
-                      }]}>{item.status}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                      {/* Title */}
+                      <Text style={styles.cardTitle}>{item.title}</Text>
+                      <Text style={styles.postedByText}>Posted by: {user.name}</Text>
+
+                      {/* Budget and Timeline Box */}
+                      <View style={styles.budgetTimelineBox}>
+                        <View style={styles.boxColumn}>
+                          <Text style={styles.boxLabel}>Estimated Budget</Text>
+                          <Text style={styles.boxValue}>₹ {item.budget || 'Ask for Quote'}</Text>
+                        </View>
+                        <View style={styles.boxColumn}>
+                          <Text style={styles.boxLabel}>Timeline</Text>
+                          <Text style={styles.boxValue}>{item.timeline || 'Flexible'}</Text>
+                        </View>
+                      </View>
+
+                      {/* Description */}
+                      {item.description ? (
+                        <Text style={styles.cardDesc} numberOfLines={2}>{item.description}</Text>
+                      ) : null}
+
+                      {/* Applicants List */}
+                      {item.bids && item.bids.length > 0 && (
+                        <View style={styles.applicantsSection}>
+                          <Text style={styles.applicantsSectionTitle}>Applicants ({item.bids.length})</Text>
+                          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                            {item.bids.map((bid: any) => {
+                              const prof = bid.professional || {};
+                              const pName = prof.fullName || 'Professional';
+                              const pAvatar = resolveAvatarUrl(prof.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(pName)}&background=7C3AED&color=fff`;
+                              return (
+                                <View key={bid._id} style={styles.miniApplicantCard}>
+                                  <Image source={{ uri: pAvatar }} style={styles.miniApplicantAvatar} />
+                                  <View style={styles.miniApplicantMeta}>
+                                    <Text style={styles.miniApplicantName} numberOfLines={1}>{pName}</Text>
+                                    <Text style={styles.miniApplicantRole}>{prof.role || 'Contractor'}</Text>
+                                  </View>
+                                  <Text style={styles.miniApplicantQuotation}>{bid.cost}</Text>
+                                </View>
+                              );
+                            })}
+                          </ScrollView>
+                        </View>
+                      )}
+
+                      {/* Action Button */}
+                      <View style={styles.viewBidsBtn}>
+                        <Text style={styles.viewBidsBtnText}>View Details / Bids</Text>
+                        <Feather name="arrow-right" size={14} color={COLORS.white} style={{ marginLeft: 6 }} />
+                      </View>
+
+                    </TouchableOpacity>
+                  ))}
                 {clientProjects.length === 0 && (
                   <View style={{ padding: 30, alignItems: 'center' }}>
                     <Text style={{ color: COLORS.textMuted, fontSize: 14 }}>
-                      {currentUser?.role === 'Client' ? 'No projects posted yet' : 'No projects assigned yet'}
+                      No contract requests posted yet
                     </Text>
                   </View>
                 )}
@@ -2267,15 +2363,13 @@ export default function ProfileScreen() {
         onRequestClose={handleCloseVideo}
       >
         <View style={styles.videoModalOverlay}>
+          <View style={styles.videoModalHeader}>
+            <Text style={styles.videoModalTitle} numberOfLines={1}>{selectedVideoTitle}</Text>
+            <TouchableOpacity onPress={handleCloseVideo} style={styles.videoCloseBtn}>
+              <Feather name="x" size={24} color={COLORS.white} />
+            </TouchableOpacity>
+          </View>
           <View style={styles.videoModalContainer}>
-            {/* Header */}
-            <View style={styles.videoModalHeader}>
-              <Text style={styles.videoModalTitle} numberOfLines={1}>{selectedVideoTitle}</Text>
-              <TouchableOpacity onPress={handleCloseVideo} style={styles.videoCloseBtn}>
-                <Feather name="x" size={22} color={COLORS.white} />
-              </TouchableOpacity>
-            </View>
-
             {/* Video Player */}
             {selectedVideoUrl && (
               <Video
@@ -2543,7 +2637,7 @@ const styles = StyleSheet.create({
   },
   avatarImage: { width: '100%', height: '100%', borderRadius: 36 },
   profileSection: { marginTop: 45, paddingHorizontal: 20 },
-  profileName: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 2 },
+  profileName: { flex: 1, fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 2, marginRight: 10 },
   subtitleText: { fontSize: 13, color: COLORS.textMuted, marginBottom: 10 },
   phoneRow: {
     flexDirection: 'row',
@@ -3584,39 +3678,39 @@ const styles = StyleSheet.create({
   },
   videoModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
   },
   videoModalContainer: {
-    width: width * 0.95,
-    height: width * 0.95 * (9/16) + 60,
-    backgroundColor: '#0F172A',
-    borderRadius: 16,
-    padding: 16,
-    overflow: 'hidden',
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000000',
   },
   videoModalHeader: {
+    height: 60,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 44 : 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
   videoModalTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: COLORS.white,
     flex: 1,
-    marginRight: 10,
+    marginRight: 12,
   },
   videoCloseBtn: {
-    padding: 4,
+    padding: 8,
   },
   portfolioVideoPlayer: {
     width: '100%',
-    flex: 1,
-    borderRadius: 8,
-    backgroundColor: '#000000',
+    height: '100%',
   },
   inputLabel: {
     fontSize: 11,
@@ -3663,5 +3757,167 @@ const styles = StyleSheet.create({
   photoFullScreen: {
     width: '100%',
     height: '80%',
+  },
+  /* CONTRACT OPPORTUNITY CARD STYLES */
+  clientProjectCardDetail: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 16,
+  },
+  cardBadgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  categoryBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  categoryBadgeText: {
+    color: '#059669',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  yourPostBadge: {
+    backgroundColor: '#F3E8FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  yourPostBadgeText: {
+    color: '#7C3AED',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  statusBadgeHiring: {
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statusBadgeHiringText: {
+    color: '#2563EB',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  locBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 'auto',
+  },
+  locBadgeText: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    fontWeight: '600',
+    maxWidth: 100,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    marginBottom: 2,
+  },
+  postedByText: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginBottom: 12,
+  },
+  budgetTimelineBox: {
+    flexDirection: 'row',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 10,
+    gap: 16,
+    marginBottom: 12,
+  },
+  boxColumn: {
+    flex: 1,
+  },
+  boxLabel: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  boxValue: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.textDark,
+  },
+  cardDesc: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  applicantsSection: {
+    marginTop: 6,
+    marginBottom: 12,
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.border,
+    paddingTop: 10,
+  },
+  applicantsSectionTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 8,
+  },
+  miniApplicantCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    width: 170,
+    gap: 8,
+  },
+  miniApplicantAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#CBD5E1',
+  },
+  miniApplicantMeta: {
+    flex: 1,
+  },
+  miniApplicantName: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.textDark,
+  },
+  miniApplicantRole: {
+    fontSize: 9,
+    color: COLORS.textMuted,
+    marginTop: 1,
+  },
+  miniApplicantQuotation: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#7C3AED',
+  },
+  viewBidsBtn: {
+    backgroundColor: '#7C3AED',
+    height: 40,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewBidsBtnText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

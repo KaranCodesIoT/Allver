@@ -34,6 +34,14 @@ const CATEGORIES = [
   'Civil Work'
 ];
 
+const CLIENT_CATEGORIES = [
+  'Interior',
+  'Civil',
+  'Electrical',
+  'Plumbing',
+  'Architecture'
+];
+
 const REQUIREMENT_OPTIONS = [
   'False Ceiling',
   'Modular Kitchen',
@@ -64,12 +72,14 @@ export default function PostProjectScreen() {
 
   // Client form states
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [location, setLocation] = useState('');
-  const [budget, setBudget] = useState('');
+  const [category, setCategory] = useState(CLIENT_CATEGORIES[0]);
+  const [city, setCity] = useState('');
+  const [area, setArea] = useState('');
+  const [budgetType, setBudgetType] = useState<'Fixed' | 'Negotiable' | 'Ask for Quote'>('Fixed');
+  const [budgetValue, setBudgetValue] = useState('');
   const [clientDescription, setClientDescription] = useState('');
-  const [timeline, setTimeline] = useState('');
-  const [requirements, setRequirements] = useState<string[]>([]);
+  const [clientMedia, setClientMedia] = useState<string[]>([]);
+  const [isUploadingClientMedia, setIsUploadingClientMedia] = useState(false);
 
   // Architect post states
   const [selectedType, setSelectedType] = useState<'images' | 'videos' | 'design' | null>(null);
@@ -80,10 +90,8 @@ export default function PostProjectScreen() {
   const [isPublishing, setIsPublishing] = useState(false);
 
   // Optional quotation states
-  const [civilStructure, setCivilStructure] = useState('');
-  const [flooringTiling, setFlooringTiling] = useState('');
-  const [electricalPlumbing, setElectricalPlumbing] = useState('');
-  const [modularWoodwork, setModularWoodwork] = useState('');
+  const [costItems, setCostItems] = useState<{ category: string; cost: string }[]>([]);
+  const [categoryInput, setCategoryInput] = useState('');
 
   // Labour "Add Work" form states
   const [workTitle, setWorkTitle] = useState('');
@@ -93,6 +101,31 @@ export default function PostProjectScreen() {
   const [workDescription, setWorkDescription] = useState('');
   const [workDuration, setWorkDuration] = useState('');
   const [isUploadingWork, setIsUploadingWork] = useState(false);
+
+  const handleAddCostCategory = () => {
+    const category = categoryInput.trim();
+    if (!category) return;
+    
+    // Check if category already exists
+    const exists = costItems.some(item => item.category.toLowerCase() === category.toLowerCase());
+    if (exists) {
+      Alert.alert('Duplicate Category', 'This category already exists.');
+      return;
+    }
+    
+    setCostItems([...costItems, { category, cost: '' }]);
+    setCategoryInput('');
+  };
+
+  const handleRemoveCostItem = (index: number) => {
+    setCostItems(costItems.filter((_, idx) => idx !== index));
+  };
+
+  const handleCostChange = (index: number, newCostText: string) => {
+    const updated = [...costItems];
+    updated[index].cost = newCostText;
+    setCostItems(updated);
+  };
 
   const [success, setSuccess] = useState(false);
   const [successType, setSuccessType] = useState<'client' | 'architect_media' | 'architect_design' | 'labour_work'>('client');
@@ -260,6 +293,65 @@ export default function PostProjectScreen() {
     setWorkMedia(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleSelectClientMedia = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Please grant library permissions to upload media.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setIsUploadingClientMedia(true);
+      try {
+        const urls: string[] = [];
+        for (const asset of result.assets) {
+          const formData = new FormData();
+          const uri = asset.uri;
+          let name = asset.fileName || uri.split('/').pop() || 'upload.jpg';
+          name = name.split('?')[0].split('#')[0];
+
+          let fileType = asset.mimeType;
+          if (!fileType) {
+            const match = /\.(\w+)$/.exec(name);
+            const ext = match ? match[1].toLowerCase() : 'jpg';
+            fileType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+          }
+
+          formData.append('image', { uri: uri, name, type: fileType } as any);
+
+          const res = await fetch(`${BACKEND_URL}/api/upload`, {
+            method: 'POST',
+            body: formData,
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.url) urls.push(data.url);
+          }
+        }
+        if (urls.length > 0) {
+          setClientMedia(prev => [...prev, ...urls]);
+        } else {
+          Alert.alert('Upload Failed', 'Failed to upload media to the server.');
+        }
+      } catch (err) {
+        console.error('Client media upload error:', err);
+        Alert.alert('Upload Error', 'An error occurred while uploading media.');
+      } finally {
+        setIsUploadingClientMedia(false);
+      }
+    }
+  };
+
+  const removeClientMediaItem = (index: number) => {
+    setClientMedia(prev => prev.filter((_, i) => i !== index));
+  };
+
   // Submit flow for Labour "Add Work"
   const handleLabourSubmit = async () => {
     if (!workTitle.trim()) {
@@ -339,28 +431,28 @@ export default function PostProjectScreen() {
 
   // Submit flow for client project
   const handleClientSubmit = async () => {
-    if (currentUser?.role === 'Client') {
-      Alert.alert(
-        'Access Restricted',
-        'Clients are not authorized to publish projects on Allver. Only Contractors and Architects can post projects/designs.',
-        [{ text: 'OK' }]
-      );
+    if (!title.trim()) {
+      Alert.alert('Required Field', 'Please enter a project title.');
       return;
     }
-
-    if (!title.trim() || !location.trim() || !budget.trim() || !clientDescription.trim()) {
-      Alert.alert('Required Fields', 'Please fill out all fields before publishing.');
+    if (!clientDescription.trim()) {
+      Alert.alert('Required Field', 'Please enter the description of the work.');
+      return;
+    }
+    if (!city.trim() || !area.trim()) {
+      Alert.alert('Required Fields', 'Please enter both City and Area for the location.');
+      return;
+    }
+    if (budgetType !== 'Ask for Quote' && !budgetValue.trim()) {
+      Alert.alert('Required Field', 'Please enter the budget amount.');
       return;
     }
 
     setIsPublishing(true);
 
-    let projectType = 'General';
-    if (category === 'Residential Construction') projectType = 'Residential';
-    else if (category === 'Commercial Construction') projectType = 'Commercial';
-    else if (category === 'Interior Design') projectType = 'Interior';
-    else if (category === 'Renovation') projectType = 'Renovation';
-
+    const projectType = category; // Interior, Civil, Electrical, Plumbing, Architecture
+    const locationStr = `${area.trim()}, ${city.trim()}`;
+    const budgetStr = budgetType === 'Ask for Quote' ? 'Ask for Quote' : `${budgetType}: ₹${budgetValue.trim()}`;
     const isLabour = currentUser?.role === 'Labour';
 
     try {
@@ -368,14 +460,15 @@ export default function PostProjectScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          client: currentUser?._id || '60c72b2f9b1d8a2a4c8b0030', // Fallback to seeded Karan Chaubey ID if not logged in
+          client: currentUser?._id || '60c72b2f9b1d8a2a4c8b0030', // Fallback
           title: title.trim(),
           projectType,
-          location: location.trim(),
-          budget: budget.trim(),
-          timeline: timeline.trim(),
-          requirements,
-          description: clientDescription.trim()
+          location: locationStr,
+          budget: budgetStr,
+          description: clientDescription.trim(),
+          mediaUrls: clientMedia,
+          attachmentUrl: clientMedia.length > 0 ? clientMedia[0] : '',
+          attachmentName: clientMedia.length > 0 ? 'Site Photo' : ''
         }),
       });
 
@@ -389,16 +482,14 @@ export default function PostProjectScreen() {
               body: JSON.stringify({
                 title: title.trim(),
                 projectType,
-                location: location.trim(),
-                budget: budget.trim(),
-                timeline: timeline.trim(),
-                requirements,
-                description: clientDescription.trim()
+                location: locationStr,
+                budget: budgetStr,
+                description: clientDescription.trim(),
+                mediaUrls: clientMedia
               }),
             });
           } catch (portfolioErr) {
             console.error('Error saving to portfolio highlights:', portfolioErr);
-            // Don't block the main flow if portfolio save fails
           }
         }
 
@@ -407,11 +498,12 @@ export default function PostProjectScreen() {
         
         // Clear form states
         setTitle('');
-        setLocation('');
-        setBudget('');
-        setTimeline('');
-        setRequirements([]);
+        setCity('');
+        setArea('');
+        setBudgetValue('');
+        setBudgetType('Fixed');
         setClientDescription('');
+        setClientMedia([]);
 
         setTimeout(() => {
           setSuccess(false);
@@ -430,11 +522,12 @@ export default function PostProjectScreen() {
       setSuccess(true);
       
       setTitle('');
-      setLocation('');
-      setBudget('');
-      setTimeline('');
-      setRequirements([]);
+      setCity('');
+      setArea('');
+      setBudgetValue('');
+      setBudgetType('Fixed');
       setClientDescription('');
+      setClientMedia([]);
       
       setTimeout(() => {
         setSuccess(false);
@@ -472,12 +565,7 @@ export default function PostProjectScreen() {
           type: isDesign ? 'design' : 'media',
           mediaUrls: selectedMedia,
           creatorId: currentUser?._id || 'default-user-id',
-          quotation: isDesign ? {
-            civilStructure,
-            flooringTiling,
-            electricalPlumbing,
-            modularWoodwork
-          } : null
+          quotation: isDesign ? costItems : null
         }),
       });
 
@@ -490,10 +578,8 @@ export default function PostProjectScreen() {
         setPostDescription('');
         setSelectedMedia([]);
         setSelectedType(null);
-        setCivilStructure('');
-        setFlooringTiling('');
-        setElectricalPlumbing('');
-        setModularWoodwork('');
+        setCostItems([]);
+        setCategoryInput('');
         
         setTimeout(() => {
           setSuccess(false);
@@ -577,7 +663,7 @@ export default function PostProjectScreen() {
           </TouchableOpacity>
         ) : null}
         <Text style={styles.headerTitle}>
-          {isArchitect ? t('architectStudio') : isContractor ? t('postProject') : (currentUser?.role === 'Labour' ? t('addWork') : t('postProject'))}
+          {isArchitect ? t('architectStudio') : isContractor ? t('postProject') : (currentUser?.role === 'Labour' ? t('addWork') : (currentUser?.role === 'Client' ? 'Post Contract' : t('postProject')))}
         </Text>
       </View>
 
@@ -752,45 +838,110 @@ export default function PostProjectScreen() {
                       <Text style={styles.sectionDividerText}>{t('costQuotation')}</Text>
                       <Text style={styles.sectionDividerSubText}>{t('costQuotationDesc')}</Text>
                       
-                      <Text style={styles.smallLabel}>{t('civilCost')}</Text>
-                      <TransliteratedTextInput
-                        style={styles.smallInput}
-                        placeholder="e.g. 4.5 L - 5.8 L"
-                        placeholderTextColor={COLORS.textMuted}
-                        value={civilStructure}
-                        onChangeText={setCivilStructure}
-                        disableTransliteration={true}
-                      />
+                      {/* Input to Add Category */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+                        <View style={{ flex: 1 }}>
+                          <TransliteratedTextInput
+                            style={styles.smallInput}
+                            placeholder="Type category (e.g. Landscape, False Ceiling)"
+                            placeholderTextColor={COLORS.textMuted}
+                            value={categoryInput}
+                            onChangeText={setCategoryInput}
+                            onSubmitEditing={handleAddCostCategory}
+                            disableTransliteration={true}
+                          />
+                        </View>
+                        <TouchableOpacity 
+                          style={{
+                            backgroundColor: COLORS.green,
+                            paddingHorizontal: 14,
+                            height: 40,
+                            borderRadius: 6,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                          }}
+                          onPress={handleAddCostCategory}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>+ Add</Text>
+                        </TouchableOpacity>
+                      </View>
 
-                      <Text style={styles.smallLabel}>{t('flooringCost')}</Text>
-                      <TransliteratedTextInput
-                        style={styles.smallInput}
-                        placeholder="e.g. 1.2 L - 1.8 L"
-                        placeholderTextColor={COLORS.textMuted}
-                        value={flooringTiling}
-                        onChangeText={setFlooringTiling}
-                        disableTransliteration={true}
-                      />
+                      {/* Quick suggestions */}
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                        {['Civil Work', 'Flooring', 'Electrical & Plumbing', 'Woodwork', 'False Ceiling', 'Landscape'].map(cat => {
+                          const isAdded = costItems.some(item => item.category.toLowerCase() === cat.toLowerCase());
+                          if (isAdded) return null;
+                          return (
+                            <TouchableOpacity
+                              key={cat}
+                              style={{
+                                paddingHorizontal: 8,
+                                paddingVertical: 4,
+                                borderRadius: 12,
+                                backgroundColor: '#F1F5F9',
+                                borderWidth: 1,
+                                borderColor: '#E2E8F0',
+                              }}
+                              onPress={() => {
+                                setCostItems([...costItems, { category: cat, cost: '' }]);
+                              }}
+                            >
+                              <Text style={{ fontSize: 11, color: COLORS.textMuted }}>+ {cat}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
 
-                      <Text style={styles.smallLabel}>{t('electricalCost')}</Text>
-                      <TransliteratedTextInput
-                        style={styles.smallInput}
-                        placeholder="e.g. 0.8 L - 1.2 L"
-                        placeholderTextColor={COLORS.textMuted}
-                        value={electricalPlumbing}
-                        onChangeText={setElectricalPlumbing}
-                        disableTransliteration={true}
-                      />
+                      {/* List of Added Categories and cost inputs */}
+                      {costItems.map((item, index) => (
+                        <View 
+                          key={item.category + '_' + index} 
+                          style={{ 
+                            backgroundColor: COLORS.white, 
+                            borderRadius: 8, 
+                            borderWidth: 1, 
+                            borderColor: '#E2E8F0', 
+                            padding: 10, 
+                            marginBottom: 10,
+                            shadowColor: '#000',
+                            shadowOffset: { width: 0, height: 1 },
+                            shadowOpacity: 0.05,
+                            shadowRadius: 2,
+                            elevation: 1
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.green }} />
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark }}>{item.category}</Text>
+                            </View>
+                            <TouchableOpacity 
+                              onPress={() => handleRemoveCostItem(index)}
+                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            >
+                              <Feather name="trash-2" size={14} color="#EF4444" />
+                            </TouchableOpacity>
+                          </View>
 
-                      <Text style={styles.smallLabel}>{t('woodworkCost')}</Text>
-                      <TransliteratedTextInput
-                        style={styles.smallInput}
-                        placeholder="e.g. 2.5 L - 3.8 L"
-                        placeholderTextColor={COLORS.textMuted}
-                        value={modularWoodwork}
-                        onChangeText={setModularWoodwork}
-                        disableTransliteration={true}
-                      />
+                          <TransliteratedTextInput
+                            style={styles.smallInput}
+                            placeholder="e.g. 4.5 L - 5.8 L"
+                            placeholderTextColor={COLORS.textMuted}
+                            value={item.cost}
+                            onChangeText={(txt) => handleCostChange(index, txt)}
+                            disableTransliteration={true}
+                          />
+                        </View>
+                      ))}
+                      
+                      {costItems.length === 0 && (
+                        <View style={{ alignItems: 'center', paddingVertical: 12 }}>
+                          <Text style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: 'italic' }}>
+                            No cost items added. Use the input above to add categories.
+                          </Text>
+                        </View>
+                      )}
                     </View>
                   )}
 
@@ -969,8 +1120,7 @@ export default function PostProjectScreen() {
                 )}
               </TouchableOpacity>
             </View>
-          </View>
-        ) : (
+          </View>        ) : (
           // ================= CLIENT FLOW (DEFAULT) =================
           <View style={styles.clientContainer}>
             {/* Banner Block */}
@@ -986,19 +1136,19 @@ export default function PostProjectScreen() {
             {/* Form Fields */}
             <View style={styles.formContainer}>
               {/* Project Title */}
-              <Text style={styles.label}>{t('projectTitle')}</Text>
+              <Text style={styles.label}>Project Title</Text>
               <TransliteratedTextInput
                 style={styles.input}
-                placeholder={t('projectTitlePlaceholder')}
+                placeholder="e.g. 2BHK Interior Work or Need Civil Contractor"
                 placeholderTextColor={COLORS.textMuted}
                 value={title}
                 onChangeText={setTitle}
               />
 
               {/* Project Category Select */}
-              <Text style={styles.label}>{t('selectCategory')}</Text>
+              <Text style={styles.label}>Category</Text>
               <View style={styles.categoriesRow}>
-                {CATEGORIES.map((cat) => {
+                {CLIENT_CATEGORIES.map((cat) => {
                   const isSelected = category === cat;
                   return (
                     <TouchableOpacity
@@ -1020,88 +1170,120 @@ export default function PostProjectScreen() {
                 })}
               </View>
 
-              {/* Location */}
-              <Text style={styles.label}>{t('projectLocation')}</Text>
-              <View style={styles.inputWrapper}>
-                <Feather name="map-pin" size={16} color={COLORS.textMuted} style={styles.inputIcon} />
-                <TransliteratedTextInput
-                  style={styles.inputWithIcon}
-                  placeholder={t('locationPlaceholder')}
-                  placeholderTextColor={COLORS.textMuted}
-                  value={location}
-                  onChangeText={setLocation}
-                />
-              </View>
-
-              {/* Budget */}
-              <Text style={styles.label}>{t('estimatedBudget')}</Text>
-              <View style={styles.inputWrapper}>
-                <Text style={styles.currencySymbol}>₹</Text>
-                <TransliteratedTextInput
-                  style={styles.inputWithIcon}
-                  placeholder={t('budgetPlaceholder')}
-                  placeholderTextColor={COLORS.textMuted}
-                  value={budget}
-                  onChangeText={setBudget}
-                  disableTransliteration={true}
-                />
-              </View>
-
-              {/* Timeline */}
-              <Text style={styles.label}>{t('timeline')}</Text>
-              <View style={styles.inputWrapper}>
-                <Feather name="clock" size={16} color={COLORS.textMuted} style={styles.inputIcon} />
-                <TransliteratedTextInput
-                  style={styles.inputWithIcon}
-                  placeholder={t('timelinePlaceholder')}
-                  placeholderTextColor={COLORS.textMuted}
-                  value={timeline}
-                  onChangeText={setTimeline}
-                />
-              </View>
-
-              {/* Requirements */}
-              <Text style={styles.label}>{t('requirements')}</Text>
-              <View style={styles.categoriesRow}>
-                {REQUIREMENT_OPTIONS.map((req) => {
-                  const isSelected = requirements.includes(req);
-                  return (
-                    <TouchableOpacity
-                      key={req}
-                      style={[
-                        styles.categoryChip,
-                        isSelected && styles.categoryChipSelected
-                      ]}
-                      onPress={() => {
-                        if (requirements.includes(req)) {
-                          setRequirements(prev => prev.filter(r => r !== req));
-                        } else {
-                          setRequirements(prev => [...prev, req]);
-                        }
-                      }}
-                    >
-                      <Text style={[
-                        styles.categoryChipText,
-                        isSelected && styles.categoryChipTextSelected
-                      ]}>
-                        {req}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
               {/* Description */}
-              <Text style={styles.label}>{t('projectDescriptionScope')}</Text>
+              <Text style={styles.label}>Description</Text>
               <TransliteratedTextInput
                 style={[styles.input, styles.textArea]}
-                placeholder={t('projectDescriptionScopePlaceholder')}
+                placeholder="What work needs to be done?"
                 placeholderTextColor={COLORS.textMuted}
                 multiline={true}
                 numberOfLines={4}
                 value={clientDescription}
                 onChangeText={setClientDescription}
               />
+
+              {/* Location (City & Area) */}
+              <Text style={styles.label}>Location</Text>
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.smallLabel}>Area</Text>
+                  <TransliteratedTextInput
+                    style={styles.input}
+                    placeholder="e.g. Bandra"
+                    placeholderTextColor={COLORS.textMuted}
+                    value={area}
+                    onChangeText={setArea}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.smallLabel}>City</Text>
+                  <TransliteratedTextInput
+                    style={styles.input}
+                    placeholder="e.g. Mumbai"
+                    placeholderTextColor={COLORS.textMuted}
+                    value={city}
+                    onChangeText={setCity}
+                  />
+                </View>
+              </View>
+
+              {/* Budget */}
+              <Text style={styles.label}>Budget</Text>
+              <View style={styles.categoriesRow}>
+                {(['Fixed', 'Negotiable', 'Ask for Quote'] as const).map((type) => {
+                  const isSelected = budgetType === type;
+                  return (
+                    <TouchableOpacity
+                      key={type}
+                      style={[
+                        styles.categoryChip,
+                        isSelected && styles.categoryChipSelected
+                      ]}
+                      onPress={() => setBudgetType(type)}
+                    >
+                      <Text style={[
+                        styles.categoryChipText,
+                        isSelected && styles.categoryChipTextSelected
+                      ]}>
+                        {type}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {budgetType !== 'Ask for Quote' && (
+                <View style={[styles.inputWrapper, { marginTop: 8 }]}>
+                  <Text style={styles.currencySymbol}>₹</Text>
+                  <TransliteratedTextInput
+                    style={styles.inputWithIcon}
+                    placeholder="e.g. 50,000"
+                    placeholderTextColor={COLORS.textMuted}
+                    value={budgetValue}
+                    onChangeText={setBudgetValue}
+                    disableTransliteration={true}
+                  />
+                </View>
+              )}
+
+              {/* Photos (Optional but recommended) */}
+              <Text style={styles.label}>Photos (Optional but recommended)</Text>
+              <Text style={{ fontSize: 11, color: COLORS.textMuted, marginBottom: 8, marginTop: -4 }}>
+                Upload site photos or design images.
+              </Text>
+              <TouchableOpacity
+                style={styles.mediaSelectorBtn}
+                onPress={handleSelectClientMedia}
+                activeOpacity={0.7}
+                disabled={isUploadingClientMedia}
+              >
+                {isUploadingClientMedia ? (
+                  <ActivityIndicator size="small" color={COLORS.green} />
+                ) : (
+                  <>
+                    <Feather name="plus-circle" size={20} color={COLORS.green} style={{ marginRight: 8 }} />
+                    <Text style={styles.mediaSelectorBtnText}>
+                      {clientMedia.length > 0 ? `Add More Photos (${clientMedia.length})` : 'Upload Site Photos'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              {/* Photos Preview */}
+              {clientMedia.length > 0 && (
+                <View style={styles.previewContainer}>
+                  <Text style={styles.previewTitle}>Selected Photos ({clientMedia.length})</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.previewScroll}>
+                    {clientMedia.map((uri, index) => (
+                      <View key={index} style={styles.previewImageWrap}>
+                        <Image source={{ uri }} style={styles.previewImage} contentFit="cover" />
+                        <TouchableOpacity style={styles.removeMediaBtn} onPress={() => removeClientMediaItem(index)}>
+                          <Feather name="x" size={12} color={COLORS.white} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
 
               {/* Submit Button */}
               <TouchableOpacity 
@@ -1114,7 +1296,7 @@ export default function PostProjectScreen() {
                   <ActivityIndicator size="small" color={COLORS.white} />
                 ) : (
                   <>
-                    <Text style={styles.submitBtnText}>{t('publishProject')}</Text>
+                    <Text style={styles.submitBtnText}>Publish</Text>
                     <Feather name="arrow-right" size={18} color={COLORS.white} style={{ marginLeft: 6 }} />
                   </>
                 )}

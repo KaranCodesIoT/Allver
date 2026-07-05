@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TextInput, TouchableOpacity, Dimensions, Platform, Alert, ActivityIndicator, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import { Feather, FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -40,6 +41,9 @@ export default function ProjectDetailScreen() {
   const [bidCost, setBidCost] = useState('');
   const [bidDuration, setBidDuration] = useState('');
   const [bidProposal, setBidProposal] = useState('');
+  const [siteVisitRequired, setSiteVisitRequired] = useState(false);
+  const [portfolioMedia, setPortfolioMedia] = useState<string[]>([]);
+  const [isUploadingPortfolio, setIsUploadingPortfolio] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -104,6 +108,65 @@ export default function ProjectDetailScreen() {
     checkExisting();
   }, [project, currentUser]);
 
+  const handleSelectPortfolio = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Please grant library permissions to upload media.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images', 'videos'],
+      allowsMultipleSelection: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setIsUploadingPortfolio(true);
+      try {
+        const urls: string[] = [];
+        for (const asset of result.assets) {
+          const formData = new FormData();
+          const uri = asset.uri;
+          let name = asset.fileName || uri.split('/').pop() || 'upload.jpg';
+          name = name.split('?')[0].split('#')[0];
+
+          let fileType = asset.mimeType;
+          if (!fileType) {
+            const match = /\.(\w+)$/.exec(name);
+            const ext = match ? match[1].toLowerCase() : 'jpg';
+            fileType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+          }
+
+          formData.append('image', { uri: uri, name, type: fileType } as any);
+
+          const res = await fetch(`${BACKEND_URL}/api/upload`, {
+            method: 'POST',
+            body: formData,
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.url) urls.push(data.url);
+          }
+        }
+        if (urls.length > 0) {
+          setPortfolioMedia(prev => [...prev, ...urls]);
+        } else {
+          Alert.alert('Upload Failed', 'Failed to upload media to the server.');
+        }
+      } catch (err) {
+        console.error('Portfolio upload error:', err);
+        Alert.alert('Upload Error', 'An error occurred while uploading portfolio.');
+      } finally {
+        setIsUploadingPortfolio(false);
+      }
+    }
+  };
+
+  const removePortfolioItem = (index: number) => {
+    setPortfolioMedia(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleApplySubmit = async () => {
     if (!bidCost.trim() || !bidDuration.trim() || !bidProposal.trim()) {
       Alert.alert('Required Fields', 'Please fill out all bid details.');
@@ -113,7 +176,6 @@ export default function ProjectDetailScreen() {
     // Parse cost value to numeric
     const costStr = bidCost.trim().replace(/[^0-9.]/g, '');
     let costValue = parseFloat(costStr) || 0;
-    // If user entered in lakhs like "11.8" treat as lakhs
     if (costValue < 1000) costValue = costValue * 100000;
 
     const durationDays = parseInt(bidDuration.trim()) || 0;
@@ -128,9 +190,11 @@ export default function ProjectDetailScreen() {
           professional: currentUser?._id,
           cost: `₹${bidCost.trim()}`,
           costValue,
-          duration: `${bidDuration.trim()} Days`,
+          duration: `${bidDuration.trim()}`,
           durationDays,
           proposal: bidProposal.trim(),
+          siteVisitRequired,
+          portfolioAttachments: portfolioMedia
         }),
       });
 
@@ -143,6 +207,8 @@ export default function ProjectDetailScreen() {
           setBidCost('');
           setBidDuration('');
           setBidProposal('');
+          setSiteVisitRequired(false);
+          setPortfolioMedia([]);
           router.push('/');
         }, 2500);
       } else {
@@ -419,12 +485,12 @@ export default function ProjectDetailScreen() {
                 <Text style={styles.modalProjectTitle}>{project.title}</Text>
                 
                 {/* Cost Bid */}
-                <Text style={styles.label}>Your Estimated Cost (INR)</Text>
+                <Text style={styles.label}>Your Quotation (₹)</Text>
                 <View style={styles.inputWrapper}>
                   <Text style={styles.currencySymbol}>₹</Text>
                   <TextInput
                     style={styles.inputWithIcon}
-                    placeholder="e.g. 11.8L"
+                    placeholder="Enter your estimated quotation"
                     placeholderTextColor={COLORS.textMuted}
                     value={bidCost}
                     onChangeText={setBidCost}
@@ -432,30 +498,82 @@ export default function ProjectDetailScreen() {
                 </View>
 
                 {/* Duration proposed */}
-                <Text style={styles.label}>Proposed Duration (Days)</Text>
+                <Text style={styles.label}>Estimated Completion Time</Text>
                 <View style={styles.inputWrapper}>
                   <Feather name="clock" size={16} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.inputWithIcon}
-                    placeholder="e.g. 75"
+                    placeholder="e.g. 30 Days"
                     placeholderTextColor={COLORS.textMuted}
-                    keyboardType="numeric"
                     value={bidDuration}
                     onChangeText={setBidDuration}
                   />
                 </View>
 
                 {/* Cover letter / proposal */}
-                <Text style={styles.label}>Proposal Message & Experience</Text>
+                <Text style={styles.label}>Proposal Message</Text>
                 <TextInput
                   style={[styles.input, styles.textArea]}
-                  placeholder="Outline your past project experience, availability, and specific solutions for this job..."
+                  placeholder="Introduce yourself, explain why you're suitable for this project, mention similar work you've completed, and include any important details."
                   placeholderTextColor={COLORS.textMuted}
                   multiline={true}
                   numberOfLines={4}
                   value={bidProposal}
                   onChangeText={setBidProposal}
                 />
+
+                {/* Site Visit Checkbox */}
+                <Text style={styles.label}>Site Visit</Text>
+                <TouchableOpacity 
+                  style={styles.checkboxRow} 
+                  onPress={() => setSiteVisitRequired(!siteVisitRequired)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.checkbox, siteVisitRequired && styles.checkboxChecked]}>
+                    {siteVisitRequired && <Feather name="check" size={12} color={COLORS.white} />}
+                  </View>
+                  <Text style={styles.checkboxLabel}>I would like to inspect the site before confirming the final quotation.</Text>
+                </TouchableOpacity>
+
+                {/* Attach Portfolio */}
+                <Text style={styles.label}>Attach Portfolio <Text style={{ fontWeight: '400', color: COLORS.textMuted }}>(Optional)</Text></Text>
+                <TouchableOpacity 
+                  style={styles.attachBtn} 
+                  onPress={handleSelectPortfolio}
+                  activeOpacity={0.8}
+                  disabled={isUploadingPortfolio}
+                >
+                  {isUploadingPortfolio ? (
+                    <ActivityIndicator size="small" color={COLORS.purple} />
+                  ) : (
+                    <>
+                      <Feather name="paperclip" size={16} color={COLORS.purple} style={{ marginRight: 6 }} />
+                      <Text style={styles.attachBtnText}>Attach Photos/Videos</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                {portfolioMedia.length > 0 && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.portfolioScroll} style={{ marginTop: 8 }}>
+                    {portfolioMedia.map((uri, index) => {
+                      const isVideo = uri.toLowerCase().endsWith('.mp4') || uri.toLowerCase().endsWith('.mov') || uri.toLowerCase().endsWith('.avi');
+                      return (
+                        <View key={index} style={styles.portfolioPreviewWrap}>
+                          {isVideo ? (
+                            <View style={[styles.portfolioPreview, { backgroundColor: '#334155', justifyContent: 'center', alignItems: 'center' }]}>
+                              <Feather name="video" size={18} color={COLORS.white} />
+                            </View>
+                          ) : (
+                            <Image source={{ uri }} style={styles.portfolioPreview} contentFit="cover" />
+                          )}
+                          <TouchableOpacity style={styles.removePortfolioBtn} onPress={() => removePortfolioItem(index)}>
+                            <Feather name="x" size={10} color={COLORS.white} />
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
+                )}
 
                 {/* Submit button */}
                 <TouchableOpacity 
@@ -468,7 +586,7 @@ export default function ProjectDetailScreen() {
                     <ActivityIndicator size="small" color={COLORS.white} />
                   ) : (
                     <>
-                      <Text style={styles.submitBtnText}>Submit Bid Application</Text>
+                      <Text style={styles.submitBtnText}>Submit Proposal</Text>
                       <Feather name="arrow-right" size={16} color={COLORS.white} style={{ marginLeft: 6 }} />
                     </>
                   )}
@@ -648,4 +766,14 @@ const styles = StyleSheet.create({
   },
   successTitle: { fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 10 },
   successSubtitle: { fontSize: 13, color: COLORS.textMuted, textAlign: 'center', lineHeight: 18 },
+  checkboxRow: { flexDirection: 'row', alignItems: 'center', marginTop: 16, gap: 10 },
+  checkbox: { width: 20, height: 20, borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 4, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.bgLight },
+  checkboxChecked: { backgroundColor: COLORS.purple, borderColor: COLORS.purple },
+  checkboxLabel: { flex: 1, fontSize: 13, color: COLORS.textDark, lineHeight: 18 },
+  attachBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderStyle: 'dashed', borderColor: COLORS.purple, borderRadius: 8, paddingVertical: 12, backgroundColor: COLORS.purpleLight + '22', marginTop: 8 },
+  attachBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.purple },
+  portfolioScroll: { gap: 8 },
+  portfolioPreviewWrap: { position: 'relative', width: 60, height: 60, borderRadius: 6, overflow: 'hidden' },
+  portfolioPreview: { width: '100%', height: '100%' },
+  removePortfolioBtn: { position: 'absolute', top: 2, right: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: 'rgba(0, 0, 0, 0.65)', justifyContent: 'center', alignItems: 'center' },
 });

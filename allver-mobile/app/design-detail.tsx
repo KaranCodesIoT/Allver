@@ -6,6 +6,7 @@ import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { Video, ResizeMode } from 'expo-av';
+import SocketService from '../utils/SocketService';
 
 const { width } = Dimensions.get('window');
 
@@ -203,10 +204,23 @@ export default function DesignDetailScreen() {
   // Edit states for architect
   const [localTitle, setLocalTitle] = useState(title);
   const [localDescription, setLocalDescription] = useState(description);
-  const [civilCost, setCivilCost] = useState(initialQuotation?.civilStructure || '');
-  const [flooringCost, setFlooringCost] = useState(initialQuotation?.flooringTiling || '');
-  const [electricalCost, setElectricalCost] = useState(initialQuotation?.electricalPlumbing || '');
-  const [modularCost, setModularCost] = useState(initialQuotation?.modularWoodwork || '');
+  
+  const [costItems, setCostItems] = useState<{ category: string; cost: string }[]>(() => {
+    let items: { category: string; cost: string }[] = [];
+    if (initialQuotation) {
+      if (Array.isArray(initialQuotation)) {
+        items = initialQuotation;
+      } else if (typeof initialQuotation === 'object') {
+        const q = initialQuotation;
+        if (q.civilStructure) items.push({ category: 'Civil & Structure', cost: q.civilStructure });
+        if (q.flooringTiling) items.push({ category: 'Flooring & Tiling', cost: q.flooringTiling });
+        if (q.electricalPlumbing) items.push({ category: 'Electrical & Plumbing', cost: q.electricalPlumbing });
+        if (q.modularWoodwork) items.push({ category: 'Modular Woodwork', cost: q.modularWoodwork });
+      }
+    }
+    return items;
+  });
+  const [categoryInput, setCategoryInput] = useState('');
 
   useEffect(() => {
     setLocalTitle(title);
@@ -220,7 +234,7 @@ export default function DesignDetailScreen() {
   const isOwner = currentUser && currentUser._id === authorId;
 
   // Dynamic visible tabs list based on actual content
-  const hasQuotation = !!(civilCost || flooringCost || electricalCost || modularCost);
+  const hasQuotation = costItems.length > 0;
   const hasVideo = imagesList.some(url => url.toLowerCase().endsWith('.mp4') || url.toLowerCase().endsWith('.mov') || url.toLowerCase().endsWith('.avi'));
 
   const visibleTabs: string[] = ['photos'];
@@ -231,7 +245,7 @@ export default function DesignDetailScreen() {
     if (!visibleTabs.includes(activeTab)) {
       setActiveTab('photos');
     }
-  }, [civilCost, flooringCost, electricalCost, modularCost]);
+  }, [costItems]);
 
   // Fetch latest post data and user saved state from backend on mount
   useEffect(() => {
@@ -262,10 +276,17 @@ export default function DesignDetailScreen() {
               setAuthorExperience(p.creator.experience || '5+ Years');
             }
             if (p.quotation) {
-              setCivilCost(p.quotation.civilStructure || '');
-              setFlooringCost(p.quotation.flooringTiling || '');
-              setElectricalCost(p.quotation.electricalPlumbing || '');
-              setModularCost(p.quotation.modularWoodwork || '');
+              let items: { category: string; cost: string }[] = [];
+              if (Array.isArray(p.quotation)) {
+                items = p.quotation;
+              } else if (typeof p.quotation === 'object') {
+                const q = p.quotation;
+                if (q.civilStructure) items.push({ category: 'Civil & Structure', cost: q.civilStructure });
+                if (q.flooringTiling) items.push({ category: 'Flooring & Tiling', cost: q.flooringTiling });
+                if (q.electricalPlumbing) items.push({ category: 'Electrical & Plumbing', cost: q.electricalPlumbing });
+                if (q.modularWoodwork) items.push({ category: 'Modular Woodwork', cost: q.modularWoodwork });
+              }
+              setCostItems(items);
             }
 
             // Check if current user liked
@@ -292,6 +313,33 @@ export default function DesignDetailScreen() {
     if (designId && currentUser) {
       fetchPostAndUserState();
     }
+  }, [designId, currentUser]);
+
+  // Handle real-time updates for design post likes and comments via global socket
+  useEffect(() => {
+    if (!designId) return;
+
+    const handlePostUpdated = (data: any) => {
+      if (data && data.postId === designId) {
+        console.log('[DesignDetail] Post updated via socket:', data);
+        if (data.likes !== undefined) setLikesCount(data.likes);
+        if (data.dislikedBy !== undefined) setDislikesCount(data.dislikedBy.length);
+        if (data.comments !== undefined) setCommentsCount(data.comments);
+        if (data.commentsList !== undefined) setCommentsList(data.commentsList);
+        
+        // Also update liked/disliked states for currentUser
+        if (currentUser) {
+          const likedByArray = data.likedBy || [];
+          setHasLiked(likedByArray.includes(currentUser._id));
+        }
+      }
+    };
+
+    SocketService.on('post_updated', handlePostUpdated);
+
+    return () => {
+      SocketService.off('post_updated', handlePostUpdated);
+    };
   }, [designId, currentUser]);
 
   useEffect(() => {
@@ -422,12 +470,7 @@ export default function DesignDetailScreen() {
         body: JSON.stringify({
           title: localTitle,
           description: localDescription,
-          quotation: {
-            civilStructure: civilCost,
-            flooringTiling: flooringCost,
-            electricalPlumbing: electricalCost,
-            modularWoodwork: modularCost,
-          }
+          quotation: costItems
         }),
       });
 
@@ -816,48 +859,79 @@ export default function DesignDetailScreen() {
 
             {isEditing ? (
               <View style={{ gap: 10 }}>
-                <View style={styles.editQuoteRow}>
-                  <Text style={styles.editQuoteLabel}>Civil & Structure</Text>
-                  <TextInput
-                    style={styles.editQuoteInput}
-                    value={civilCost}
-                    onChangeText={setCivilCost}
-                    placeholder="e.g. 4.5 L - 5.8 L"
-                    placeholderTextColor={COLORS.textMuted}
-                  />
+                {/* Input to Add Category */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <TextInput
+                      style={{
+                        height: 40,
+                        borderWidth: 1,
+                        borderColor: COLORS.border,
+                        borderRadius: 6,
+                        paddingHorizontal: 10,
+                        fontSize: 13,
+                        color: COLORS.textDark,
+                        backgroundColor: COLORS.white,
+                      }}
+                      placeholder="Type category (e.g. Landscape, Lighting)"
+                      placeholderTextColor={COLORS.textMuted}
+                      value={categoryInput}
+                      onChangeText={setCategoryInput}
+                      onSubmitEditing={() => {
+                        const cat = categoryInput.trim();
+                        if (cat && !costItems.some(i => i.category.toLowerCase() === cat.toLowerCase())) {
+                          setCostItems([...costItems, { category: cat, cost: '' }]);
+                          setCategoryInput('');
+                        }
+                      }}
+                    />
+                  </View>
+                  <TouchableOpacity 
+                    style={{
+                      backgroundColor: COLORS.green,
+                      paddingHorizontal: 14,
+                      height: 40,
+                      borderRadius: 6,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                    onPress={() => {
+                      const cat = categoryInput.trim();
+                      if (cat && !costItems.some(i => i.category.toLowerCase() === cat.toLowerCase())) {
+                        setCostItems([...costItems, { category: cat, cost: '' }]);
+                        setCategoryInput('');
+                      }
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>+ Add</Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.editQuoteRow}>
-                  <Text style={styles.editQuoteLabel}>Flooring & Tiling</Text>
-                  <TextInput
-                    style={styles.editQuoteInput}
-                    value={flooringCost}
-                    onChangeText={setFlooringCost}
-                    placeholder="e.g. 1.2 L - 1.8 L"
-                    placeholderTextColor={COLORS.textMuted}
-                  />
-                </View>
-                <View style={styles.editQuoteRow}>
-                  <Text style={styles.editQuoteLabel}>Electrical & Plumbing</Text>
-                  <TextInput
-                    style={styles.editQuoteInput}
-                    value={electricalCost}
-                    onChangeText={setElectricalCost}
-                    placeholder="e.g. 0.8 L - 1.2 L"
-                    placeholderTextColor={COLORS.textMuted}
-                  />
-                </View>
-                <View style={styles.editQuoteRow}>
-                  <Text style={styles.editQuoteLabel}>Modular Woodwork</Text>
-                  <TextInput
-                    style={styles.editQuoteInput}
-                    value={modularCost}
-                    onChangeText={setModularCost}
-                    placeholder="e.g. 2.5 L - 3.8 L"
-                    placeholderTextColor={COLORS.textMuted}
-                  />
-                </View>
+
+                {/* Edit dynamic items */}
+                {costItems.map((item, index) => (
+                  <View key={item.category + '_' + index} style={{ gap: 4, marginBottom: 8 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={styles.editQuoteLabel}>{item.category}</Text>
+                      <TouchableOpacity onPress={() => setCostItems(costItems.filter((_, idx) => idx !== index))}>
+                        <Feather name="trash-2" size={14} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      style={styles.editQuoteInput}
+                      value={item.cost}
+                      onChangeText={(txt) => {
+                        const updated = [...costItems];
+                        updated[index].cost = txt;
+                        setCostItems(updated);
+                      }}
+                      placeholder="e.g. 4.5 L - 5.8 L"
+                      placeholderTextColor={COLORS.textMuted}
+                    />
+                  </View>
+                ))}
               </View>
-            ) : (!civilCost && !flooringCost && !electricalCost && !modularCost) ? (
+            ) : costItems.length === 0 ? (
               <View style={styles.noQuotationBox}>
                 <Feather name="alert-circle" size={26} color={COLORS.textMuted} style={{ marginBottom: 6 }} />
                 <Text style={styles.noQuotationText}>No estimated cost quotation provided for this design.</Text>
@@ -869,30 +943,12 @@ export default function DesignDetailScreen() {
               </View>
             ) : (
               <View>
-                {civilCost ? (
-                  <View style={styles.quoteRow}>
-                    <Text style={styles.quoteLabel}>Civil & Structure</Text>
-                    <Text style={styles.quoteValue}>₹{civilCost}</Text>
+                {costItems.map((item, index) => (
+                  <View key={item.category + '_' + index} style={styles.quoteRow}>
+                    <Text style={styles.quoteLabel}>{item.category}</Text>
+                    <Text style={styles.quoteValue}>₹{item.cost}</Text>
                   </View>
-                ) : null}
-                {flooringCost ? (
-                  <View style={styles.quoteRow}>
-                    <Text style={styles.quoteLabel}>Flooring & Tiling</Text>
-                    <Text style={styles.quoteValue}>₹{flooringCost}</Text>
-                  </View>
-                ) : null}
-                {electricalCost ? (
-                  <View style={styles.quoteRow}>
-                    <Text style={styles.quoteLabel}>Electrical & Plumbing</Text>
-                    <Text style={styles.quoteValue}>₹{electricalCost}</Text>
-                  </View>
-                ) : null}
-                {modularCost ? (
-                  <View style={styles.quoteRow}>
-                    <Text style={styles.quoteLabel}>Modular Woodwork</Text>
-                    <Text style={styles.quoteValue}>₹{modularCost}</Text>
-                  </View>
-                ) : null}
+                ))}
               </View>
             )}
           </View>
@@ -925,49 +981,86 @@ export default function DesignDetailScreen() {
                 <Text style={styles.editQuotationSectionTitle}>Cost Quotation (Optional)</Text>
                 <Text style={styles.editQuotationSectionSub}>Provide estimated price ranges for this design layout (e.g. 4.5 L - 5.8 L)</Text>
                 
-                <View style={styles.editQuoteRowInline}>
-                  <Text style={styles.editQuoteLabelInline}>Civil & Structure</Text>
-                  <TextInput
-                    style={styles.editQuoteInputInline}
-                    value={civilCost}
-                    onChangeText={setCivilCost}
-                    placeholder="e.g. 4.5 L - 5.8 L"
-                    placeholderTextColor={COLORS.textMuted}
-                  />
+                {/* Input to Add Category */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <TextInput
+                      style={{
+                        height: 36,
+                        borderWidth: 1,
+                        borderColor: COLORS.border,
+                        borderRadius: 6,
+                        paddingHorizontal: 10,
+                        fontSize: 12,
+                        color: COLORS.textDark,
+                        backgroundColor: COLORS.white,
+                      }}
+                      placeholder="Type category (e.g. Landscape, Lighting)"
+                      placeholderTextColor={COLORS.textMuted}
+                      value={categoryInput}
+                      onChangeText={setCategoryInput}
+                      onSubmitEditing={() => {
+                        const cat = categoryInput.trim();
+                        if (cat && !costItems.some(i => i.category.toLowerCase() === cat.toLowerCase())) {
+                          setCostItems([...costItems, { category: cat, cost: '' }]);
+                          setCategoryInput('');
+                        }
+                      }}
+                    />
+                  </View>
+                  <TouchableOpacity 
+                    style={{
+                      backgroundColor: COLORS.green,
+                      paddingHorizontal: 12,
+                      height: 36,
+                      borderRadius: 6,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                    onPress={() => {
+                      const cat = categoryInput.trim();
+                      if (cat && !costItems.some(i => i.category.toLowerCase() === cat.toLowerCase())) {
+                        setCostItems([...costItems, { category: cat, cost: '' }]);
+                        setCategoryInput('');
+                      }
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 12 }}>+ Add</Text>
+                  </TouchableOpacity>
                 </View>
 
-                <View style={styles.editQuoteRowInline}>
-                  <Text style={styles.editQuoteLabelInline}>Flooring & Tiling</Text>
-                  <TextInput
-                    style={styles.editQuoteInputInline}
-                    value={flooringCost}
-                    onChangeText={setFlooringCost}
-                    placeholder="e.g. 1.2 L - 1.8 L"
-                    placeholderTextColor={COLORS.textMuted}
-                  />
-                </View>
-
-                <View style={styles.editQuoteRowInline}>
-                  <Text style={styles.editQuoteLabelInline}>Electrical & Plumbing</Text>
-                  <TextInput
-                    style={styles.editQuoteInputInline}
-                    value={electricalCost}
-                    onChangeText={setElectricalCost}
-                    placeholder="e.g. 0.8 L - 1.2 L"
-                    placeholderTextColor={COLORS.textMuted}
-                  />
-                </View>
-
-                <View style={styles.editQuoteRowInline}>
-                  <Text style={styles.editQuoteLabelInline}>Modular Woodwork</Text>
-                  <TextInput
-                    style={styles.editQuoteInputInline}
-                    value={modularCost}
-                    onChangeText={setModularCost}
-                    placeholder="e.g. 2.5 L - 3.8 L"
-                    placeholderTextColor={COLORS.textMuted}
-                  />
-                </View>
+                {/* Edit dynamic items inline */}
+                {costItems.map((item, index) => (
+                  <View key={item.category + '_' + index} style={{ gap: 4, marginBottom: 8 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textDark }}>{item.category}</Text>
+                      <TouchableOpacity onPress={() => setCostItems(costItems.filter((_, idx) => idx !== index))}>
+                        <Feather name="trash-2" size={12} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      style={{
+                        height: 36,
+                        borderWidth: 1,
+                        borderColor: COLORS.border,
+                        borderRadius: 6,
+                        paddingHorizontal: 8,
+                        fontSize: 12,
+                        color: COLORS.textDark,
+                        backgroundColor: COLORS.white,
+                      }}
+                      value={item.cost}
+                      onChangeText={(txt) => {
+                        const updated = [...costItems];
+                        updated[index].cost = txt;
+                        setCostItems(updated);
+                      }}
+                      placeholder="e.g. 4.5 L - 5.8 L"
+                      placeholderTextColor={COLORS.textMuted}
+                    />
+                  </View>
+                ))}
               </View>
             </View>
           ) : (

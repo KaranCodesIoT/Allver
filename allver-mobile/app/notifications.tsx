@@ -6,6 +6,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
+import SocketService from '../utils/SocketService';
 
 const COLORS = {
   green: '#1BC47D', // Green accent
@@ -42,6 +43,7 @@ export default function NotificationsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [userRequests, setUserRequests] = useState<any[]>([]);
 
   // Load current user
   useEffect(() => {
@@ -59,21 +61,105 @@ export default function NotificationsScreen() {
     setCurrentUser(user);
   }, []);
 
+  const fetchUserRequests = async () => {
+    let user = currentUser || (global as any).currentUser;
+    if (!user?._id) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/contract-requests/user/${user._id}`);
+      const data = await res.json();
+      if (data.requests) {
+        setUserRequests(data.requests);
+      }
+    } catch (err) {
+      console.error("Error fetching requests for notifications:", err);
+    }
+  };
+
+  const getMatchingRequest = (notifText: string) => {
+    if (!notifText.includes('Project Invitation')) return null;
+    const secondLine = notifText.split('\n')[1] || '';
+    const titleHint = (secondLine.split('invited you to the project: ')[1] || '').split('\n')[0] || '';
+    if (!titleHint) return null;
+    
+    return userRequests.find(r => 
+      r.title.trim().toLowerCase() === titleHint.trim().toLowerCase() &&
+      r.status === 'Pending'
+    );
+  };
+
+  const handleInvitationResponse = async (requestId: string, status: 'Accepted' | 'Rejected') => {
+    if (!currentUser?._id) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/contract-requests/${requestId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status,
+          professional: currentUser._id
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (status === 'Accepted') {
+          Alert.alert(
+            'Success!',
+            'You have accepted the project invitation. A workspace has been created.',
+            [
+              {
+                text: 'Go to Workspace',
+                onPress: () => {
+                  if (data.workspace && data.workspace._id) {
+                    router.push({
+                      pathname: '/project-progress',
+                      params: { workspaceId: data.workspace._id }
+                    });
+                  } else {
+                    router.push('/(tabs)');
+                  }
+                }
+              },
+              { text: 'OK' }
+            ]
+          );
+        } else {
+          Alert.alert('Rejected', 'You have rejected the project invitation.');
+        }
+        // Refresh notifications & requests
+        fetchNotifications(false);
+        fetchUserRequests();
+      } else {
+        const err = await res.json();
+        Alert.alert('Error', err.message || 'Failed to update invitation status.');
+      }
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'Network error occurred.');
+    }
+  };
+
   // Fetch notifications
   const fetchNotifications = async (showLoading = true) => {
-    if (!currentUser?._id) return;
+    let user = currentUser || (global as any).currentUser;
+    if (!user?._id) return;
     if (showLoading) setIsLoading(true);
     try {
-      const response = await fetch(`${BACKEND_URL}/api/notifications/${currentUser._id}`);
+      const response = await fetch(`${BACKEND_URL}/api/notifications/${user._id}`);
       const data = await response.json();
       if (data.success && data.notifications) {
-        let filtered = data.notifications;
-        if (currentUser?.role === 'Labour') {
-          filtered = filtered.filter((n: any) => {
-            const isNewProject = n.text && (n.text.includes('New Project') || n.text.includes('New Project Posted'));
-            return !isNewProject;
-          });
-        }
+        const filtered = (data.notifications || []).filter((n: any) => {
+          const text = n.text || '';
+          // Always show direct project invitations and proposal acceptances / rejections in the main feed
+          if (text.includes('Project Invitation') || text.includes('Proposal Accepted') || text.includes('Bid Not Selected') || text.includes('Accepted') || text.includes('accepted')) {
+            return true;
+          }
+          const isJobRelated = text.includes('New Project') || 
+                             text.includes('New Project Posted') || 
+                             text.includes('[View Project]') ||
+                             text.includes('Applied') || 
+                             text.includes('[View Application]') || 
+                             text.includes('[View Invitation]');
+          return !isJobRelated;
+        });
         setNotifications(filtered);
       }
     } catch (error) {
@@ -87,14 +173,34 @@ export default function NotificationsScreen() {
   useEffect(() => {
     if (currentUser?._id) {
       fetchNotifications(true);
+      fetchUserRequests();
       // Mark notifications as read when entering the screen
       markAllAsRead();
     }
   }, [currentUser]);
 
+  // Handle real-time incoming notifications
+  useEffect(() => {
+    if (!currentUser?._id) return;
+
+    const handleNewNotification = (data: any) => {
+      console.log('[Notifications] Real-time notification received:', data);
+      // Prepend or refetch dynamically
+      fetchNotifications(false);
+      fetchUserRequests();
+    };
+
+    SocketService.on('new_notification', handleNewNotification);
+
+    return () => {
+      SocketService.off('new_notification', handleNewNotification);
+    };
+  }, [currentUser?._id]);
+
   const handleRefresh = () => {
     setIsRefreshing(true);
     fetchNotifications(false);
+    fetchUserRequests();
   };
 
   const markAllAsRead = async () => {
@@ -259,6 +365,36 @@ export default function NotificationsScreen() {
                     </Text>
                   </TouchableOpacity>
                 )}
+
+                {/* Direct Invitation Actions */}
+                {(() => {
+                  const req = getMatchingRequest(item.text);
+                  if (!req) return null;
+                  return (
+                    <View style={styles.invitationActionsRow}>
+                      <TouchableOpacity
+                        style={[styles.actionBtn, styles.acceptBtn]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleInvitationResponse(req._id, 'Accepted');
+                        }}
+                      >
+                        <Feather name="check" size={12} color="#FFF" style={{ marginRight: 4 }} />
+                        <Text style={styles.actionBtnText}>Accept</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionBtn, styles.rejectBtn]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleInvitationResponse(req._id, 'Rejected');
+                        }}
+                      >
+                        <Feather name="x" size={12} color="#FFF" style={{ marginRight: 4 }} />
+                        <Text style={styles.actionBtnText}>Reject</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })()}
               </View>
 
               {!item.isRead && <View style={styles.unreadDot} />}
@@ -462,5 +598,30 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
+  },
+  invitationActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    minWidth: 80,
+  },
+  acceptBtn: {
+    backgroundColor: '#10B981',
+  },
+  rejectBtn: {
+    backgroundColor: '#EF4444',
+  },
+  actionBtnText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

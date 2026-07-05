@@ -8,6 +8,7 @@ import { Video, ResizeMode } from 'expo-av';
 import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
 import NotificationBell from '../../components/NotificationBell';
 import { useTranslation } from '../../utils/i18n';
+import SocketService from '../../utils/SocketService';
 
 const { width } = Dimensions.get('window');
 
@@ -248,6 +249,48 @@ export default function DiscoverScreen() {
       fetchLivePosts();
     }
   }, [isFocused]);
+
+  // Handle real-time post likes and comments via global socket
+  useEffect(() => {
+    const handlePostUpdated = (data: any) => {
+      if (!data || !data.postId) return;
+      console.log('[Feed] Post updated via socket:', data);
+
+      setPosts((prevPosts) =>
+        prevPosts.map((post) => {
+          if (post.id === data.postId) {
+            const currentUserId = currentUser?._id || (global as any).currentUser?._id;
+            const likedByArray = data.likedBy || [];
+            const dislikedByArray = data.dislikedBy || [];
+            
+            const isLiked = currentUserId ? likedByArray.includes(currentUserId) : false;
+            const isDisliked = currentUserId ? dislikedByArray.includes(currentUserId) : false;
+
+            return {
+              ...post,
+              likes: data.likes ?? post.likes,
+              comments: data.comments ?? post.comments,
+              hasLiked: isLiked,
+              commentsList: data.commentsList ? data.commentsList.map((c: any) => ({
+                user: typeof c.user === 'object' ? c.user?._id : c.user,
+                userName: c.userName,
+                userAvatar: c.userAvatar,
+                text: c.text,
+                createdAt: c.createdAt
+              })) : post.commentsList
+            };
+          }
+          return post;
+        })
+      );
+    };
+
+    SocketService.on('post_updated', handlePostUpdated);
+
+    return () => {
+      SocketService.off('post_updated', handlePostUpdated);
+    };
+  }, [currentUser?._id]);
 
   const onRefresh = async () => {
     setRefreshing(true);

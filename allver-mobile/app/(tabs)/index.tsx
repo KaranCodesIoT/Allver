@@ -9,6 +9,9 @@ import { Image } from 'expo-image';
 import NotificationBell from '../../components/NotificationBell';
 import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
 import { Fonts } from '../../constants/theme';
+import SocketService from '../../utils/SocketService';
+import { useUnreadMessages } from '../../context/UnreadMessageContext';
+import { useUnreadActivities } from '../../context/UnreadActivityContext';
 
 const { width } = Dimensions.get('window');
 
@@ -133,150 +136,212 @@ export default function DashboardScreen() {
   const [featuredLoading, setFeaturedLoading] = useState(true);
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
   const [activitiesLoading, setActivitiesLoading] = useState(true);
-  const [unreadMsgCount, setUnreadMsgCount] = useState(0);
+  const { unreadMsgCount } = useUnreadMessages();
+  const { unreadActivityCount, refreshUnreadActivityCount } = useUnreadActivities();
+  const [directInvitations, setDirectInvitations] = useState<any[]>([]);
 
-
-  // Fetch unread message count from backend
-  const fetchUnreadMsgCount = useCallback(async () => {
+  const handleInvitationResponse = async (requestId: string, status: 'Accepted' | 'Rejected') => {
     if (!currentUser?._id) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/conversations/unread-total/${currentUser._id}`);
-      const data = await res.json();
-      if (data.success) {
-        setUnreadMsgCount(data.totalUnread || 0);
+      const res = await fetch(`${BACKEND_URL}/api/contract-requests/${requestId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status,
+          professional: currentUser._id
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (status === 'Accepted') {
+          Alert.alert(
+            'Success!',
+            'You have accepted the project invitation. A workspace has been created.',
+            [
+              {
+                text: 'Go to Workspace',
+                onPress: () => {
+                  if (data.workspace && data.workspace._id) {
+                    router.push({
+                      pathname: '/project-progress',
+                      params: { workspaceId: data.workspace._id }
+                    });
+                  }
+                }
+              },
+              { text: 'OK' }
+            ]
+          );
+        } else {
+          Alert.alert('Rejected', 'You have rejected the project invitation.');
+        }
+        // Refresh data
+        fetchRequests();
+      } else {
+        const err = await res.json();
+        Alert.alert('Error', err.message || 'Failed to update invitation status.');
       }
     } catch (err) {
-      console.log('Error fetching unread msg count:', err);
+      console.error(err);
+      Alert.alert('Error', 'Network error occurred.');
     }
-  }, [currentUser?._id]);
+  };
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchUnreadMsgCount();
-    }, [fetchUnreadMsgCount])
-  );
 
-  useEffect(() => {
-    fetchUnreadMsgCount();
-    const interval = setInterval(fetchUnreadMsgCount, 15000);
-    return () => clearInterval(interval);
-  }, [fetchUnreadMsgCount]);
+  // Fetch unread project notifications count from backend
+  const fetchUnreadJobsCount = useCallback(async () => {
+    refreshUnreadActivityCount();
+  }, [refreshUnreadActivityCount]);
 
   // Fetch client requests or professional projects
-  useEffect(() => {
+  const fetchRequests = useCallback(async () => {
     if (!currentUser?._id) return;
-    const fetchRequests = async () => {
-      try {
-        if (currentUser.role === 'Client') {
-          const res = await fetch(`${BACKEND_URL}/api/contract-requests/user/${currentUser._id}`);
-          const data = await res.json();
+    try {
+      if (currentUser.role === 'Client') {
+        const res = await fetch(`${BACKEND_URL}/api/contract-requests/user/${currentUser._id}`);
+        const data = await res.json();
 
-          const wsRes = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${currentUser._id}`);
-          const wsData = await wsRes.json();
-          const workspaces = wsData.workspaces || [];
+        const wsRes = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${currentUser._id}`);
+        const wsData = await wsRes.json();
+        const workspaces = wsData.workspaces || [];
 
-          if (data.requests) {
-            const merged = data.requests.map((req: any) => {
-              const assocWorkspace = workspaces.find((w: any) => {
-                const wReqId = w.contractRequest?._id || w.contractRequest;
-                return wReqId && req._id && wReqId.toString() === req._id.toString();
-              });
-              let displayStatus = 'Hiring';
-              if (assocWorkspace) {
-                displayStatus = assocWorkspace.status === 'Completed' ? 'Completed' : assocWorkspace.status === 'Cancelled' ? 'Cancelled' : 'In Progress';
-              }
-              return {
-                ...req,
-                status: displayStatus,
-                workspaceId: assocWorkspace?._id || null,
-                updates: assocWorkspace?.updates || []
-              };
+        if (data.requests) {
+          const merged = data.requests.map((req: any) => {
+            const assocWorkspace = workspaces.find((w: any) => {
+              const wReqId = w.contractRequest?._id || w.contractRequest;
+              return wReqId && req._id && wReqId.toString() === req._id.toString();
             });
-
-            const sortedMerged = merged.sort((a: any, b: any) => {
-              const aFinished = a.status === 'Completed' || a.status === 'Cancelled';
-              const bFinished = b.status === 'Completed' || b.status === 'Cancelled';
-              if (aFinished && !bFinished) return 1;
-              if (!aFinished && bFinished) return -1;
-              return 0;
-            });
-            setClientRequests(sortedMerged);
-          }
-        } else if (currentUser.role === 'Contractor' || currentUser.role === 'Architect' || currentUser.role === 'Labour') {
-          // Fetch workspaces where this professional/labour is assigned
-          const wsRes = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${currentUser._id}`);
-          const wsData = await wsRes.json();
-          const workspaces = wsData.workspaces || [];
-
-          const mapped = workspaces.map((w: any) => {
+            let displayStatus = 'Hiring';
+            if (assocWorkspace) {
+              displayStatus = assocWorkspace.status === 'Completed' ? 'Completed' : assocWorkspace.status === 'Cancelled' ? 'Cancelled' : 'In Progress';
+            }
             return {
-              _id: w._id,
-              title: w.title,
-              location: w.contractRequest?.location || 'Thane',
-              status: w.status === 'Completed' ? 'Completed' : w.status === 'Cancelled' ? 'Cancelled' : 'In Progress',
-              workspaceId: w._id,
-              timeline: w.contractRequest?.timeline || '20 Days',
-              description: w.contractRequest?.description || '',
-              budget: w.quotation?.totalCost ? `₹${w.quotation.totalCost.toLocaleString('en-IN')}` : '',
-              requirements: w.contractRequest?.requirements || [],
-              updates: w.updates || []
+              ...req,
+              status: displayStatus,
+              workspaceId: assocWorkspace?._id || null,
+              updates: assocWorkspace?.updates || []
             };
           });
 
-          // Fetch direct pending invitations
-          try {
-            const reqRes = await fetch(`${BACKEND_URL}/api/contract-requests/user/${currentUser._id}`);
-            const reqData = await reqRes.json();
-            if (reqData.requests) {
-              const pendingInvitations = reqData.requests.filter((r: any) => {
-                const isPending = r.status === 'Pending';
-                const isDirectInvitation = r.professional && 
-                  ((typeof r.professional === 'object' && r.professional._id && r.professional._id.toString() === currentUser._id.toString()) ||
-                   (typeof r.professional === 'string' && r.professional === currentUser._id.toString()));
-                return isPending && isDirectInvitation;
-              });
-
-              const mappedInvitations = pendingInvitations.map((inv: any) => {
-                const clientId = typeof inv.client === 'object' && inv.client._id ? inv.client._id : inv.client;
-                return {
-                  _id: inv._id,
-                  title: inv.title,
-                  location: inv.location,
-                  status: 'Invitation',
-                  workspaceId: null,
-                  clientId: clientId,
-                  timeline: inv.timeline || 'Not Specified',
-                  description: inv.description || '',
-                  budget: inv.budget || '',
-                  requirements: inv.requirements || [],
-                  updates: []
-                };
-              });
-
-              mapped.push(...mappedInvitations);
-            }
-          } catch (invErr) {
-            console.error('Error fetching invitations:', invErr);
-          }
-
-          const sortedMapped = mapped.sort((a: any, b: any) => {
+          const sortedMerged = merged.sort((a: any, b: any) => {
             const aFinished = a.status === 'Completed' || a.status === 'Cancelled';
             const bFinished = b.status === 'Completed' || b.status === 'Cancelled';
             if (aFinished && !bFinished) return 1;
             if (!aFinished && bFinished) return -1;
-            // Put invitations first
-            if (a.status === 'Invitation' && b.status !== 'Invitation') return -1;
-            if (a.status !== 'Invitation' && b.status === 'Invitation') return 1;
             return 0;
           });
-          setClientRequests(sortedMapped);
+          setClientRequests(sortedMerged);
         }
-      } catch (err) {
-        console.error('Error fetching projects:', err);
+      } else if (currentUser.role === 'Contractor' || currentUser.role === 'Architect' || currentUser.role === 'Labour') {
+        // Fetch workspaces where this professional/labour is assigned
+        const wsRes = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${currentUser._id}`);
+        const wsData = await wsRes.json();
+        const workspaces = wsData.workspaces || [];
+
+        const mapped = workspaces.map((w: any) => {
+          return {
+            _id: w._id,
+            title: w.title,
+            location: w.contractRequest?.location || 'Thane',
+            status: w.status === 'Completed' ? 'Completed' : w.status === 'Cancelled' ? 'Cancelled' : 'In Progress',
+            workspaceId: w._id,
+            timeline: w.contractRequest?.timeline || '20 Days',
+            description: w.contractRequest?.description || '',
+            budget: w.quotation?.totalCost ? `₹${w.quotation.totalCost.toLocaleString('en-IN')}` : '',
+            requirements: w.contractRequest?.requirements || [],
+            updates: w.updates || []
+          };
+        });
+
+        // Fetch direct pending invitations
+        try {
+          const reqRes = await fetch(`${BACKEND_URL}/api/contract-requests/user/${currentUser._id}`);
+          const reqData = await reqRes.json();
+          if (reqData.requests) {
+            const pendingInvitations = reqData.requests.filter((r: any) => {
+              const isPending = r.status === 'Pending';
+              const isDirectInvitation = r.professional && 
+                ((typeof r.professional === 'object' && r.professional._id && r.professional._id.toString() === currentUser._id.toString()) ||
+                 (typeof r.professional === 'string' && r.professional === currentUser._id.toString()));
+              return isPending && isDirectInvitation;
+            });
+            setDirectInvitations(pendingInvitations);
+
+            const mappedInvitations = pendingInvitations.map((inv: any) => {
+              const clientId = typeof inv.client === 'object' && inv.client._id ? inv.client._id : inv.client;
+              return {
+                _id: inv._id,
+                title: inv.title,
+                location: inv.location,
+                status: 'Invitation',
+                workspaceId: null,
+                clientId: clientId,
+                timeline: inv.timeline || 'Not Specified',
+                description: inv.description || '',
+                budget: inv.budget || '',
+                requirements: inv.requirements || [],
+                updates: []
+              };
+            });
+
+            mapped.push(...mappedInvitations);
+          }
+        } catch (invErr) {
+          console.error('Error fetching invitations:', invErr);
+        }
+
+        const sortedMapped = mapped.sort((a: any, b: any) => {
+          const aFinished = a.status === 'Completed' || a.status === 'Cancelled';
+          const bFinished = b.status === 'Completed' || b.status === 'Cancelled';
+          if (aFinished && !bFinished) return 1;
+          if (!aFinished && bFinished) return -1;
+          // Put invitations first
+          if (a.status === 'Invitation' && b.status !== 'Invitation') return -1;
+          if (a.status !== 'Invitation' && b.status === 'Invitation') return 1;
+          return 0;
+        });
+        setClientRequests(sortedMapped);
       }
-    };
-    fetchRequests();
+    } catch (err) {
+      console.error('Error fetching projects/requests:', err);
+    }
   }, [currentUser?._id, currentUser?.role]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchUnreadJobsCount();
+      fetchRequests();
+    }, [fetchUnreadJobsCount, fetchRequests])
+  );
+
+  useEffect(() => {
+    fetchUnreadJobsCount();
+    fetchRequests();
+  }, [fetchUnreadJobsCount, fetchRequests]);
+
+  // Handle real-time updates via Socket.IO
+  useEffect(() => {
+    if (!currentUser?._id) return;
+
+    const handleNotification = (data: any) => {
+      console.log('[Home] Real-time notification received:', data);
+      fetchUnreadJobsCount();
+      fetchRequests();
+    };
+
+    const handleWorkspaceUpdate = (data: any) => {
+      console.log('[Home] Real-time workspace update received:', data);
+      fetchRequests();
+    };
+
+    SocketService.on('new_notification', handleNotification);
+    SocketService.on('workspace_updated', handleWorkspaceUpdate);
+
+    return () => {
+      SocketService.off('new_notification', handleNotification);
+      SocketService.off('workspace_updated', handleWorkspaceUpdate);
+    };
+  }, [currentUser?._id, fetchUnreadJobsCount, fetchRequests]);
 
   // Fetch recent activities - also refresh on screen focus
   const fetchActivities = useCallback(async () => {
@@ -645,25 +710,80 @@ export default function DashboardScreen() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.avatarBtn}
-              onPress={() => router.push('/profile')}
-            >
-              {currentUser?.avatarUrl ? (
-                <Image 
-                  source={{ uri: resolveAvatarUrl(currentUser.avatarUrl) }} 
-                  style={styles.avatarImage} 
-                  contentFit="cover" 
-                />
-              ) : (
-                <View style={[styles.avatarImage, { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }]}>
-                  <Feather name="user" size={16} color="#94A3B8" />
-                </View>
-              )}
-            </TouchableOpacity>
+            {currentUser?.role === 'Labour' ? (
+              <TouchableOpacity 
+                style={styles.headerAvatarBtn}
+                onPress={() => router.push('/(tabs)/profile')}
+              >
+                {currentUser?.avatarUrl ? (
+                  <Image 
+                    source={{ uri: resolveAvatarUrl(currentUser.avatarUrl) }} 
+                    style={styles.headerAvatarImg} 
+                  />
+                ) : (
+                  <View style={[styles.headerAvatarImg, { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', borderColor: '#94A3B8' }]}>
+                    <Feather name="user" size={14} color={COLORS.textDark} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                style={styles.iconBadgeBtn}
+                onPress={() => router.push('/jobs')}
+              >
+                <Feather name="briefcase" size={20} color={COLORS.textDark} />
+                {unreadActivityCount > 0 && (
+                  <View style={styles.badgeCircle}>
+                    <Text style={styles.badgeText}>
+                      {unreadActivityCount > 99 ? '99+' : unreadActivityCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
+
+      {/* Floating Project Invitation Popups */}
+      {directInvitations.length > 0 && (
+        <View style={styles.floatingPopupContainer}>
+          {directInvitations.map((inv) => {
+            const clientName = inv.client?.fullName || 'Client';
+            return (
+              <View key={inv._id} style={styles.floatingPopupCard}>
+                <View style={styles.popupHeaderRow}>
+                  <View style={styles.popupTitleGroup}>
+                    <Feather name="mail" size={16} color="#7C3AED" style={{ marginRight: 6 }} />
+                    <Text style={styles.popupTitleText}>Project Invitation</Text>
+                  </View>
+                  <Text style={styles.popupTimeText}>Just now</Text>
+                </View>
+                <Text style={styles.popupBodyText}>
+                  <Text style={{ fontWeight: '700' }}>{clientName}</Text> has hired you for:{"\n"}
+                  <Text style={{ fontWeight: '600', color: '#1F2937' }}>{inv.title}</Text>
+                </Text>
+                <View style={styles.popupActionsRow}>
+                  <TouchableOpacity
+                    style={[styles.popupBtn, styles.popupAcceptBtn]}
+                    onPress={() => handleInvitationResponse(inv._id, 'Accepted')}
+                  >
+                    <Feather name="check" size={14} color="#FFF" style={{ marginRight: 4 }} />
+                    <Text style={styles.popupBtnText}>Accept</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.popupBtn, styles.popupRejectBtn]}
+                    onPress={() => handleInvitationResponse(inv._id, 'Rejected')}
+                  >
+                    <Feather name="x" size={14} color="#FFF" style={{ marginRight: 4 }} />
+                    <Text style={styles.popupBtnText}>Reject</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
 
       <ScrollView bounces={true} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
@@ -1857,5 +1977,87 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '700',
     color: '#1D4ED8',
+  },
+  headerAvatarBtn: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerAvatarImg: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: '#7C3AED',
+  },
+  floatingPopupContainer: {
+    position: 'absolute',
+    top: 70,
+    left: 16,
+    right: 16,
+    zIndex: 999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  floatingPopupCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#7C3AED',
+    marginBottom: 8,
+  },
+  popupHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  popupTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  popupTitleText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#7C3AED',
+    textTransform: 'uppercase',
+  },
+  popupTimeText: {
+    fontSize: 10,
+    color: '#9CA3AF',
+  },
+  popupBodyText: {
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  popupActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  popupBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 36,
+    borderRadius: 8,
+  },
+  popupAcceptBtn: {
+    backgroundColor: '#10B981',
+  },
+  popupRejectBtn: {
+    backgroundColor: '#EF4444',
+  },
+  popupBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

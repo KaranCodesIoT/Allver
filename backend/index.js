@@ -48,42 +48,51 @@ app.set('io', io);
 const onlineUsers = new Set();
 
 io.on('connection', (socket) => {
-  console.log('User connected to socket:', socket.id);
+  console.log('[Socket] Socket connected:', socket.id);
 
   // Join a specific room (project workspace or DM conversation)
   socket.on('join_room', ({ roomId }) => {
     socket.join(roomId);
-    console.log(`Socket ${socket.id} joined room ${roomId}`);
+    console.log(`[Socket] Socket ${socket.id} joined room: ${roomId}`);
   });
 
-  // Direct message — broadcast AND persist
+  // Direct message — broadcast
   socket.on('send_message', async ({ roomId, message }) => {
-    // Broadcast to room immediately for real-time feel
     io.to(roomId).emit('receive_message', {
       workspaceId: roomId,
       message: message
     });
-    console.log(`Socket message in room ${roomId}:`, message.text?.substring(0, 50));
+    console.log(`[Socket] Message broadcast to room ${roomId}:`, message.text?.substring(0, 50));
   });
 
   // Typing indicator
   socket.on('typing', ({ roomId, userId, userName }) => {
     socket.to(roomId).emit('user_typing', { userId, userName });
+    console.log(`[Socket] User ${userName} (${userId}) is typing in room ${roomId}`);
   });
 
   socket.on('stop_typing', ({ roomId, userId }) => {
     socket.to(roomId).emit('user_stop_typing', { userId });
+    console.log(`[Socket] User (${userId}) stopped typing in room ${roomId}`);
   });
 
-  // Track online status
+  // Track online status and join personal rooms
   socket.on('go_online', ({ userId }) => {
+    if (!userId) return;
     socket.userId = userId;
     onlineUsers.add(userId);
+
+    // Join personal rooms for notifications and DMs
+    socket.join(userId.toString());
+    socket.join(`user:${userId}`);
+
+    console.log(`[Socket] User ${userId} went online. Joined rooms: "${userId}" and "user:${userId}"`);
     socket.broadcast.emit('user_online', { userId });
   });
 
   socket.on('check_online', ({ userId }, callback) => {
     const isOnline = onlineUsers.has(userId);
+    console.log(`[Socket] Checking online status for user ${userId}:`, isOnline);
     if (typeof callback === 'function') {
       callback({ isOnline });
     }
@@ -93,8 +102,9 @@ io.on('connection', (socket) => {
     if (socket.userId) {
       onlineUsers.delete(socket.userId);
       socket.broadcast.emit('user_offline', { userId: socket.userId });
+      console.log(`[Socket] User ${socket.userId} went offline.`);
     }
-    console.log('User disconnected from socket:', socket.id);
+    console.log('[Socket] Socket disconnected:', socket.id);
   });
 });
 
@@ -131,12 +141,7 @@ const postSchema = new mongoose.Schema({
   type: { type: String, enum: ['media', 'design'], required: true }, // 'media' for images/videos, 'design' for designs
   mediaUrls: { type: [String], default: [] },
   creator: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  quotation: {
-    civilStructure: { type: String, default: '' },
-    flooringTiling: { type: String, default: '' },
-    electricalPlumbing: { type: String, default: '' },
-    modularWoodwork: { type: String, default: '' }
-  },
+  quotation: { type: mongoose.Schema.Types.Mixed, default: [] },
   likes: { type: Number, default: 0 },
   comments: { type: Number, default: 0 },
   likedBy: { type: [mongoose.Schema.Types.ObjectId], ref: 'User', default: [] },
@@ -621,6 +626,20 @@ app.post('/api/posts/:id/like', async (req, res) => {
     post.likes = post.likedBy.length;
     await post.save();
     
+    // Real-time update via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('post_updated', {
+        postId: post._id.toString(),
+        likes: post.likes,
+        likedBy: post.likedBy,
+        dislikedBy: post.dislikedBy,
+        commentsList: post.commentsList || [],
+        comments: post.comments || 0
+      });
+      console.log(`[Socket] Emitted post_updated for like on post ${post._id}`);
+    }
+    
     res.status(200).json({ 
       message: 'Like status updated successfully', 
       likes: post.likes, 
@@ -666,6 +685,20 @@ app.post('/api/posts/:id/dislike', async (req, res) => {
     post.likes = post.likedBy.length;
     await post.save();
     
+    // Real-time update via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('post_updated', {
+        postId: post._id.toString(),
+        likes: post.likes,
+        likedBy: post.likedBy,
+        dislikedBy: post.dislikedBy,
+        commentsList: post.commentsList || [],
+        comments: post.comments || 0
+      });
+      console.log(`[Socket] Emitted post_updated for dislike on post ${post._id}`);
+    }
+    
     res.status(200).json({ 
       message: 'Dislike status updated successfully', 
       likes: post.likes, 
@@ -705,6 +738,20 @@ app.post('/api/posts/:id/comment', async (req, res) => {
     post.comments = post.commentsList.length;
     await post.save();
     
+    // Real-time update via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('post_updated', {
+        postId: post._id.toString(),
+        likes: post.likes,
+        likedBy: post.likedBy,
+        dislikedBy: post.dislikedBy,
+        commentsList: post.commentsList,
+        comments: post.comments
+      });
+      console.log(`[Socket] Emitted post_updated for comment on post ${post._id}`);
+    }
+    
     res.status(201).json({ 
       message: 'Comment added successfully', 
       comment: newComment,
@@ -715,6 +762,32 @@ app.post('/api/posts/:id/comment', async (req, res) => {
     res.status(500).json({ message: 'Error adding comment: ' + error.message });
   }
 });
+
+// Helper to format phone number to E.164 format (+[country][number])
+function formatPhoneNumberToE164(phoneNumber) {
+  if (!phoneNumber) return '';
+  // Remove all characters except digits and plus sign
+  let cleaned = phoneNumber.trim().replace(/[^\d+]/g, '');
+  if (!cleaned) return '';
+
+  // If it already starts with '+', it's in E.164
+  if (cleaned.startsWith('+')) {
+    return cleaned;
+  }
+
+  // If it has 12 digits and starts with 91, assume India country code and prepend +
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return '+' + cleaned;
+  }
+
+  // If it is 10 digits, assume India default country code (+91)
+  if (cleaned.length === 10) {
+    return '+91' + cleaned;
+  }
+
+  // Otherwise, prepend '+' to whatever digits are there
+  return '+' + cleaned;
+}
 
 app.post('/api/register', async (req, res) => {
   try {
@@ -729,7 +802,7 @@ app.post('/api/register', async (req, res) => {
     const newUser = new User({ 
       fullName, 
       email, 
-      phoneNumber: phoneNumber || '', 
+      phoneNumber: formatPhoneNumberToE164(phoneNumber), 
       password, 
       role, 
       city,
@@ -760,6 +833,14 @@ app.put('/api/user/profile/:id', async (req, res) => {
   try {
     const userId = req.params.id;
     const profileData = req.body;
+    
+    // Format phone numbers to E.164 if they are updated
+    if (profileData.phoneNumber !== undefined) {
+      profileData.phoneNumber = formatPhoneNumberToE164(profileData.phoneNumber);
+    }
+    if (profileData.phone !== undefined) {
+      profileData.phone = formatPhoneNumberToE164(profileData.phone);
+    }
     
     const updatedUser = await User.findByIdAndUpdate(
       userId,
@@ -845,6 +926,23 @@ app.get('/api/user/reviews/:userId', async (req, res) => {
 });
 
 
+// Get User Profile by ID
+app.get('/api/user/:id', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    const userObj = user.toObject();
+    delete userObj.password;
+    res.status(200).json({ success: true, user: userObj });
+  } catch (error) {
+    console.error('Error getting user profile:', error);
+    res.status(500).json({ success: false, message: 'Error getting user profile: ' + error.message });
+  }
+});
+
+
 // Delete User Account
 app.delete('/api/user/:id', async (req, res) => {
   try {
@@ -889,11 +987,12 @@ app.post('/api/login', async (req, res) => {
     user.lastActive = new Date();
     await user.save();
     
-    // Successful login - return user object
+    // Successful login - return user object and token (which is user._id)
     const userObj = user.toObject();
     delete userObj.password;
     res.status(200).json({ 
       message: 'Login successful', 
+      token: user._id,
       user: userObj
     });
   } catch (error) {
@@ -902,43 +1001,116 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// User OTP Login Verification route
-app.post('/auth/verify-otp', async (req, res) => {
+// Twilio Verify SMS OTP Configurations
+const twilio = require('twilio');
+const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioVerifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
+
+let twilioClient;
+if (twilioAccountSid && twilioAuthToken) {
+  twilioClient = twilio(twilioAccountSid, twilioAuthToken);
+} else {
+  console.warn('[Warning] Twilio credentials are not fully defined in the environment. SMS OTP sending will fail.');
+}
+
+// POST /auth/send-email-otp - Generate & Send OTP (reused for SMS OTP via Twilio Verify)
+app.post('/auth/send-email-otp', async (req, res) => {
   try {
-    const { accessToken, phoneNumber } = req.body;
-    
-    if (!phoneNumber) {
-      return res.status(400).json({ success: false, message: 'Phone number is required.' });
+    const { email, phoneNumber } = req.body;
+    if (!email && !phoneNumber) {
+      return res.status(400).json({ success: false, message: 'Email or phone number is required.' });
     }
 
-    const cleanPhone = phoneNumber.replace(/\D/g, ''); // strip non-digits
-    
-    // Search User by phoneNumber or phone fields
-    let user = await User.findOne({
-      $or: [
-        { phoneNumber: cleanPhone },
-        { phoneNumber: phoneNumber },
-        { phone: cleanPhone },
-        { phone: phoneNumber }
-      ]
-    });
+    if (!twilioClient || !twilioVerifyServiceSid) {
+      console.error('[Twilio] Twilio is not initialized (missing SID, token, or service SID).');
+      return res.status(500).json({ success: false, message: 'SMS service is currently unavailable.' });
+    }
 
-    // If still not found, try stripping leading country code (91)
-    if (!user && cleanPhone.startsWith('91') && cleanPhone.length > 10) {
-      const nationalPhone = cleanPhone.substring(2);
-      user = await User.findOne({
-        $or: [
-          { phoneNumber: nationalPhone },
-          { phone: nationalPhone }
-        ]
-      });
+    // Find user by either email or phone number
+    let user;
+    if (email) {
+      const trimmedEmail = email.trim().toLowerCase();
+      user = await User.findOne({ email: trimmedEmail });
+    } else if (phoneNumber) {
+      const formattedPhone = formatPhoneNumberToE164(phoneNumber);
+      user = await User.findOne({ phoneNumber: formattedPhone });
     }
 
     if (!user) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'No account registered with this phone number. Please sign up first!' 
-      });
+      return res.status(404).json({ success: false, message: 'No account registered with this email or phone number.' });
+    }
+
+    const userPhone = user.phoneNumber;
+    if (!userPhone) {
+      return res.status(400).json({ success: false, message: 'No phone number registered for this account.' });
+    }
+
+    const formattedPhone = formatPhoneNumberToE164(userPhone);
+    if (!formattedPhone) {
+      return res.status(400).json({ success: false, message: 'Invalid phone number format stored.' });
+    }
+
+    console.log(`[Twilio] Sending SMS OTP to ${formattedPhone}...`);
+
+    // Trigger Twilio Verify OTP SMS
+    await twilioClient.verify.v2.services(twilioVerifyServiceSid)
+      .verifications
+      .create({ to: formattedPhone, channel: 'sms' });
+
+    res.status(200).json({ success: true, message: 'OTP sent to your registered phone number.' });
+  } catch (error) {
+    console.error('Send SMS OTP error:', error);
+    res.status(500).json({ success: false, message: 'Error sending SMS OTP: ' + (error.message || error) });
+  }
+});
+
+// POST /auth/verify-email-otp - Verify OTP and Login (reused for SMS OTP via Twilio Verify)
+app.post('/auth/verify-email-otp', async (req, res) => {
+  try {
+    const { email, phoneNumber, otp } = req.body;
+    if ((!email && !phoneNumber) || !otp) {
+      return res.status(400).json({ success: false, message: 'Email/phone and OTP are required.' });
+    }
+
+    if (!twilioClient || !twilioVerifyServiceSid) {
+      console.error('[Twilio] Twilio is not initialized.');
+      return res.status(500).json({ success: false, message: 'SMS service is currently unavailable.' });
+    }
+
+    // Find user by either email or phone number
+    let user;
+    if (email) {
+      const trimmedEmail = email.trim().toLowerCase();
+      user = await User.findOne({ email: trimmedEmail });
+    } else if (phoneNumber) {
+      const formattedPhone = formatPhoneNumberToE164(phoneNumber);
+      user = await User.findOne({ phoneNumber: formattedPhone });
+    }
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    const userPhone = user.phoneNumber;
+    if (!userPhone) {
+      return res.status(400).json({ success: false, message: 'No phone number registered for this account.' });
+    }
+
+    const formattedPhone = formatPhoneNumberToE164(userPhone);
+    if (!formattedPhone) {
+      return res.status(400).json({ success: false, message: 'Invalid phone number format stored.' });
+    }
+
+    console.log(`[Twilio] Verifying SMS OTP code for ${formattedPhone}...`);
+
+    // Verify code with Twilio Verify
+    const verificationCheck = await twilioClient.verify.v2.services(twilioVerifyServiceSid)
+      .verificationChecks
+      .create({ to: formattedPhone, code: otp.trim() });
+
+    if (verificationCheck.status !== 'approved') {
+      return res.status(400).json({ success: false, message: 'Incorrect or expired OTP.' });
     }
 
     // Update lastActive on successful login
@@ -956,8 +1128,8 @@ app.post('/auth/verify-otp', async (req, res) => {
       user: userObj
     });
   } catch (error) {
-    console.error('Verify OTP error:', error);
-    res.status(500).json({ success: false, message: 'Error verifying OTP: ' + (error.message || error) });
+    console.error('Verify SMS OTP error:', error);
+    res.status(500).json({ success: false, message: 'Error verifying SMS OTP: ' + (error.message || error) });
   }
 });
 
@@ -1378,7 +1550,7 @@ const ProjectBid = require('./models/ProjectBid');
 // 1. Submit a Contract Request
 app.post('/api/contract-requests', async (req, res) => {
   try {
-    const { client, professional, title, projectType, location, budget, startDate, description, timeline, requirements } = req.body;
+    const { client, professional, title, projectType, location, budget, startDate, description, timeline, requirements, mediaUrls, attachmentUrl, attachmentName } = req.body;
     
     if (!client || !title || !location || !budget) {
       return res.status(400).json({ message: 'Missing required project details' });
@@ -1394,7 +1566,10 @@ app.post('/api/contract-requests', async (req, res) => {
       startDate: startDate ? new Date(startDate) : new Date(),
       description: description || '',
       timeline: timeline || '',
-      requirements: requirements || []
+      requirements: requirements || [],
+      attachmentUrl: attachmentUrl || '',
+      attachmentName: attachmentName || '',
+      mediaUrls: mediaUrls || []
     });
 
     await newRequest.save();
@@ -1509,6 +1684,26 @@ app.post('/api/contract-requests', async (req, res) => {
   }
 });
 
+// Get all contract requests (public posted projects)
+app.get('/api/contract-requests', async (req, res) => {
+  try {
+    const requests = await ContractRequest.find({})
+      .populate('client', 'fullName email avatarUrl role phoneNumber city')
+      .populate('professional', 'fullName email avatarUrl role')
+      .sort({ createdAt: -1 });
+
+    // Filter to only include public requests (client role is 'Client' and status is not Cancelled)
+    const publicRequestsOnly = requests.filter(
+      (item) => item.client && item.client.role === 'Client' && item.status !== 'Cancelled'
+    );
+
+    res.status(200).json({ success: true, requests: publicRequestsOnly });
+  } catch (error) {
+    console.error('Error fetching all contract requests:', error);
+    res.status(500).json({ success: false, message: 'Error fetching contract requests: ' + error.message });
+  }
+});
+
 // 2. Get all requests for a user (either sent as client or received as professional)
 app.get('/api/contract-requests/user/:userId', async (req, res) => {
   try {
@@ -1520,7 +1715,17 @@ app.get('/api/contract-requests/user/:userId', async (req, res) => {
     .populate('professional', 'fullName email phoneNumber role city avatarUrl')
     .sort({ createdAt: -1 });
 
-    res.status(200).json({ requests });
+    const requestsWithBids = [];
+    for (const reqObj of requests) {
+      const bids = await ProjectBid.find({ contractRequest: reqObj._id })
+        .populate('professional', 'fullName email phoneNumber role city avatarUrl firmName completedProjects rating');
+      requestsWithBids.push({
+        ...reqObj.toObject(),
+        bids: bids || []
+      });
+    }
+
+    res.status(200).json({ requests: requestsWithBids });
   } catch (error) {
     console.error('Error fetching contract requests:', error);
     res.status(500).json({ message: 'Error fetching contract requests: ' + error.message });
@@ -1546,6 +1751,59 @@ app.get('/api/contract-requests/:id', async (req, res) => {
   }
 });
 
+// Edit a contract request/project details
+app.put('/api/contract-requests/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, projectType, location, budget, description, timeline, requirements } = req.body;
+
+    const updated = await ContractRequest.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          title,
+          projectType,
+          location,
+          budget,
+          description,
+          timeline,
+          requirements
+        }
+      },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+
+    res.status(200).json({ success: true, message: 'Project updated successfully', request: updated });
+  } catch (error) {
+    console.error('Error updating project:', error);
+    res.status(500).json({ success: false, message: 'Error updating project: ' + error.message });
+  }
+});
+
+// Delete a contract request/project
+app.delete('/api/contract-requests/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await ContractRequest.findByIdAndDelete(id);
+
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: 'Project not found' });
+    }
+
+    // Delete associated bids
+    await ProjectBid.deleteMany({ contractRequest: id });
+
+    res.status(200).json({ success: true, message: 'Project deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting project:', error);
+    res.status(500).json({ success: false, message: 'Error deleting project: ' + error.message });
+  }
+});
+
 // 3. Accept or Reject a contract request (SINGLE ACCEPTANCE with rejection notifications)
 app.put('/api/contract-requests/:id/status', async (req, res) => {
   try {
@@ -1561,16 +1819,28 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
       return res.status(404).json({ message: 'Contract request not found' });
     }
 
-    // RESTRICTION: Prevent accepting if already accepted
-    if (status === 'Accepted' && request.status === 'Accepted') {
-      return res.status(400).json({ message: 'A bid has already been accepted for this project. You cannot accept another.' });
+    let selectedRole = 'Contractor';
+    let professionalUser = null;
+    if (professional) {
+      professionalUser = await User.findById(professional);
+      if (professionalUser) {
+        selectedRole = professionalUser.role;
+      }
+    }
+
+    if (status === 'Accepted') {
+      // Check if a bid for a professional of the same role has already been accepted
+      const acceptedBids = await ProjectBid.find({ contractRequest: id, status: 'Accepted' }).populate('professional');
+      const alreadyAcceptedSameRole = acceptedBids.some(b => b.professional?.role === selectedRole);
+
+      if (alreadyAcceptedSameRole) {
+        return res.status(400).json({ message: `A ${selectedRole} has already been accepted for this project.` });
+      }
     }
 
     if (professional) {
       request.professional = professional;
     }
-    request.status = status;
-    await request.save();
 
     const io = req.app.get('io');
     const clientUser = await User.findById(request.client);
@@ -1588,76 +1858,81 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
         }
 
         // 2. Send acceptance notification to the winning professional
-        const professionalUser = await User.findById(request.professional);
-        const acceptText = `✅ Proposal Accepted!\nCongratulations! ${clientUser.fullName} accepted your bid for "${request.title}". Project timeline starts now.\n\n[View Project]`;
-        const acceptNotif = new Notification({
-          recipientId: request.professional,
-          senderId: request.client,
-          text: acceptText
-        });
-        await acceptNotif.save();
-
-        if (io) {
-          io.to(request.professional.toString()).emit('new_notification', {
-            _id: acceptNotif._id,
-            recipientId: request.professional,
-            senderId: { _id: clientUser._id, fullName: clientUser.fullName, avatarUrl: clientUser.avatarUrl, role: clientUser.role },
-            text: acceptNotif.text,
-            isRead: false,
-            createdAt: acceptNotif.createdAt
-          });
-        }
-
-        // 3. REJECT all other bids and send rejection notifications
-        const otherBids = await ProjectBid.find({
-          contractRequest: id,
-          professional: { $ne: request.professional },
-          status: 'Pending'
-        }).populate('professional', 'fullName avatarUrl role');
-
-        for (const bid of otherBids) {
-          bid.status = 'Rejected';
-          await bid.save();
-
-          // Send rejection notification
-          const rejectText = `❌ Bid Not Selected\nYour bid for "${request.title}" was not selected. The client chose another contractor. Keep applying to new projects!\n\n[Browse Projects]`;
-          const rejectNotif = new Notification({
-            recipientId: bid.professional._id,
+        if (professionalUser) {
+          const acceptText = `✅ Proposal Accepted!\nCongratulations! ${clientUser.fullName} accepted your bid for "${request.title}". Project timeline starts now.\n\n[View Project]`;
+          const acceptNotif = new Notification({
+            recipientId: professional,
             senderId: request.client,
-            text: rejectText
+            text: acceptText
           });
-          await rejectNotif.save();
+          await acceptNotif.save();
 
           if (io) {
-            io.to(bid.professional._id.toString()).emit('new_notification', {
-              _id: rejectNotif._id,
-              recipientId: bid.professional._id,
+            io.to(professional.toString()).emit('new_notification', {
+              _id: acceptNotif._id,
+              recipientId: professional,
               senderId: { _id: clientUser._id, fullName: clientUser.fullName, avatarUrl: clientUser.avatarUrl, role: clientUser.role },
-              text: rejectNotif.text,
+              text: acceptNotif.text,
               isRead: false,
-              createdAt: rejectNotif.createdAt
+              createdAt: acceptNotif.createdAt
             });
           }
         }
 
-        // 4. Also send confirmation to client
-        const clientConfirmText = `🎉 Bid Accepted\nYou accepted ${professionalUser.fullName}'s bid for "${request.title}". Project workspace is now active.\n\n[View Progress]`;
-        const clientNotif = new Notification({
-          recipientId: request.client,
-          senderId: request.professional,
-          text: clientConfirmText
-        });
-        await clientNotif.save();
+        // 3. REJECT other bids of the same role only and send rejection notifications
+        const otherBids = await ProjectBid.find({
+          contractRequest: id,
+          professional: { $ne: professional },
+          status: 'Pending'
+        }).populate('professional', 'fullName avatarUrl role');
 
-        if (io) {
-          io.to(request.client.toString()).emit('new_notification', {
-            _id: clientNotif._id,
+        for (const bid of otherBids) {
+          if (bid.professional?.role === selectedRole) {
+            bid.status = 'Rejected';
+            await bid.save();
+
+            // Send rejection notification
+            const rejectText = `❌ Bid Not Selected\nYour bid for "${request.title}" was not selected. The client chose another ${selectedRole.toLowerCase()}. Keep applying to new projects!\n\n[Browse Projects]`;
+            const rejectNotif = new Notification({
+              recipientId: bid.professional._id,
+              senderId: request.client,
+              text: rejectText
+            });
+            await rejectNotif.save();
+
+            if (io) {
+              io.to(bid.professional._id.toString()).emit('new_notification', {
+                _id: rejectNotif._id,
+                recipientId: bid.professional._id,
+                senderId: { _id: clientUser._id, fullName: clientUser.fullName, avatarUrl: clientUser.avatarUrl, role: clientUser.role },
+                text: rejectNotif.text,
+                isRead: false,
+                createdAt: rejectNotif.createdAt
+              });
+            }
+          }
+        }
+
+        // 4. Also send confirmation to client
+        if (professionalUser) {
+          const clientConfirmText = `🎉 Bid Accepted\nYou accepted ${professionalUser.fullName}'s bid for "${request.title}". Project workspace is now active.\n\n[View Progress]`;
+          const clientNotif = new Notification({
             recipientId: request.client,
-            senderId: { _id: professionalUser._id, fullName: professionalUser.fullName, avatarUrl: professionalUser.avatarUrl, role: professionalUser.role },
-            text: clientNotif.text,
-            isRead: false,
-            createdAt: clientNotif.createdAt
+            senderId: professional,
+            text: clientConfirmText
           });
+          await clientNotif.save();
+
+          if (io) {
+            io.to(request.client.toString()).emit('new_notification', {
+              _id: clientNotif._id,
+              recipientId: request.client,
+              senderId: { _id: professionalUser._id, fullName: professionalUser.fullName, avatarUrl: professionalUser.avatarUrl, role: professionalUser.role },
+              text: clientNotif.text,
+              isRead: false,
+              createdAt: clientNotif.createdAt
+            });
+          }
         }
       } catch (notifErr) {
         console.error('Error in acceptance flow notifications:', notifErr);
@@ -1665,16 +1940,14 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
     }
 
     let workspace = null;
-    if (status === 'Accepted') {
+    if (status === 'Accepted' && professionalUser) {
+      const isContractor = selectedRole === 'Contractor';
+      const isArchitect = selectedRole === 'Architect';
+      const isLabour = selectedRole === 'Labour';
+
       // Check if a workspace already exists for this request
       const existing = await ProjectWorkspace.findOne({ contractRequest: id });
       if (!existing) {
-        const professionalUser = await User.findById(request.professional);
-        
-        const isContractor = professionalUser?.role === 'Contractor';
-        const isArchitect = professionalUser?.role === 'Architect';
-        const isLabour = professionalUser?.role === 'Labour';
-
         // Check if an active workspace with the same client and title already exists
         const sameProjectWorkspace = await ProjectWorkspace.findOne({
           client: request.client,
@@ -1684,20 +1957,20 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
 
         if (sameProjectWorkspace) {
           workspace = sameProjectWorkspace;
-          if (isContractor) workspace.contractor = request.professional;
-          if (isArchitect) workspace.architect = request.professional;
-          if (isLabour && !workspace.labourTeam.includes(request.professional)) {
-            workspace.labourTeam.push(request.professional);
+          if (isContractor) workspace.contractor = professional;
+          if (isArchitect) workspace.architect = professional;
+          if (isLabour && !workspace.labourTeam.includes(professional)) {
+            workspace.labourTeam.push(professional);
           }
           
           workspace.messages.push({
             sender: request.client,
-            text: `📢 Hired professional assigned to project team: ${professionalUser?.fullName || 'Professional'} (${professionalUser?.role || 'Professional'})`,
+            text: `📢 Hired professional assigned to project team: ${professionalUser.fullName} (${selectedRole})`,
             createdAt: new Date()
           });
           workspace.updates.push({
-            title: `${professionalUser?.role || 'Professional'} Hired`,
-            description: `${professionalUser?.fullName || 'Professional'} has been hired and added to the project team.`,
+            title: `${selectedRole} Hired`,
+            description: `${professionalUser.fullName} has been hired and added to the project team.`,
             category: 'General',
             postedBy: {
               senderId: request.client,
@@ -1711,10 +1984,10 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
           workspace = new ProjectWorkspace({
             contractRequest: id,
             client: request.client,
-            professional: request.professional,
-            contractor: isContractor ? request.professional : (clientUser?.role === 'Contractor' ? request.client : null),
-            architect: isArchitect ? request.professional : (clientUser?.role === 'Architect' ? request.client : null),
-            labourTeam: isLabour ? [request.professional] : [],
+            professional: professional,
+            contractor: isContractor ? professional : (clientUser?.role === 'Contractor' ? request.client : null),
+            architect: isArchitect ? professional : (clientUser?.role === 'Architect' ? request.client : null),
+            labourTeam: isLabour ? [professional] : [],
             title: request.title,
             projectType: request.projectType || 'General',
             status: 'Active'
@@ -1723,11 +1996,51 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
         }
       } else {
         workspace = existing;
+        if (isContractor) workspace.contractor = professional;
+        if (isArchitect) workspace.architect = professional;
+        if (isLabour && !workspace.labourTeam.includes(professional)) {
+          workspace.labourTeam.push(professional);
+        }
+
+        workspace.messages.push({
+          sender: request.client,
+          text: `📢 Hired professional assigned to project team: ${professionalUser.fullName} (${selectedRole})`,
+          createdAt: new Date()
+        });
+        workspace.updates.push({
+          title: `${selectedRole} Hired`,
+          description: `${professionalUser.fullName} has been hired and added to the project team.`,
+          category: 'General',
+          postedBy: {
+            senderId: request.client,
+            senderName: 'System',
+            senderRole: 'System'
+          },
+          createdAt: new Date()
+        });
+        await workspace.save();
       }
     }
 
+    // Determine the contract request's overall status
+    if (status === 'Accepted') {
+      const allBids = await ProjectBid.find({ contractRequest: id }).populate('professional');
+      const hasAcceptedContractor = allBids.some(b => b.status === 'Accepted' && b.professional?.role === 'Contractor');
+      const hasAcceptedArchitect = allBids.some(b => b.status === 'Accepted' && b.professional?.role === 'Architect');
+      const hasPendingBids = allBids.some(b => b.status === 'Pending');
+
+      if ((hasAcceptedContractor && hasAcceptedArchitect) || !hasPendingBids) {
+        request.status = 'Accepted';
+      } else {
+        request.status = 'Pending';
+      }
+    } else {
+      request.status = status;
+    }
+    await request.save();
+
     res.status(200).json({ 
-      message: `Contract request ${status.toLowerCase()} successfully`, 
+      message: `Contract request status updated successfully`, 
       contractRequest: request,
       workspace
     });
@@ -1742,7 +2055,7 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
 // Submit a bid for a contract request
 app.post('/api/project-bids', async (req, res) => {
   try {
-    const { contractRequest, professional, cost, costValue, duration, durationDays, proposal } = req.body;
+    const { contractRequest, professional, cost, costValue, duration, durationDays, proposal, siteVisitRequired, portfolioAttachments } = req.body;
 
     if (!contractRequest || !professional || !cost || !duration) {
       return res.status(400).json({ message: 'Missing required bid fields: contractRequest, professional, cost, duration' });
@@ -1770,7 +2083,9 @@ app.post('/api/project-bids', async (req, res) => {
       costValue: costValue || 0,
       duration,
       durationDays: durationDays || 0,
-      proposal: proposal || ''
+      proposal: proposal || '',
+      siteVisitRequired: !!siteVisitRequired,
+      portfolioAttachments: portfolioAttachments || []
     });
     await bid.save();
 
@@ -2118,9 +2433,34 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
     const savedMsg = updatedWorkspace.messages[updatedWorkspace.messages.length - 1];
     const io = req.app.get('io');
     if (io) {
+      // 1. Emit to workspace room
       io.to(id).emit('receive_message', {
         workspaceId: id,
         message: savedMsg
+      });
+
+      // 2. Emit to other participants' personal rooms
+      const participants = [
+        workspace.client,
+        workspace.professional,
+        workspace.contractor,
+        workspace.architect,
+        ...(workspace.labourTeam || [])
+      ];
+
+      participants.forEach(p => {
+        if (!p) return;
+        const participantId = p._id ? p._id.toString() : p.toString();
+        if (participantId !== sender.toString()) {
+          io.to(participantId).emit('receive_message', {
+            workspaceId: id,
+            message: savedMsg
+          });
+          io.to(`user:${participantId}`).emit('receive_message', {
+            workspaceId: id,
+            message: savedMsg
+          });
+        }
       });
     }
 
@@ -3804,11 +4144,29 @@ app.get('/api/notifications/unread-count/:userId', async (req, res) => {
     const count = await Notification.countDocuments({
       recipientId: userId,
       isRead: false,
-      text: { $not: /New Message|\[View Chat\]/ }
+      text: { $not: /New Message|\[View Chat\]|New Project|\[View Project\]|Applied|\[View Application\]|Project Invitation|\[View Invitation\]/ }
     });
     res.status(200).json({ success: true, unreadCount: count });
   } catch (error) {
     res.status(500).json({ message: 'Error getting unread count: ' + error.message });
+  }
+});
+
+// Mark only project notifications as read for a user
+app.post('/api/notifications/read-projects/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    await Notification.updateMany(
+      { 
+        recipientId: userId, 
+        isRead: false,
+        text: /New Project|\[View Project\]|Applied|\[View Application\]|Project Invitation|\[View Invitation\]|Submitted Design|\[View Design\]|Labour Joined|Joined Project|Payment Received|\[View Details\]|Attendance Submitted|\[View Attendance\]|Milestone|\[View Progress\]|Document Shared|\[View Document\]|Site Visit|\[View Schedule\]/
+      }, 
+      { $set: { isRead: true } }
+    );
+    res.status(200).json({ success: true, message: 'Project notifications marked as read' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error marking project notifications as read: ' + error.message });
   }
 });
 
@@ -4179,6 +4537,7 @@ app.post('/api/conversations/:conversationId/messages', async (req, res) => {
       }
     });
 
+    conversation.markModified('unreadCount');
     conversation.updatedAt = new Date();
     await conversation.save();
 
@@ -4196,23 +4555,43 @@ app.post('/api/conversations/:conversationId/messages', async (req, res) => {
 
     // Broadcast via Socket.io for real-time delivery
     const ioInstance = req.app.get('io');
-    ioInstance.to(conversationId).emit('receive_message', {
-      workspaceId: conversationId,
-      message: populatedMessage,
-      senderId: senderId
-    });
+    if (ioInstance) {
+      // 1. Emit to the conversation room (for users currently inside the chat room)
+      ioInstance.to(conversationId).emit('receive_message', {
+        workspaceId: conversationId,
+        message: populatedMessage,
+        senderId: senderId
+      });
 
-    // Also send a notification event to the receiver
-    conversation.participants.forEach(pId => {
-      const participantId = pId.toString();
-      if (participantId !== senderId) {
-        ioInstance.emit('new_dm_notification', {
-          conversationId,
-          receiverId: participantId,
-          message: populatedMessage
-        });
-      }
-    });
+      // 2. Emit to the personal rooms of other participants (for real-time badge / list updates in Chats list and Home)
+      conversation.participants.forEach(pId => {
+        const participantId = pId.toString();
+        if (participantId !== senderId) {
+          ioInstance.to(participantId).emit('receive_message', {
+            workspaceId: conversationId,
+            message: populatedMessage,
+            senderId: senderId
+          });
+          ioInstance.to(`user:${participantId}`).emit('receive_message', {
+            workspaceId: conversationId,
+            message: populatedMessage,
+            senderId: senderId
+          });
+
+          // Also emit new_dm_notification
+          ioInstance.to(participantId).emit('new_dm_notification', {
+            conversationId,
+            receiverId: participantId,
+            message: populatedMessage
+          });
+          ioInstance.to(`user:${participantId}`).emit('new_dm_notification', {
+            conversationId,
+            receiverId: participantId,
+            message: populatedMessage
+          });
+        }
+      });
+    }
 
     res.status(201).json({ message: populatedMessage });
   } catch (error) {
@@ -4234,6 +4613,7 @@ app.post('/api/conversations/:conversationId/read', async (req, res) => {
     }
 
     conversation.unreadCount.set(userId, 0);
+    conversation.markModified('unreadCount');
     
     // Mark all unread messages as read
     conversation.messages.forEach(msg => {
@@ -4654,4 +5034,5 @@ app.get('/api/test-notifications', async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
 

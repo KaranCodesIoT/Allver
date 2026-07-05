@@ -1,68 +1,140 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { View, ActivityIndicator, Platform } from 'react-native';
-import { getLocalLanguage } from '../utils/i18n';
-import { getToken, getStoredUser } from '../constants/Auth';
+import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
+import { getStoredLanguage, getToken, getStoredUser, removeToken, removeStoredUser, saveStoredUser } from '../constants/Auth';
+import { BACKEND_URL } from '../constants/Config';
+import { useTranslation } from '../utils/i18n';
 
 export default function Index() {
   const router = useRouter();
+  const [loadingMessage, setLoadingMessage] = useState('Starting up...');
+  const { i18n } = useTranslation();
 
   useEffect(() => {
-    const checkSessionAndLanguage = async () => {
+    const checkAuthAndRouting = async () => {
       try {
-        const lang = getLocalLanguage();
-        
-        // 1. Check language first
-        if (!lang) {
-          router.replace('/choose-language');
-          return;
-        }
+        setLoadingMessage('Initializing...');
 
-        // 2. Check session
+        // 1. Check if a valid session exists first
         const token = await getToken();
         const storedUserStr = await getStoredUser();
 
         if (token && storedUserStr) {
-          const user = JSON.parse(storedUserStr);
-          (global as any).currentUser = user;
+          let userObj;
+          try {
+            userObj = JSON.parse(storedUserStr);
+          } catch (e) {
+            console.error('[StartupGuard] Stored user parsing failed:', e);
+            await removeToken();
+            await removeStoredUser();
+            (global as any).currentUser = null;
+            router.replace('/login');
+            return;
+          }
 
-          console.log('[Splash] Found active session. Redirecting...');
-          
-          if (user?.role === 'Architect') {
-            const done =
-              user.experience ||
-              user.firmName ||
-              (user.specialization?.length > 0) ||
-              (user.portfolioImages?.length > 0);
-            router.replace(done ? '/(tabs)' : '/architect-profile');
-          } else if (user?.role === 'Contractor') {
-            const done =
-              user.contractorType ||
-              user.teamSize ||
-              (user.workCategory?.length > 0) ||
-              (user.serviceLocation?.length > 0) ||
-              user.experience;
-            router.replace(done ? '/(tabs)' : '/contractor-profile');
+          // Verify session/token validity with the backend
+          setLoadingMessage('Securing your connection...');
+          try {
+            const res = await fetch(`${BACKEND_URL}/api/user/${userObj._id}`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              }
+            });
+
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success && data.user) {
+                // Session is valid. Update cached details
+                await saveStoredUser(data.user);
+                (global as any).currentUser = data.user;
+                userObj = data.user;
+                console.log('[StartupGuard] Session validated with backend. Logged in as:', userObj.fullName);
+              }
+            } else if (res.status === 404 || res.status === 401) {
+              // User was deleted or session is expired/invalid
+              console.log('[StartupGuard] Session invalid or user deleted. Clearing credentials.');
+              await removeToken();
+              await removeStoredUser();
+              (global as any).currentUser = null;
+              router.replace('/login');
+              return;
+            }
+          } catch (netErr) {
+            // Network request failed (offline fallback). Proceed with cached session
+            console.warn('[StartupGuard] Network error during session validation. Proceeding offline.', netErr);
+          }
+
+          // Set global current user
+          (global as any).currentUser = userObj;
+
+          // Apply saved language if any
+          const userLang = userObj.language || (await getStoredLanguage()) || 'en';
+          i18n.changeLanguage(userLang);
+
+          // Role-based Navigation logic
+          if (userObj.role === 'Architect') {
+            const isProfileComplete =
+              userObj.experience ||
+              userObj.firmName ||
+              (userObj.specialization && userObj.specialization.length > 0) ||
+              (userObj.portfolioImages && userObj.portfolioImages.length > 0);
+            
+            router.replace(isProfileComplete ? '/(tabs)' : '/architect-profile');
+          } else if (userObj.role === 'Contractor') {
+            const isProfileComplete =
+              userObj.contractorType ||
+              userObj.teamSize ||
+              (userObj.workCategory && userObj.workCategory.length > 0) ||
+              (userObj.serviceLocation && userObj.serviceLocation.length > 0) ||
+              userObj.experience;
+
+            router.replace(isProfileComplete ? '/(tabs)' : '/contractor-profile');
           } else {
             router.replace('/(tabs)');
           }
-        } else {
-          console.log('[Splash] No active session. Redirecting to signup...');
-          router.replace('/signup');
+          return;
         }
+
+        // 2. If no valid session, check language selection
+        const storedLanguage = await getStoredLanguage();
+        if (!storedLanguage) {
+          console.log('[StartupGuard] No language chosen yet. Routing to Choose Language screen.');
+          router.replace('/choose-language');
+        } else {
+          console.log('[StartupGuard] No session. Routing to Login.');
+          router.replace('/login');
+        }
+
       } catch (error) {
-        console.error('[Splash] Auth session check failed:', error);
-        router.replace('/signup');
+        console.error('[StartupGuard] Unexpected error during startup check:', error);
+        router.replace('/login');
       }
     };
 
-    const timer = setTimeout(checkSessionAndLanguage, 100);
-    return () => clearTimeout(timer);
+    checkAuthAndRouting();
   }, []);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
-      <ActivityIndicator size="small" color="#16A34A" />
+    <View style={styles.container}>
+      <ActivityIndicator size="small" color="#1BC47D" />
+      <Text style={styles.loadingText}>{loadingMessage}</Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 14,
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+});

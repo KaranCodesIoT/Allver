@@ -422,20 +422,6 @@ export default function EditProfileScreen() {
             <Feather name="arrow-left" size={18} color={COLORS.textDark} />
             <Text style={styles.backButtonText}>Back to Profile</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.saveChangesBtn, saving && { opacity: 0.7 }]} 
-            onPress={handleSave}
-            disabled={saving}
-          >
-            {saving ? (
-              <ActivityIndicator size="small" color={COLORS.white} />
-            ) : (
-              <>
-                <Feather name="save" size={16} color={COLORS.white} style={{ marginRight: 6 }} />
-                <Text style={styles.saveChangesBtnText}>Save Changes</Text>
-              </>
-            )}
-          </TouchableOpacity>
         </View>
 
         <ScrollView bounces={true} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>

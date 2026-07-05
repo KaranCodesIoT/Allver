@@ -6,7 +6,7 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Video, ResizeMode } from 'expo-av';
-import { io } from 'socket.io-client';
+import SocketService from '../utils/SocketService';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 
 const { width } = Dimensions.get('window');
@@ -227,32 +227,22 @@ export default function ProjectProgressScreen() {
 
   useEffect(() => {
     if (!workspaceId) return;
-    const s = io(BACKEND_URL, {
-      transports: ['websocket'],
-      forceNew: true,
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 2000,
-      timeout: 15000,
-    });
+    const s = SocketService;
     setSocket(s);
 
-    s.on('connect', () => {
-      s.emit('join_room', { roomId: workspaceId });
-    });
+    s.emit('join_room', { roomId: workspaceId });
 
-    s.on('connect_error', (err) => {
-      console.warn('Project progress socket connect_error:', err.message);
-    });
-
-    s.on('workspace_updated', (data) => {
+    const handleWorkspaceUpdated = (data: any) => {
       if (data.workspaceId === workspaceId && data.workspace) {
+        console.log('[ProjectProgress] Workspace updated via socket:', data);
         setWorkspace(data.workspace);
       }
-    });
+    };
+
+    s.on('workspace_updated', handleWorkspaceUpdated);
 
     return () => {
-      s.disconnect();
+      s.off('workspace_updated', handleWorkspaceUpdated);
     };
   }, [workspaceId]);
 
@@ -524,9 +514,8 @@ export default function ProjectProgressScreen() {
     (getUserIdStr(workspace.architect) === currentUserId)
   );
 
-  // Architects CANNOT manage labour — only clients and actual contractors can
+  // Clients and Architects CANNOT manage labour — only actual contractors can
   const canManageLabour = workspace && !isReadOnly && (
-    isWorkspaceClient ||
     (getUserIdStr(workspace.professional) === currentUserId && workspace.professional?.role === 'Contractor') ||
     (getUserIdStr(workspace.contractor) === currentUserId && currentUserRole === 'Contractor')
   );
@@ -1353,7 +1342,9 @@ export default function ProjectProgressScreen() {
     : parseInt((params.progress as string) || '60');
 
   const partner = workspace 
-    ? (getUserIdStr(workspace.client) === currentUserId ? workspace.professional : workspace.client)
+    ? (getUserIdStr(workspace.client) === currentUserId 
+       ? (workspace.contractor || workspace.professional) 
+       : workspace.client)
     : null;
   const contractorName = partner?.fullName || (params.contractor as string) || 'Raj Construction';
   const contractorAvatar = resolveAvatarUrl(partner?.avatarUrl) || resolveAvatarUrl(params.contractorAvatar as string) || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80';
@@ -1701,7 +1692,7 @@ export default function ProjectProgressScreen() {
         )}
 
         {/* PROJECT TEAM */}
-        {workspace && isContractor && (
+        {workspace && (isContractor || isClient) && (
           <View style={styles.teamSection}>
             <TouchableOpacity 
               style={[styles.teamHeaderRow, !isTeamExpanded && { marginBottom: 0 }]} 
@@ -1721,17 +1712,6 @@ export default function ProjectProgressScreen() {
 
             {isTeamExpanded && (
               <>
-                {/* Client / Home Owner */}
-                {workspace.client && (
-                  <View style={styles.teamItem}>
-                    <Image source={{ uri: resolveAvatarUrl(workspace.client.avatarUrl) || 'https://i.pravatar.cc/100?img=33' }} style={styles.teamAvatar} contentFit="cover" />
-                    <View style={{ flex: 1, marginLeft: 10 }}>
-                      <Text style={styles.teamMemberName}>{workspace.client.fullName}</Text>
-                      <Text style={styles.teamMemberRole}>Client / Home Owner</Text>
-                    </View>
-                  </View>
-                )}
-
                 {/* Contractor Row */}
                 <View style={styles.teamItemHeader}>
                   <Text style={styles.teamItemHeaderTitle}>Contractor</Text>

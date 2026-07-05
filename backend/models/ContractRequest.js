@@ -6,7 +6,7 @@ const contractRequestSchema = new mongoose.Schema({
   title: { type: String, required: true },
   projectType: { 
     type: String, 
-    enum: ['Residential', 'Commercial', 'Renovation', 'Interior', 'Architecture', 'Electrical', 'Plumbing', 'General'],
+    enum: ['Residential', 'Commercial', 'Renovation', 'Interior', 'Architecture', 'Civil', 'Electrical', 'Plumbing', 'General'],
     default: 'General'
   },
   location: { type: String, required: true },
@@ -15,6 +15,9 @@ const contractRequestSchema = new mongoose.Schema({
   description: { type: String, default: '' },
   timeline: { type: String, default: '' },
   requirements: { type: [String], default: [] },
+  attachmentUrl: { type: String, default: '' },
+  attachmentName: { type: String, default: '' },
+  mediaUrls: { type: [String], default: [] },
   status: { 
     type: String, 
     enum: ['Pending', 'Accepted', 'Rejected'], 

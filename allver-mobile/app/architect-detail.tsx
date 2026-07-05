@@ -917,15 +917,13 @@ export default function ArchitectDetailScreen() {
         onRequestClose={handleCloseVideo}
       >
         <View style={styles.videoModalOverlay}>
+          <View style={styles.videoModalHeader}>
+            <Text style={styles.videoModalTitle} numberOfLines={1}>{selectedVideoTitle}</Text>
+            <TouchableOpacity onPress={handleCloseVideo} style={styles.videoCloseBtn}>
+              <Feather name="x" size={24} color={COLORS.white} />
+            </TouchableOpacity>
+          </View>
           <View style={styles.videoModalContainer}>
-            {/* Header */}
-            <View style={styles.videoModalHeader}>
-              <Text style={styles.videoModalTitle} numberOfLines={1}>{selectedVideoTitle}</Text>
-              <TouchableOpacity onPress={handleCloseVideo} style={styles.videoCloseBtn}>
-                <Feather name="x" size={22} color={COLORS.white} />
-              </TouchableOpacity>
-            </View>
-
             {/* Video Player */}
             {selectedVideoUrl && (
               <Video
@@ -1379,39 +1377,39 @@ const styles = StyleSheet.create({
   },
   videoModalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
   },
   videoModalContainer: {
-    width: width * 0.95,
-    height: width * 0.95 * (9/16) + 60,
-    backgroundColor: '#0F172A',
-    borderRadius: 16,
-    padding: 16,
-    overflow: 'hidden',
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000000',
   },
   videoModalHeader: {
+    height: 60,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 44 : 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
   },
   videoModalTitle: {
-    fontSize: 15,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '700',
     color: COLORS.white,
     flex: 1,
-    marginRight: 10,
+    marginRight: 12,
   },
   videoCloseBtn: {
-    padding: 4,
+    padding: 8,
   },
   portfolioVideoPlayer: {
     width: '100%',
-    flex: 1,
-    borderRadius: 8,
-    backgroundColor: '#000000',
+    height: '100%',
   },
   roleSectionTitle: {
     fontSize: 16,

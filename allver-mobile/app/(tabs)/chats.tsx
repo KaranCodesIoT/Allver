@@ -5,10 +5,12 @@ import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icon
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { BACKEND_URL } from '../../constants/Config';
+import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
 import { useTranslation } from '../../utils/i18n';
-
+import SocketService from '../../utils/SocketService';
 import NotificationBell from '../../components/NotificationBell';
+import { useUnreadMessages } from '../../context/UnreadMessageContext';
+import { useUnreadActivities } from '../../context/UnreadActivityContext';
 
 const getParticipantDetails = (workspace: any, currentUserId: string, onlineUserIds: string[] = []) => {
   const isClient = workspace.client?._id === currentUserId || workspace.client === currentUserId;
@@ -30,7 +32,7 @@ const getParticipantDetails = (workspace: any, currentUserId: string, onlineUser
     timestamp,
     unreadCount: 0,
     online: isOnline,
-    avatar: partner?.profileImage || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
+    avatar: resolveAvatarUrl(partner?.avatarUrl || partner?.profileImage) || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
     type: partner?.role === 'Client' ? 'Projects' : 'Professionals',
     isReal: true
   };
@@ -61,6 +63,11 @@ export default function ChatsScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [conversations, setConversations] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const { unreadActivityCount, refreshUnreadActivityCount } = useUnreadActivities();
+
+  const fetchUnreadJobsCount = useCallback(async (user: any) => {
+    refreshUnreadActivityCount();
+  }, [refreshUnreadActivityCount]);
 
   const loadConversations = useCallback(async (user: any) => {
     if (!user) return;
@@ -102,7 +109,7 @@ export default function ChatsScreen() {
                 timestamp,
                 unreadCount: convo.unreadCount || 0,
                 online: convo.isOnline || false,
-                avatar: convo.otherUser?.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
+                avatar: resolveAvatarUrl(convo.otherUser?.avatarUrl) || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=120&auto=format&fit=crop',
                 type: 'Professionals',
                 isDM: true,
                 receiverId: convo.otherUser?._id,
@@ -196,20 +203,47 @@ export default function ChatsScreen() {
     if (user) {
       setCurrentUser(user);
       loadConversations(user);
+      fetchUnreadJobsCount(user);
     }
   }, []);
+
+  // Use global unread count from context for the header badge
+  const { unreadMsgCount, decrementUnreadMsgCount, refreshUnreadMsgCount } = useUnreadMessages();
 
   // Refresh conversations when the tab comes back into focus
   useFocusEffect(
     useCallback(() => {
       if (currentUser) {
         loadConversations(currentUser);
+        fetchUnreadJobsCount(currentUser);
+        refreshUnreadMsgCount();
       }
-    }, [currentUser, loadConversations])
+    }, [currentUser, loadConversations, fetchUnreadJobsCount, refreshUnreadMsgCount])
   );
 
-  // Compute total unread count dynamically
-  const totalUnreadCount = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+  // Handle real-time updates via Socket.IO
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handleMessage = (data: any) => {
+      console.log('[Chats] Real-time message received:', data);
+      loadConversations(currentUser);
+    };
+
+    const handleNotification = (data: any) => {
+      console.log('[Chats] Real-time notification received:', data);
+      fetchUnreadJobsCount(currentUser);
+    };
+
+    SocketService.on('receive_message', handleMessage);
+    SocketService.on('new_notification', handleNotification);
+
+    return () => {
+      SocketService.off('receive_message', handleMessage);
+      SocketService.off('new_notification', handleNotification);
+    };
+  }, [currentUser, loadConversations, fetchUnreadJobsCount]);
+
 
   const handleChatPress = (chat: any) => {
     // Immediately clear unread badge in local state for instant UI feedback
@@ -228,6 +262,9 @@ export default function ChatsScreen() {
           body: JSON.stringify({ userId: currentUser._id }),
         }).catch(err => console.log('Error marking as read:', err));
       }
+
+      // Decrement global unread count by the amount this conversation had
+      decrementUnreadMsgCount(chat.unreadCount);
     }
 
     if (chat.isDM) {
@@ -314,22 +351,43 @@ export default function ChatsScreen() {
 
             <TouchableOpacity style={[styles.iconBadgeBtn, styles.activeHeaderBtn]}>
               <Feather name="message-square" size={20} color={COLORS.textDark} />
-              {totalUnreadCount > 0 && (
-                <View style={styles.badgeCircle}><Text style={styles.badgeText}>{totalUnreadCount}</Text></View>
+              {unreadMsgCount > 0 && (
+                <View style={styles.badgeCircle}><Text style={styles.badgeText}>{unreadMsgCount > 99 ? '99+' : unreadMsgCount}</Text></View>
               )}
               <View style={styles.activeHeaderLine} />
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.avatarBtn}
-              onPress={() => router.push('/profile')}
-            >
-              <Image 
-                source={currentUser?.avatarUrl ? { uri: currentUser.avatarUrl } : require('../../assets/android-icon-foreground.png')} 
-                style={styles.avatarImage}
-                contentFit={currentUser?.avatarUrl ? "cover" : "contain"}
-              />
-            </TouchableOpacity>
+            {currentUser?.role === 'Labour' ? (
+              <TouchableOpacity 
+                style={styles.headerAvatarBtn}
+                onPress={() => router.push('/(tabs)/profile')}
+              >
+                {currentUser?.avatarUrl ? (
+                  <Image 
+                    source={{ uri: resolveAvatarUrl(currentUser.avatarUrl) }} 
+                    style={styles.headerAvatarImg} 
+                  />
+                ) : (
+                  <View style={[styles.headerAvatarImg, { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', borderColor: '#94A3B8' }]}>
+                    <Feather name="user" size={14} color={COLORS.textDark} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity 
+                style={styles.iconBadgeBtn}
+                onPress={() => router.push('/jobs')}
+              >
+                <Feather name="briefcase" size={20} color={COLORS.textDark} />
+                {unreadActivityCount > 0 && (
+                  <View style={styles.badgeCircle}>
+                    <Text style={styles.badgeText}>
+                      {unreadActivityCount > 99 ? '99+' : unreadActivityCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
@@ -596,7 +654,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   unreadCountBadge: {
-    backgroundColor: COLORS.yellow,
+    backgroundColor: '#EF4444',
     width: 18,
     height: 18,
     borderRadius: 9,
@@ -618,5 +676,18 @@ const styles = StyleSheet.create({
   emptyText: {
     color: COLORS.textMuted,
     fontSize: 14,
-  }
+  },
+  headerAvatarBtn: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerAvatarImg: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1.5,
+    borderColor: '#7C3AED',
+  },
 });
