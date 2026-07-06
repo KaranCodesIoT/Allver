@@ -250,7 +250,7 @@ export default function DiscoverScreen() {
     }
   }, [isFocused]);
 
-  // Handle real-time post likes and comments via global socket
+  // Handle real-time updates via global socket
   useEffect(() => {
     const handlePostUpdated = (data: any) => {
       if (!data || !data.postId) return;
@@ -285,10 +285,80 @@ export default function DiscoverScreen() {
       );
     };
 
+    const handleNewPost = (newPost: any) => {
+      if (!newPost || !newPost._id) return;
+      console.log('[Feed] New post received via socket:', newPost._id);
+      setPosts((prevPosts) => {
+        if (prevPosts.some((p) => p.id === newPost._id)) return prevPosts;
+        const currentUserId = currentUser?._id || (global as any).currentUser?._id;
+        const mapped = mapBackendPostToFeed(newPost, currentUserId);
+        return [mapped, ...prevPosts];
+      });
+    };
+
+    const handleProfileUpdated = (data: any) => {
+      if (!data || !data.userId || !data.user) return;
+      console.log('[Feed] Profile updated via socket:', data);
+      
+      setPosts((prevPosts) =>
+        prevPosts.map((post) => {
+          if (post.creator.id === data.userId) {
+            return {
+              ...post,
+              creator: {
+                ...post.creator,
+                name: data.user.fullName || post.creator.name,
+                avatar: resolveAvatarUrl(data.user.avatarUrl) || post.creator.avatar,
+                location: data.user.city || post.creator.location,
+                role: data.user.role || post.creator.role,
+                isVerified: data.user.isVerified !== undefined ? data.user.isVerified : post.creator.isVerified,
+              }
+            };
+          }
+          return post;
+        })
+      );
+    };
+
+    const handlePostEdited = (editedPost: any) => {
+      if (!editedPost || !editedPost._id) return;
+      console.log('[Feed] Post edited via socket:', editedPost._id);
+      setPosts((prevPosts) =>
+        prevPosts.map((post) => {
+          if (post.id === editedPost._id) {
+            const currentUserId = currentUser?._id || (global as any).currentUser?._id;
+            return mapBackendPostToFeed(editedPost, currentUserId);
+          }
+          return post;
+        })
+      );
+    };
+
+    const handlePostDeleted = (data: any) => {
+      if (!data || !data.postId) return;
+      console.log('[Feed] Post deleted via socket:', data.postId);
+      setPosts((prevPosts) => prevPosts.filter((post) => post.id !== data.postId));
+    };
+
+    const handleReconnect = () => {
+      console.log('[Feed] Socket reconnected. Re-fetching posts...');
+      fetchLivePosts();
+    };
+
     SocketService.on('post_updated', handlePostUpdated);
+    SocketService.on('new_post', handleNewPost);
+    SocketService.on('post_edited', handlePostEdited);
+    SocketService.on('post_deleted', handlePostDeleted);
+    SocketService.on('profile_updated', handleProfileUpdated);
+    SocketService.on('connect', handleReconnect);
 
     return () => {
       SocketService.off('post_updated', handlePostUpdated);
+      SocketService.off('new_post', handleNewPost);
+      SocketService.off('post_edited', handlePostEdited);
+      SocketService.off('post_deleted', handlePostDeleted);
+      SocketService.off('profile_updated', handleProfileUpdated);
+      SocketService.off('connect', handleReconnect);
     };
   }, [currentUser?._id]);
 

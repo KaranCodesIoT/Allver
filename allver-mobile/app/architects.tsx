@@ -43,16 +43,21 @@ export default function ArchitectsScreen() {
   const [locationQuery, setLocationQuery] = useState('');
   const [ratingQuery, setRatingQuery] = useState('');
   const [selectedSkill, setSelectedSkill] = useState('');
-  const [architects, setArchitects] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [architects, setArchitects] = useState<any[]>((global as any).cachedArchitects || []);
+  const [isLoading, setIsLoading] = useState(!((global as any).cachedArchitects && (global as any).cachedArchitects.length > 0));
 
   useEffect(() => {
     const fetchArchitects = async () => {
       try {
+        const cached = (global as any).cachedArchitects;
+        if (!cached || cached.length === 0) {
+          setIsLoading(true);
+        }
         const response = await fetch(`${BACKEND_URL}/api/professionals/Architect`);
         const data = await response.json();
         if (response.ok && data.professionals) {
           setArchitects(data.professionals);
+          (global as any).cachedArchitects = data.professionals;
         }
       } catch (err) {
         console.error('Error fetching architects:', err);
@@ -82,12 +87,14 @@ export default function ArchitectsScreen() {
       ? item.skills.join(', ')
       : (item.skills || '');
     
+    const firmName = item.firmName || '';
     const matchesSearch = 
-      name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      specs.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      specsPlural.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      workCat.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      skills.toLowerCase().includes(searchQuery.toLowerCase());
+      name.toLowerCase().includes(searchQuery.trim().toLowerCase()) || 
+      firmName.toLowerCase().includes(searchQuery.trim().toLowerCase()) || 
+      specs.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+      specsPlural.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+      workCat.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
+      skills.toLowerCase().includes(searchQuery.trim().toLowerCase());
     
     const location = item.city || '';
     const matchesLocation = location.toLowerCase().includes(locationQuery.toLowerCase());

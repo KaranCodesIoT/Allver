@@ -6,6 +6,7 @@ import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
+import SocketService from '../utils/SocketService';
 
 import * as Location from 'expo-location';
 
@@ -86,6 +87,54 @@ export default function LabourDetailScreen() {
   const [showUnfollowModal, setShowUnfollowModal] = useState(false);
   const [specializations, setSpecializations] = useState<string[]>([]);
   const [portfolioProjects, setPortfolioProjects] = useState<any[]>([]);
+  const [professionalData, setProfessionalData] = useState<any>(null);
+
+  // Listen for real-time profile updates
+  useEffect(() => {
+    if (!id) return;
+
+    const handleProfileUpdated = (data: any) => {
+      if (data && data.userId === id && data.user) {
+        console.log('[LabourDetail] Real-time profile update received:', data.user);
+        setProfessionalData(data.user);
+        if (data.user.followersCount !== undefined) {
+          setFollowersCountVal(data.user.followersCount);
+        }
+        
+        // Instant reload of highlights
+        fetch(`${BACKEND_URL}/api/professional/${id}/portfolio-highlights`)
+          .then(res => res.json())
+          .then(hlData => {
+            if (hlData.portfolioHighlights) setPortfolioProjects(hlData.portfolioHighlights);
+          }).catch(err => console.error('Error reloading highlights:', err));
+      }
+    };
+
+    const handleUserStatsUpdated = (data: any) => {
+      if (data && data.userId === id) {
+        console.log('[LabourDetail] Real-time stats update received:', data);
+        if (data.followersCount !== undefined) {
+          setFollowersCountVal(data.followersCount);
+        }
+      }
+    };
+
+    SocketService.on('profile_updated', handleProfileUpdated);
+    SocketService.on('user_stats_updated', handleUserStatsUpdated);
+
+    return () => {
+      SocketService.off('profile_updated', handleProfileUpdated);
+      SocketService.off('user_stats_updated', handleUserStatsUpdated);
+    };
+  }, [id]);
+
+  const displayName = professionalData?.fullName || name;
+  const displayAvatar = resolveAvatarUrl(professionalData?.avatarUrl) || avatar;
+  const displayRating = professionalData?.rating?.toString() || rating;
+  const displayReviews = professionalData?.reviews?.toString() || reviews;
+  const displayLocation = professionalData?.city || location;
+  const displayExperience = professionalData?.experience ? `${professionalData.experience} Years Experience` : cleanExperience;
+  const isVerified = professionalData?.isVerified ?? true;
 
   useEffect(() => {
     if (id) {
@@ -106,6 +155,42 @@ export default function LabourDetailScreen() {
   const [days, setDays] = useState<CalendarDay[]>([]);
   const [selectedDay, setSelectedDay] = useState<CalendarDay | null>(null);
   const [isReadOnlyModal, setIsReadOnlyModal] = useState(false);
+  const [hasAutoOpened, setHasAutoOpened] = useState(false);
+
+  // Auto-open attendance modal on redirect from notifications
+  useEffect(() => {
+    if (params.targetDate && allWorkspaces.length > 0 && currentUser && !hasAutoOpened) {
+      const dateStr = params.targetDate as string;
+      const parts = dateStr.split('-');
+      if (parts.length === 3) {
+        const targetYear = parseInt(parts[0], 10);
+        const targetMonth = parseInt(parts[1], 10) - 1; // 0-indexed
+        const targetDay = parseInt(parts[2], 10);
+
+        const targetWorkspace = allWorkspaces.find((w: any) => {
+          const att = w.labourManagement?.attendance?.find((a: any) => a.date === dateStr);
+          return att && att.records?.some((r: any) => (r.labourId?._id || r.labourId)?.toString() === id.toString());
+        });
+        const selectedWs = targetWorkspace || allWorkspaces.find((w: any) => w.status !== 'Completed' && w.status !== 'Cancelled') || allWorkspaces[0];
+
+        if (selectedWs) {
+          const wsDays = mergeAttendanceData(generateCalendar(targetYear, targetMonth), [selectedWs], targetYear, targetMonth, id);
+          const matchedDay = wsDays.find(d => d.isCurrentMonth && d.day === targetDay);
+          if (matchedDay) {
+            setCurrentYear(targetYear);
+            setCurrentMonth(targetMonth);
+            setHasAutoOpened(true);
+            
+            // Switch to attendance tab
+            setActiveTab('attendance');
+            
+            // Open modal
+            handleDayPress(matchedDay, selectedWs._id, selectedWs.title || selectedWs.name);
+          }
+        }
+      }
+    }
+  }, [params.targetDate, allWorkspaces, currentUser, hasAutoOpened]);
 
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
@@ -248,6 +333,7 @@ export default function LabourDetailScreen() {
         .then(res => res.json())
         .then(data => {
           if (data.professional) {
+            setProfessionalData(data.professional);
             setFollowersCountVal(data.professional.followersCount || 0);
             if (data.professional.specialization) {
               setSpecializations(data.professional.specialization);
@@ -427,6 +513,11 @@ export default function LabourDetailScreen() {
       let foundHours: number | undefined;
       let foundLatitude: number | undefined;
       let foundLongitude: number | undefined;
+      let foundCheckInTime: string | undefined;
+      let foundCheckOutTime: string | undefined;
+      let foundAddress: string | undefined;
+      let foundDistanceFromSite: string | undefined;
+      let foundGoogleMapsLink: string | undefined;
       let foundAdvance = 0;
       let foundRemarks = '-';
 
@@ -441,6 +532,12 @@ export default function LabourDetailScreen() {
             foundHours = matchingRecord.hours;
             foundLatitude = matchingRecord.latitude;
             foundLongitude = matchingRecord.longitude;
+            foundCheckInTime = matchingRecord.checkInTime;
+            foundCheckOutTime = matchingRecord.checkOutTime;
+            foundAddress = matchingRecord.address;
+            foundDistanceFromSite = matchingRecord.distanceFromSite;
+            foundGoogleMapsLink = matchingRecord.googleMapsLink;
+            foundRemarks = matchingRecord.remarks || '-';
           }
         }
 
@@ -464,7 +561,12 @@ export default function LabourDetailScreen() {
         advance: foundAdvance || d.advance,
         remarks: foundRemarks,
         latitude: foundLatitude,
-        longitude: foundLongitude
+        longitude: foundLongitude,
+        checkInTime: foundCheckInTime,
+        checkOutTime: foundCheckOutTime,
+        address: foundAddress,
+        distanceFromSite: foundDistanceFromSite,
+        googleMapsLink: foundGoogleMapsLink
       };
     });
   };
@@ -602,7 +704,12 @@ export default function LabourDetailScreen() {
             status: editStatus,
             hours: parsedHours,
             latitude: selectedDay.latitude || null,
-            longitude: selectedDay.longitude || null
+            longitude: selectedDay.longitude || null,
+            checkInTime: selectedDay.checkInTime || null,
+            checkOutTime: selectedDay.checkOutTime || null,
+            address: selectedDay.address || null,
+            distanceFromSite: selectedDay.distanceFromSite || null,
+            googleMapsLink: selectedDay.googleMapsLink || null
           }],
           senderId: currentUser._id
         })
@@ -644,6 +751,21 @@ export default function LabourDetailScreen() {
 
     setSelectedDay(null);
   };
+
+function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3; // metres
+  const phi1 = lat1 * Math.PI/180;
+  const phi2 = lat2 * Math.PI/180;
+  const deltaPhi = (lat2-lat1) * Math.PI/180;
+  const deltaLambda = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(deltaPhi/2) * Math.sin(deltaPhi/2) +
+            Math.cos(phi1) * Math.cos(phi2) *
+            Math.sin(deltaLambda/2) * Math.sin(deltaLambda/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return Math.round(R * c);
+}
 
   const handleLabourCheckIn = async () => {
     if (!selectedDay) return;
@@ -690,6 +812,49 @@ export default function LabourDetailScreen() {
         return;
       }
 
+      // Reverse geocode current coordinates to get address
+      let readableAddress = 'Unknown Location';
+      try {
+        const reverseGeocode = await Location.reverseGeocodeAsync({
+          latitude: lat,
+          longitude: lng
+        });
+        if (reverseGeocode && reverseGeocode.length > 0) {
+          const addr = reverseGeocode[0];
+          const addressParts = [
+            addr.name || addr.streetNumber,
+            addr.street,
+            addr.district || addr.city,
+            addr.region
+          ].filter(Boolean);
+          readableAddress = addressParts.join(', ');
+        }
+      } catch (revErr) {
+        console.error('Reverse geocode failed:', revErr);
+      }
+
+      // Calculate distance from site
+      let distanceFromSite = 'Unknown';
+      const currentWorkspace = allWorkspaces.find((w: any) => w._id === targetWorkspaceId);
+      if (currentWorkspace?.location) {
+        try {
+          const geocoded = await Location.geocodeAsync(currentWorkspace.location);
+          if (geocoded && geocoded.length > 0) {
+            const projectLat = geocoded[0].latitude;
+            const projectLng = geocoded[0].longitude;
+            const dist = getDistanceInMeters(lat, lng, projectLat, projectLng);
+            distanceFromSite = `${dist} meters`;
+          }
+        } catch (geoErr) {
+          console.error('Geocoding project location failed:', geoErr);
+        }
+      }
+
+      // Format current time and maps link
+      const now = new Date();
+      const checkInTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
+      const mapsLink = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+
       const dateStr = formatDateString(currentYear, currentMonth, selectedDay.day);
 
       const response = await fetch(`${BACKEND_URL}/api/project-workspaces/${targetWorkspaceId}/labour/attendance`, {
@@ -702,7 +867,11 @@ export default function LabourDetailScreen() {
             status: selectedDay.status || 'Present',
             hours: selectedDay.hours || 0,
             latitude: lat,
-            longitude: lng
+            longitude: lng,
+            checkInTime: checkInTimeStr,
+            address: readableAddress,
+            distanceFromSite,
+            googleMapsLink: mapsLink
           }],
           senderId: currentUser._id
         })
@@ -715,7 +884,7 @@ export default function LabourDetailScreen() {
       }
 
       fetchLabourWorkspaces();
-      Alert.alert('Success', 'Checked in successfully! GPS location stamped.');
+      Alert.alert('Success', 'Checked in successfully! GPS location and address details stamped.');
       setSelectedDay(null);
 
     } catch (err) {
@@ -746,6 +915,11 @@ export default function LabourDetailScreen() {
               longitude: match.longitude,
               workspaceId: w._id,
               workspaceTitle: w.title || w.name || 'Project',
+              checkInTime: match.checkInTime,
+              checkOutTime: match.checkOutTime,
+              address: match.address,
+              distanceFromSite: match.distanceFromSite,
+              googleMapsLink: match.googleMapsLink,
               rawDay: {
                 day: new Date(att.date).getDate(),
                 isCurrentMonth: new Date(att.date).getMonth() === currentMonth && new Date(att.date).getFullYear() === currentYear,
@@ -754,7 +928,12 @@ export default function LabourDetailScreen() {
                 advance: 0,
                 remarks: match.remarks || '-',
                 latitude: match.latitude,
-                longitude: match.longitude
+                longitude: match.longitude,
+                checkInTime: match.checkInTime,
+                checkOutTime: match.checkOutTime,
+                address: match.address,
+                distanceFromSite: match.distanceFromSite,
+                googleMapsLink: match.googleMapsLink
               }
             });
           }
@@ -775,6 +954,11 @@ export default function LabourDetailScreen() {
               longitude: undefined,
               workspaceId: w._id,
               workspaceTitle: w.title || w.name || 'Project',
+              checkInTime: undefined,
+              checkOutTime: undefined,
+              address: undefined,
+              distanceFromSite: undefined,
+              googleMapsLink: undefined,
               rawDay: {
                 day: pDate.getDate(),
                 isCurrentMonth: pDate.getMonth() === currentMonth && pDate.getFullYear() === currentYear,
@@ -809,6 +993,11 @@ export default function LabourDetailScreen() {
         longitude: act.longitude,
         workspaceId: act.workspaceId,
         workspaceTitle: act.workspaceTitle,
+        checkInTime: act.checkInTime,
+        checkOutTime: act.checkOutTime,
+        address: act.address,
+        distanceFromSite: act.distanceFromSite,
+        googleMapsLink: act.googleMapsLink,
         rawDay: act.rawDay
       };
     });
@@ -874,23 +1063,25 @@ export default function LabourDetailScreen() {
           {/* Top Info Section */}
           <View style={styles.profileTopRow}>
             <View style={styles.profileAvatarWrapper}>
-              <Image source={avatar ? { uri: avatar } : require('../assets/android-icon-foreground.png')} style={styles.avatarImage} contentFit={avatar ? "cover" : "contain"} />
-              <View style={styles.verifiedBadge}>
-                <Feather name="check" size={10} color={COLORS.white} />
-              </View>
+              <Image source={displayAvatar ? { uri: displayAvatar } : require('../assets/android-icon-foreground.png')} style={styles.avatarImage} contentFit={displayAvatar ? "cover" : "contain"} />
+              {isVerified && (
+                <View style={styles.verifiedBadge}>
+                  <Feather name="check" size={10} color={COLORS.white} />
+                </View>
+              )}
             </View>
 
             <View style={styles.profileTextDetails}>
               <View style={styles.nameRow}>
-                <Text style={styles.profileName} numberOfLines={1}>{name}</Text>
-                <Feather name="check-circle" size={14} color={COLORS.green} style={styles.verifiedCheckIcon} />
+                <Text style={styles.profileName} numberOfLines={1}>{displayName}</Text>
+                {isVerified && <Feather name="check-circle" size={14} color={COLORS.green} style={styles.verifiedCheckIcon} />}
               </View>
               
               <Text style={styles.profileRole}>{role}</Text>
               
               <View style={styles.ratingBadge}>
                 <Feather name="star" size={11} color={COLORS.gold} style={{ fill: COLORS.gold }} />
-                <Text style={styles.ratingText}>{rating} ({reviews} Reviews)</Text>
+                <Text style={styles.ratingText}>{displayRating} ({displayReviews} Reviews)</Text>
               </View>
             </View>
           </View>
@@ -899,11 +1090,11 @@ export default function LabourDetailScreen() {
           <View style={styles.metaBadgeRow}>
             <View style={styles.metaBadge}>
               <Feather name="map-pin" size={11} color={COLORS.teal} style={styles.metaBadgeIcon} />
-              <Text style={styles.metaBadgeText}>{location}</Text>
+              <Text style={styles.metaBadgeText}>{displayLocation}</Text>
             </View>
             <View style={styles.metaBadge}>
               <Feather name="award" size={11} color={COLORS.teal} style={styles.metaBadgeIcon} />
-              <Text style={styles.metaBadgeText}>{cleanExperience}</Text>
+              <Text style={styles.metaBadgeText}>{displayExperience}</Text>
             </View>
             {id && (
               <TouchableOpacity 
@@ -911,7 +1102,7 @@ export default function LabourDetailScreen() {
                 onPress={() => {
                   router.push({
                     pathname: '/followers-list',
-                    params: { userId: id, type: 'followers', userName: name }
+                    params: { userId: id, type: 'followers', userName: displayName }
                   });
                 }}
               >
@@ -1396,18 +1587,59 @@ export default function LabourDetailScreen() {
                             </View>
                           </View>
 
-                          {/* Middle row: Hours & GPS Stamp */}
-                          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginTop: 2 }}>
-                            <Text style={styles.timelineHours}>{act.hours} Hours</Text>
-                            {act.latitude && act.longitude ? (
-                              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <Feather name="map-pin" size={10} color="#10B981" style={{ marginRight: 3 }} />
-                                <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '500' }}>
-                                  {act.latitude.toFixed(4)}, {act.longitude.toFixed(4)}
-                                </Text>
-                              </View>
-                            ) : null}
-                          </View>
+                           {/* Middle row: Hours & GPS Stamp / Rich Proof */}
+                           <View style={{ marginTop: 2, width: '100%' }}>
+                             {act.latitude && act.longitude ? (
+                               <View style={styles.proofContainer}>
+                                 {/* Time Details */}
+                                 <View style={styles.proofTimeRow}>
+                                   <Text style={styles.proofTimeLabel}>Check-in: <Text style={styles.proofTimeValue}>{act.checkInTime || '--'}</Text></Text>
+                                   <Text style={styles.proofTimeSeparator}>|</Text>
+                                   <Text style={styles.proofTimeLabel}>Check-out: <Text style={styles.proofTimeValue}>{act.checkOutTime || '--'}</Text></Text>
+                                 </View>
+
+                                 {/* Readable Address */}
+                                 <View style={styles.proofLocRow}>
+                                   <Feather name="map-pin" size={11} color="#10B981" style={{ marginTop: 1, marginRight: 4 }} />
+                                   <Text style={styles.proofAddressText}>
+                                     {act.address && act.address !== 'Unknown Location' && !/^\s*-?\d+\.\d+\s*,\s*-?\d+\.\d+\s*$/.test(act.address) ? (
+                                       act.address
+                                     ) : (
+                                       "Address Unavailable\nExact GPS location captured successfully."
+                                     )}
+                                   </Text>
+                                 </View>
+
+                                 {/* Distance and Maps Link */}
+                                 <View style={styles.proofFooterRow}>
+                                   {act.distanceFromSite ? (
+                                     <View style={styles.proofDistanceBadge}>
+                                       <Text style={styles.proofDistanceText}>
+                                         Distance from Site: {act.distanceFromSite}
+                                       </Text>
+                                       {parseInt(act.distanceFromSite) <= 200 ? (
+                                         <Text style={{ fontSize: 9, marginLeft: 2 }}>✅</Text>
+                                       ) : (
+                                         <Text style={{ fontSize: 9, marginLeft: 2 }}>⚠️</Text>
+                                       )}
+                                     </View>
+                                   ) : null}
+
+                                   <TouchableOpacity
+                                     style={styles.mapsLinkBtn}
+                                     onPress={() => {
+                                       const url = act.googleMapsLink || `https://www.google.com/maps/search/?api=1&query=${act.latitude},${act.longitude}`;
+                                       Linking.openURL(url).catch(err => console.error("Couldn't load maps url", err));
+                                     }}
+                                   >
+                                     <Text style={styles.mapsLinkText}>View on Google Maps ↗</Text>
+                                   </TouchableOpacity>
+                                 </View>
+                               </View>
+                             ) : (
+                               <Text style={styles.timelineHours}>{act.hours}</Text>
+                             )}
+                           </View>
                         </View>
 
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 12 }}>
@@ -1690,32 +1922,60 @@ export default function LabourDetailScreen() {
             </View>
 
             {/* GPS Stamping Indicator / Display */}
-            {/* GPS Stamping Indicator / Display */}
             {selectedDay?.latitude && selectedDay?.longitude ? (
-              <View style={{ marginTop: 12, padding: 10, backgroundColor: '#E6FDF5', borderRadius: 8, borderWidth: 1, borderColor: '#A7F3D0' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <View style={{ marginTop: 12, padding: 12, backgroundColor: '#E6FDF5', borderRadius: 8, borderWidth: 1, borderColor: '#A7F3D0' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                   <Feather name="map-pin" size={14} color="#10B981" />
                   <Text style={{ fontSize: 13, fontWeight: '700', color: '#047857' }}>📍 GPS Attendance Stamp</Text>
                 </View>
-                <Text style={{ fontSize: 12, color: COLORS.textMuted, marginBottom: 8 }}>
-                  Coordinates: {selectedDay.latitude.toFixed(6)}, {selectedDay.longitude.toFixed(6)}
+
+                {/* Time Details */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, color: COLORS.textMuted }}>Check-in: <Text style={{ color: COLORS.textDark, fontWeight: '600' }}>{selectedDay.checkInTime || '--'}</Text></Text>
+                  <Text style={{ fontSize: 12, color: COLORS.textMuted }}>Check-out: <Text style={{ color: COLORS.textDark, fontWeight: '600' }}>{selectedDay.checkOutTime || '--'}</Text></Text>
+                </View>
+
+                {/* Readable Address */}
+                <Text style={{ fontSize: 12, color: COLORS.textDark, marginBottom: 8, lineHeight: 16 }}>
+                  <Text style={{ fontWeight: '600', color: COLORS.textMuted }}>Address: </Text>
+                  {selectedDay.address && selectedDay.address !== 'Unknown Location' && !/^\s*-?\d+\.\d+\s*,\s*-?\d+\.\d+\s*$/.test(selectedDay.address) ? (
+                    selectedDay.address
+                  ) : (
+                    "Address Unavailable\nExact GPS location captured successfully."
+                  )}
                 </Text>
-                <TouchableOpacity 
-                  style={{
-                    backgroundColor: '#10B981',
-                    paddingVertical: 6,
-                    paddingHorizontal: 12,
-                    borderRadius: 6,
-                    alignItems: 'center',
-                    alignSelf: 'flex-start'
-                  }}
-                  onPress={() => {
-                    const url = `https://www.google.com/maps/search/?api=1&query=${selectedDay.latitude},${selectedDay.longitude}`;
-                    Linking.openURL(url).catch(err => console.error("Couldn't load map", err));
-                  }}
-                >
-                  <Text style={{ color: COLORS.white, fontSize: 11, fontWeight: '700' }}>View on Google Maps</Text>
-                </TouchableOpacity>
+
+                {/* Distance and Google Maps Link Row */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  {selectedDay.distanceFromSite ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E2E8F0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                      <Text style={{ fontSize: 11, color: COLORS.textDark, fontWeight: '600' }}>
+                        Site Distance: {selectedDay.distanceFromSite}
+                      </Text>
+                      {parseInt(selectedDay.distanceFromSite) <= 200 ? (
+                        <Text style={{ fontSize: 10, marginLeft: 3 }}>✅</Text>
+                      ) : (
+                        <Text style={{ fontSize: 10, marginLeft: 3 }}>⚠️</Text>
+                      )}
+                    </View>
+                  ) : <View />}
+
+                  <TouchableOpacity 
+                    style={{
+                      backgroundColor: '#10B981',
+                      paddingVertical: 5,
+                      paddingHorizontal: 10,
+                      borderRadius: 6,
+                      alignItems: 'center'
+                    }}
+                    onPress={() => {
+                      const url = selectedDay.googleMapsLink || `https://www.google.com/maps/search/?api=1&query=${selectedDay.latitude},${selectedDay.longitude}`;
+                      Linking.openURL(url).catch(err => console.error("Couldn't load map", err));
+                    }}
+                  >
+                    <Text style={{ color: COLORS.white, fontSize: 11, fontWeight: '700' }}>View on Maps ↗</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : (
               !isReadOnlyModal && editStatus !== 'Absent' && (
@@ -2980,5 +3240,69 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: COLORS.textMuted,
+  },
+  proofContainer: {
+    marginTop: 6,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  proofTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  proofTimeLabel: {
+    fontSize: 10,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  proofTimeValue: {
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  proofTimeSeparator: {
+    fontSize: 10,
+    color: '#CBD5E1',
+  },
+  proofLocRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  proofAddressText: {
+    flex: 1,
+    fontSize: 10,
+    color: '#475569',
+    lineHeight: 14,
+  },
+  proofFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  proofDistanceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  proofDistanceText: {
+    fontSize: 9,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  mapsLinkBtn: {
+    paddingVertical: 2,
+  },
+  mapsLinkText: {
+    fontSize: 10,
+    color: '#2563EB',
+    fontWeight: '700',
   },
 });

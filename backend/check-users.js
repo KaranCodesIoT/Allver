@@ -4,10 +4,12 @@ const User = require('./models/User');
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(async () => {
-    console.log('Connected!');
-    const users = await User.find({}, 'fullName email role phoneNumber city experience projects reviews rating');
-    console.log('USERS_COUNT:', users.length);
-    console.log('USERS:', JSON.stringify(users, null, 2));
+    console.log('Connected to DB');
+    const users = await User.find({}, 'fullName email role firmName normalizedFirmName');
+    console.log('Users in DB:');
+    users.forEach(u => {
+      console.log(`Name: ${u.fullName}, Email: ${u.email}, Role: ${u.role}, FirmName: "${u.firmName}", Normalized: "${u.normalizedFirmName}"`);
+    });
     process.exit(0);
   })
   .catch(err => {

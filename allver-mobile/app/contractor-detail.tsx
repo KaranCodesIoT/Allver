@@ -6,6 +6,7 @@ import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
+import SocketService from '../utils/SocketService';
 
 
 const { width } = Dimensions.get('window');
@@ -83,6 +84,54 @@ export default function ContractorDetailScreen() {
   const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [professionalData, setProfessionalData] = useState<any>(null);
   const [portfolioProjects, setPortfolioProjects] = useState<any[]>([]);
+  const [userUploadedPosts, setUserUploadedPosts] = useState<any[]>([]);
+
+  // Listen for real-time profile updates
+  useEffect(() => {
+    if (!id) return;
+
+    const handleProfileUpdated = (data: any) => {
+      if (data && data.userId === id && data.user) {
+        console.log('[ContractorDetail] Real-time profile update received:', data.user);
+        setProfessionalData(data.user);
+        if (data.user.followersCount !== undefined) {
+          setFollowerCountVal(data.user.followersCount);
+        }
+        
+        // Instant reload of reviews, highlights, and team members
+        fetchReviews(id);
+        
+        fetch(`${BACKEND_URL}/api/professional/${id}/portfolio-highlights`)
+          .then(res => res.json())
+          .then(hlData => {
+            if (hlData.portfolioHighlights) setPortfolioProjects(hlData.portfolioHighlights);
+          }).catch(err => console.error('Error reloading highlights:', err));
+
+        fetch(`${BACKEND_URL}/api/professional/${id}/team`)
+          .then(res => res.json())
+          .then(tData => {
+            if (tData.team) setTeamMembers(tData.team);
+          }).catch(err => console.error('Error reloading team:', err));
+      }
+    };
+
+    const handleUserStatsUpdated = (data: any) => {
+      if (data && data.userId === id) {
+        console.log('[ContractorDetail] Real-time stats update received:', data);
+        if (data.followersCount !== undefined) {
+          setFollowerCountVal(data.followersCount);
+        }
+      }
+    };
+
+    SocketService.on('profile_updated', handleProfileUpdated);
+    SocketService.on('user_stats_updated', handleUserStatsUpdated);
+
+    return () => {
+      SocketService.off('profile_updated', handleProfileUpdated);
+      SocketService.off('user_stats_updated', handleUserStatsUpdated);
+    };
+  }, [id]);
 
   useEffect(() => {
     if (id) {
@@ -268,6 +317,16 @@ export default function ContractorDetailScreen() {
         })
         .catch(err => console.error("Error fetching professional info:", err));
 
+      // Fetch user uploaded posts (discover + design)
+      fetch(`${BACKEND_URL}/api/posts/user/${id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.posts) {
+            setUserUploadedPosts(data.posts);
+          }
+        })
+        .catch(err => console.error("Error fetching uploaded posts:", err));
+
       // Fetch team members
       fetch(`${BACKEND_URL}/api/professional/${id}/team`)
         .then(res => res.json())
@@ -298,28 +357,33 @@ export default function ContractorDetailScreen() {
   const getCombinedMedia = () => {
     const list: { type: 'image' | 'video'; url: string; source: 'portfolio' | 'project' }[] = [];
 
-    if (professionalData?.portfolioImages && Array.isArray(professionalData.portfolioImages)) {
-      professionalData.portfolioImages.forEach((img: string) => {
-        if (img) {
-          list.push({ type: 'image', url: resolveAvatarUrl(img), source: 'portfolio' });
+    // Map userUploadedPosts (discover feed media + design section layouts)
+    if (userUploadedPosts && Array.isArray(userUploadedPosts)) {
+      userUploadedPosts.forEach((post: any) => {
+        const titleStr = post.title || '';
+        const descStr = post.description || '';
+        if (/project update|progress update/i.test(titleStr) || /project update|progress update/i.test(descStr)) {
+          return; // Skip project updates
+        }
+
+        if (post.mediaUrls && Array.isArray(post.mediaUrls)) {
+          post.mediaUrls.forEach((url: string) => {
+            const isVideo = /\.(mp4|mov|m4v|3gp|avi|webm|mkv)/i.test(url) || url.includes('/video/') || url.includes('video') || url.includes('mp4');
+            list.push({
+              type: isVideo ? 'video' : 'image',
+              url: resolveAvatarUrl(url),
+              source: 'portfolio'
+            });
+          });
         }
       });
     }
 
-    if (realProjects && Array.isArray(realProjects)) {
-      realProjects.forEach((w: any) => {
-        if (w.updates && Array.isArray(w.updates)) {
-          w.updates.forEach((up: any) => {
-            if (up.img) {
-              const imgs = up.img.split(',').map((s: string) => s.trim()).filter(Boolean);
-              imgs.forEach((img: string) => {
-                list.push({ type: 'image', url: resolveAvatarUrl(img), source: 'project' });
-              });
-            }
-            if (up.video) {
-              list.push({ type: 'video', url: resolveAvatarUrl(up.video), source: 'project' });
-            }
-          });
+    if (professionalData?.portfolioImages && Array.isArray(professionalData.portfolioImages)) {
+      professionalData.portfolioImages.forEach((img: string) => {
+        const resolvedUrl = resolveAvatarUrl(img);
+        if (img && !list.some(item => item.url === resolvedUrl)) {
+          list.push({ type: 'image', url: resolvedUrl, source: 'portfolio' });
         }
       });
     }

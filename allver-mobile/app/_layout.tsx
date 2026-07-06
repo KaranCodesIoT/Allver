@@ -1,5 +1,5 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack, useSegments } from 'expo-router';
+import { Stack, useSegments, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import * as SplashScreen from 'expo-splash-screen';
@@ -15,7 +15,7 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { BACKEND_URL } from '@/constants/Config';
 import { I18nProvider } from '../utils/i18n';
-import { getStoredUser, getStoredLanguage } from '@/constants/Auth';
+import { getStoredUser, getStoredLanguage, getToken, removeToken, removeStoredUser, saveStoredUser } from '@/constants/Auth';
 import { UnreadMessageProvider } from '../context/UnreadMessageContext';
 import { UnreadActivityProvider } from '../context/UnreadActivityContext';
 
@@ -45,7 +45,7 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const [stage, setStage] = useState<'splash' | 'ready'>('splash');
   const [locationPermissionGranted, setLocationPermissionGranted] = useState<boolean | null>(null);
-  const [checkingLocation, setCheckingLocation] = useState(true);
+  const [checkingLocation, setCheckingLocation] = useState(false);
   const segments = useSegments();
 
   // Load user from local/global state on boot and route changes
@@ -76,7 +76,9 @@ export default function RootLayout() {
         return;
       }
 
-      setCheckingLocation(true);
+      if (shouldRequest) {
+        setCheckingLocation(true);
+      }
       const { status } = await Location.getForegroundPermissionsAsync();
       const servicesEnabled = await Location.hasServicesEnabledAsync();
 
@@ -102,7 +104,12 @@ export default function RootLayout() {
           setLocationPermissionGranted(false);
         }
       } else {
-        setLocationPermissionGranted(false);
+        // Silent check: just verify if we have access, don't show full-screen loading spinner
+        if (status === 'granted' && servicesEnabled) {
+          setLocationPermissionGranted(true);
+        } else {
+          setLocationPermissionGranted(false);
+        }
       }
     } catch (error) {
       console.warn('Error checking location permission:', error);
@@ -139,6 +146,39 @@ export default function RootLayout() {
         SocketService.initialize(user._id);
       })
       .catch(err => console.error('[RootLayout] SocketService import error:', err));
+
+    // Background validation of session (non-blocking)
+    const validateSession = async () => {
+      const token = await getToken();
+      if (token && user._id) {
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/user/${user._id}`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.user) {
+              await saveStoredUser(data.user);
+              (global as any).currentUser = data.user;
+            }
+          } else if (res.status === 404 || res.status === 401) {
+            console.log('[RootLayout] Session validation failed on background check. Logging out...');
+            await removeToken();
+            await removeStoredUser();
+            (global as any).currentUser = null;
+            import('@/utils/SocketService').then(({ default: s }) => s.disconnect());
+            router.replace('/login');
+          }
+        } catch (err) {
+          console.warn('[RootLayout] Background session validation failed (offline fallback):', err);
+        }
+      }
+    };
+    validateSession();
 
     // 1. Setup Push Notifications
     const setupPush = async () => {

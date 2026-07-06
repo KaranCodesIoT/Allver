@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, FlatList } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator, Modal, FlatList, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -70,6 +70,8 @@ export default function ContractorProfileScreen() {
   const router = useRouter();
   
   // State for form inputs
+  const [firmName, setFirmName] = useState('');
+  const [firmNameError, setFirmNameError] = useState('');
   const [contractorType, setContractorType] = useState('');
   const [teamSize, setTeamSize] = useState('');
   const [workCategory, setWorkCategory] = useState<string[]>(['Building Construction', 'Renovation', 'Painting']);
@@ -95,21 +97,61 @@ export default function ContractorProfileScreen() {
     }
   }, []);
 
-  const handleSave = async (isSkip = false) => {
+  // Real-time unique check for Firm Name
+  useEffect(() => {
+    const trimmed = firmName.trim();
+    if (!trimmed) {
+      setFirmNameError('');
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/user/check-firm-name?name=${encodeURIComponent(trimmed)}${currentUser?._id ? `&excludeUserId=${currentUser._id}` : ''}`);
+        const data = await response.json();
+        if (response.ok && !data.available) {
+          setFirmNameError('This firm name is already taken');
+        } else {
+          setFirmNameError('');
+        }
+      } catch (error) {
+        console.error('Error checking firm name availability:', error);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [firmName, currentUser]);
+
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      alert(`${title}\n\n${message}`);
+    } else {
+      const Alert = require('react-native').Alert;
+      Alert.alert(title, message);
+    }
+  };
+
+  const handleSave = async () => {
     if (!currentUser) {
       router.push('/(tabs)');
       return;
     }
 
+    const trimmedFirm = firmName.trim();
+    if (!trimmedFirm) {
+      showAlert('Required Field', 'Company / Firm Name is required.');
+      return;
+    }
+
+    if (firmNameError) {
+      showAlert('Validation Error', 'This Firm Name is already registered on Allver. Please use a different Firm Name.');
+      return;
+    }
+
     setSaving(true);
 
-    const payload = isSkip ? {
-      experience: 'Less than 1 year',
-      contractorType: 'General Contractor',
-      teamSize: '1-5 members',
-      workCategory: ['Building Construction'],
-      serviceLocation: ['Mumbai'],
-    } : {
+    const payload = {
+      firmName: trimmedFirm,
       contractorType: contractorType || 'General Contractor',
       teamSize: teamSize || '1-5 members',
       workCategory: workCategory.length > 0 ? workCategory : ['Building Construction'],
@@ -125,20 +167,24 @@ export default function ContractorProfileScreen() {
         body: JSON.stringify(payload),
       });
 
+      const data = await res.json();
+
       if (res.ok) {
-        const data = await res.json();
         const updatedUser = { ...currentUser, ...payload, ...data.user };
         
         if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
           localStorage.setItem('currentUser', JSON.stringify(updatedUser));
         }
         (global as any).currentUser = updatedUser;
+        router.push('/(tabs)');
+      } else {
+        showAlert('Firm Registration Failed', data.message || 'Failed to update profile.');
       }
     } catch (err) {
       console.error(err);
+      showAlert('Network Error', 'Server connection failed. Please try again.');
     } finally {
       setSaving(false);
-      router.push('/(tabs)');
     }
   };
 
@@ -304,6 +350,31 @@ export default function ContractorProfileScreen() {
           {/* Form Content */}
           <View style={styles.formContainer}>
 
+            {/* Company / Firm Name */}
+            <View style={styles.formGroup}>
+              <View style={styles.iconCol}>
+                <FontAwesome5 name="building" size={18} color={COLORS.green} />
+              </View>
+              <View style={styles.inputCol}>
+                <Text style={styles.inputLabel}>Firm Name <Text style={styles.asterisk}>*</Text></Text>
+                <View style={[styles.inputBox, firmNameError ? { borderColor: COLORS.red } : {}]}>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Enter your firm / company name" 
+                    placeholderTextColor={COLORS.textMuted}
+                    value={firmName}
+                    onChangeText={setFirmName}
+                  />
+                </View>
+                {firmNameError ? (
+                  <Text style={{ color: COLORS.red, fontSize: 11, marginTop: 4, fontWeight: '600' }}>
+                    {firmNameError}
+                  </Text>
+                ) : null}
+                <Text style={styles.helperText}>Mandatory. A Firm Name can have only one profile on Allver.</Text>
+              </View>
+            </View>
+
             {/* Contractor Type */}
             <View style={styles.formGroup}>
               <View style={styles.iconCol}>
@@ -421,7 +492,7 @@ export default function ContractorProfileScreen() {
           <View style={styles.bottomActions}>
             <TouchableOpacity 
               style={[styles.saveBtn, saving && { opacity: 0.7 }]} 
-              onPress={() => handleSave(false)}
+              onPress={() => handleSave()}
               disabled={saving}
             >
               {saving ? (
@@ -429,14 +500,6 @@ export default function ContractorProfileScreen() {
               ) : (
                 <Text style={styles.saveBtnText}>Save & Continue</Text>
               )}
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.skipBtn, saving && { opacity: 0.7 }]} 
-              onPress={() => handleSave(true)}
-              disabled={saving}
-            >
-              <Text style={styles.skipBtnText}>Skip for Now</Text>
             </TouchableOpacity>
           </View>
 
@@ -494,6 +557,8 @@ const styles = StyleSheet.create({
   inputLabel: { fontSize: 14, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 },
   asterisk: { color: COLORS.red },
   helperText: { fontSize: 11, color: COLORS.textMuted, marginTop: 6 },
+  inputBox: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 15, paddingVertical: 12, backgroundColor: COLORS.white },
+  input: { fontSize: 14, color: COLORS.textDark, padding: 0 },
 
   /* DROPDOWN / CHIPS */
   dropdownBox: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 15, paddingVertical: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: COLORS.white },

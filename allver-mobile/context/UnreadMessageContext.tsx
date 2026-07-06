@@ -96,6 +96,16 @@ export const UnreadMessageProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
+      // Auto-acknowledge delivery back to sender
+      if (workspaceId && message._id) {
+        console.log('[UnreadMessageContext] Emitting message_delivered back to sender:', message._id);
+        SocketService.emit('message_delivered', {
+          roomId: workspaceId,
+          messageId: message._id,
+          userId: currentUserId
+        });
+      }
+
       // 2. Skip if the current user is active inside the chat room
       const activeChatRoomId = (global as any).activeChatRoomId;
       if (activeChatRoomId && activeChatRoomId.toString() === workspaceId?.toString()) {
@@ -107,13 +117,22 @@ export const UnreadMessageProvider: React.FC<{ children: React.ReactNode }> = ({
       setUnreadMsgCount(prev => prev + 1);
     };
 
-    // Listen on receive_message and new_dm_notification
+    const handleMessagesRead = (data: any) => {
+      if (data && data.userId === currentUserId) {
+        console.log('[UnreadMessageContext] Messages read by current user. Syncing total unread count...');
+        refreshUnreadMsgCount();
+      }
+    };
+
+    // Listen on receive_message, new_dm_notification, and messages_read
     SocketService.on('receive_message', handleIncomingMessage);
     SocketService.on('new_dm_notification', handleIncomingMessage);
+    SocketService.on('messages_read', handleMessagesRead);
 
     return () => {
       SocketService.off('receive_message', handleIncomingMessage);
       SocketService.off('new_dm_notification', handleIncomingMessage);
+      SocketService.off('messages_read', handleMessagesRead);
     };
   }, [currentUserId]);
 

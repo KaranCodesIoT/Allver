@@ -22,8 +22,9 @@ const userSchema = new mongoose.Schema({
   // Client profile fields
   projectType: { type: String },
   
-  // Architect profile fields
+  // Architect / Professional profile fields
   firmName: { type: String },
+  normalizedFirmName: { type: String, unique: true, sparse: true },
   portfolioImages: { type: [String] },
   specialization: { type: [String] },
   serviceArea: { type: [String] },

@@ -86,8 +86,9 @@ export default function SearchResultsScreen() {
       ? item.workCategory.join(' ')
       : (item.workCategory || '');
     const skillType = item.skillType || '';
+    const firmName = item.firmName || '';
 
-    const textToSearch = `${name} ${city} ${experience} ${specialization} ${workCategory} ${skillType} ${item.role}`.toLowerCase();
+    const textToSearch = `${name} ${firmName} ${city} ${experience} ${specialization} ${workCategory} ${skillType} ${item.role}`.toLowerCase();
     return textToSearch.includes(q);
   });
 

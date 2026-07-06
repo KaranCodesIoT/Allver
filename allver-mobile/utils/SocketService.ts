@@ -7,6 +7,7 @@ class SocketService {
   private socket: Socket | null = null;
   private userId: string | null = null;
   private appStateSubscription: any = null;
+  private listeners: Map<string, Set<(...args: any[]) => void>> = new Map();
 
   constructor() {
     // Listen to React Native AppState shifts
@@ -41,6 +42,13 @@ class SocketService {
       auth: { token },
       query: { userId, token: token || '' }
     });
+
+    // Re-bind all stored listeners to the new socket instance
+    for (const [event, callbacks] of this.listeners.entries()) {
+      for (const callback of callbacks) {
+        this.socket.on(event, callback);
+      }
+    }
 
     this.socket.on('connect', () => {
       console.log('[SocketService] Connected successfully. Socket ID:', this.socket?.id);
@@ -83,9 +91,11 @@ class SocketService {
    * Listen to an event
    */
   public on(event: string, callback: (...args: any[]) => void): void {
-    if (!this.socket) {
-      console.warn('[SocketService] on() called before initialize. Listener will be registered once initialized.');
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
     }
+    this.listeners.get(event)!.add(callback);
+
     this.socket?.on(event, callback);
   }
 
@@ -94,8 +104,10 @@ class SocketService {
    */
   public off(event: string, callback?: (...args: any[]) => void): void {
     if (callback) {
+      this.listeners.get(event)?.delete(callback);
       this.socket?.off(event, callback);
     } else {
+      this.listeners.delete(event);
       this.socket?.off(event);
     }
   }
@@ -124,6 +136,7 @@ class SocketService {
       this.socket = null;
     }
     this.userId = null;
+    this.listeners.clear();
   }
 
   /**

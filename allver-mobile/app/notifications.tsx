@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Platform, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import SocketService from '../utils/SocketService';
+import { useFocusEffect } from '@react-navigation/native';
 
 const COLORS = {
   green: '#1BC47D', // Green accent
@@ -36,11 +37,51 @@ interface NotificationItem {
   isMarked?: boolean;
 }
 
+const parseNotificationText = (text: string) => {
+  let title = 'Notification';
+  let body = text;
+  let actionType = 'none';
+
+  // 1. Extract titles starting with emojis
+  const firstLine = text.split('\n')[0] || '';
+  if (
+    firstLine.startsWith('📋') ||
+    firstLine.startsWith('📍') ||
+    firstLine.startsWith('📩') ||
+    firstLine.startsWith('🏗') ||
+    firstLine.startsWith('✅') ||
+    firstLine.startsWith('💬')
+  ) {
+    title = firstLine.replace(/[📋📍📩🏗✅💬]/g, '').trim();
+    // Body is everything after the first line (excluding blank lines and tags)
+    body = text.split('\n').slice(1).join('\n').trim();
+  } else if (text.includes('started following you')) {
+    title = 'New Follower';
+  }
+
+  // 2. Identify action types based on brackets or keywords
+  if (text.includes('[View Attendance]')) {
+    actionType = 'attendance';
+    body = body.replace(/\[View Attendance\]/gi, '').trim();
+  } else if (text.includes('[View Invitation]')) {
+    actionType = 'invitation';
+    body = body.replace(/\[View Invitation\]/gi, '').trim();
+  } else if (text.includes('[View Progress]')) {
+    actionType = 'progress';
+    body = body.replace(/\[View Progress\]/gi, '').trim();
+  }
+
+  // Strip empty lines from body
+  body = body.split('\n').filter(line => line.trim().length > 0).join('\n');
+
+  return { title, body, actionType };
+};
+
 export default function NotificationsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [notifications, setNotifications] = useState<NotificationItem[]>((global as any).cachedNotifications || []);
+  const [isLoading, setIsLoading] = useState(!((global as any).cachedNotifications && (global as any).cachedNotifications.length > 0));
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userRequests, setUserRequests] = useState<any[]>([]);
@@ -161,6 +202,7 @@ export default function NotificationsScreen() {
           return !isJobRelated;
         });
         setNotifications(filtered);
+        (global as any).cachedNotifications = filtered;
       }
     } catch (error) {
       console.error('Error fetching notifications:', error);
@@ -169,6 +211,15 @@ export default function NotificationsScreen() {
       setIsRefreshing(false);
     }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      if (currentUser?._id) {
+        fetchNotifications(false);
+        fetchUserRequests();
+      }
+    }, [currentUser])
+  );
 
   useEffect(() => {
     if (currentUser?._id) {
@@ -179,7 +230,7 @@ export default function NotificationsScreen() {
     }
   }, [currentUser]);
 
-  // Handle real-time incoming notifications
+  // Handle real-time incoming notifications & reconnect sync
   useEffect(() => {
     if (!currentUser?._id) return;
 
@@ -190,10 +241,27 @@ export default function NotificationsScreen() {
       fetchUserRequests();
     };
 
+    const handleNotificationsRead = (data: any) => {
+      if (data && data.userId === currentUser?._id) {
+        console.log('[Notifications] Notifications marked read via socket, syncing...');
+        fetchNotifications(false);
+      }
+    };
+
+    const handleReconnect = () => {
+      console.log('[Notifications] Socket reconnected. Syncing notifications...');
+      fetchNotifications(false);
+      fetchUserRequests();
+    };
+
     SocketService.on('new_notification', handleNewNotification);
+    SocketService.on('notifications_read', handleNotificationsRead);
+    SocketService.on('connect', handleReconnect);
 
     return () => {
       SocketService.off('new_notification', handleNewNotification);
+      SocketService.off('notifications_read', handleNotificationsRead);
+      SocketService.off('connect', handleReconnect);
     };
   }, [currentUser?._id]);
 
@@ -311,6 +379,7 @@ export default function NotificationsScreen() {
         {items.map((item) => {
           const sender = item.senderId || { fullName: 'Someone', role: 'User' };
           const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(sender.fullName)}&background=1BC47D&color=fff`;
+          const parsed = parseNotificationText(item.text);
           
           return (
             <TouchableOpacity
@@ -319,23 +388,55 @@ export default function NotificationsScreen() {
               onPress={() => handleNotificationPress(item)}
               activeOpacity={0.7}
             >
-              <Image
-                source={{ uri: resolveAvatarUrl(sender.avatarUrl) || fallbackAvatar }}
-                style={styles.avatar}
-                contentFit="cover"
-              />
+              <View style={styles.avatarContainer}>
+                <Image
+                  source={{ uri: resolveAvatarUrl(sender.avatarUrl) || fallbackAvatar }}
+                  style={styles.avatar}
+                  contentFit="cover"
+                />
+                {!item.isRead && <View style={styles.unreadPulse} />}
+              </View>
               
               <View style={styles.contentContainer}>
-                <Text style={styles.text}>
-                  {item.text}
-                </Text>
-                
-                <View style={styles.metaRow}>
-                  <Text style={styles.roleTag}>{sender.role}</Text>
-                  <Text style={styles.timeText}>• {formatTime(item.createdAt)}</Text>
+                {/* Title and Time row */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={styles.notificationTitle}>{parsed.title}</Text>
+                  <Text style={styles.timeText}>{formatTime(item.createdAt)}</Text>
                 </View>
 
-                {currentUser?.role === 'Contractor' && item.text.includes('Labour Checked In') && (
+                {/* Body Text */}
+                <Text style={styles.text}>
+                  {parsed.body}
+                </Text>
+
+                {/* Metadata Row (Role tags, etc.) */}
+                <View style={styles.metaRow}>
+                  <Text style={styles.roleTag}>{sender.role}</Text>
+                </View>
+
+                {/* Styled inline action buttons (if any) */}
+                {parsed.actionType !== 'none' && !item.text.includes('Labour Checked In') && (
+                  <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      backgroundColor: COLORS.greenLight,
+                      paddingVertical: 5,
+                      paddingHorizontal: 10,
+                      borderRadius: 6,
+                      borderWidth: 1,
+                      borderColor: '#A7F3D0'
+                    }}>
+                      <Text style={{ color: COLORS.green, fontSize: 11, fontWeight: '700', marginRight: 4 }}>
+                        {parsed.actionType === 'attendance' ? 'View Attendance' : parsed.actionType === 'invitation' ? 'View Invitation' : 'View Progress'}
+                      </Text>
+                      <Feather name="arrow-right" size={11} color={COLORS.green} />
+                    </View>
+                  </View>
+                )}
+
+                {/* Contractor approval action buttons */}
+                {(currentUser?.role === 'Contractor' || currentUser?.role === 'Architect' || currentUser?.role === 'Professional') && item.text.includes('Labour Checked In') && (
                   <TouchableOpacity
                     style={{
                       backgroundColor: item.isMarked ? '#94A3B8' : '#10B981',
@@ -349,13 +450,17 @@ export default function NotificationsScreen() {
                     disabled={!!item.isMarked}
                     onPress={(e) => {
                       e.stopPropagation();
+                      const dateMatch = item.text.match(/for date\s+(\d{4}-\d{2}-\d{2})/i);
+                      const checkInDate = dateMatch ? dateMatch[1] : '';
                       router.push({
                         pathname: '/labour-detail',
                         params: {
                           id: sender._id,
                           name: sender.fullName,
                           role: sender.role,
-                          avatar: resolveAvatarUrl(sender.avatarUrl)
+                          avatar: resolveAvatarUrl(sender.avatarUrl),
+                          targetDate: checkInDate,
+                          autoOpen: 'true'
                         }
                       });
                     }}
@@ -397,7 +502,11 @@ export default function NotificationsScreen() {
                 })()}
               </View>
 
-              {!item.isRead && <View style={styles.unreadDot} />}
+              {!item.isRead && (
+                <View style={{ justifyContent: 'center', paddingLeft: 8 }}>
+                  <View style={styles.unreadDot} />
+                </View>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -531,31 +640,51 @@ const styles = StyleSheet.create({
   },
   notificationCard: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
     backgroundColor: COLORS.white,
   },
   unreadCard: {
-    backgroundColor: '#F2FBF7', // Very light green highlight for unread
+    backgroundColor: '#F7FEE7', // Very premium soft light tint
+  },
+  avatarContainer: {
+    position: 'relative',
+    alignSelf: 'flex-start',
+  },
+  unreadPulse: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#10B981',
+    borderWidth: 1.5,
+    borderColor: COLORS.white,
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: COLORS.bgLight,
   },
   contentContainer: {
     flex: 1,
     marginLeft: 12,
-    marginRight: 8,
+  },
+  notificationTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textDark,
   },
   text: {
-    fontSize: 14,
-    color: COLORS.textDark,
-    lineHeight: 19,
+    fontSize: 13,
+    color: '#374151',
+    lineHeight: 18,
+    marginVertical: 4,
   },
   senderName: {
     fontWeight: '700',

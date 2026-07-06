@@ -10,6 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
 import { useTranslation } from '../../utils/i18n';
 import { removeToken, removeStoredUser } from '../../constants/Auth';
+import SocketService from '../../utils/SocketService';
 
 const { width } = Dimensions.get('window');
 
@@ -80,6 +81,29 @@ export default function ProfileScreen() {
   const [reviewsList, setReviewsList] = useState<any[]>([]);
   const [portfolioProjects, setPortfolioProjects] = useState<any[]>([]);
   const [allWorkspaces, setAllWorkspaces] = useState<any[]>([]);
+  const [userUploadedPosts, setUserUploadedPosts] = useState<any[]>([]);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingPostTitle, setEditingPostTitle] = useState('');
+  const [editingPostDesc, setEditingPostDesc] = useState('');
+  const [editingPostType, setEditingPostType] = useState<'media' | 'design'>('media');
+  const [showEditPostModal, setShowEditPostModal] = useState(false);
+
+  // Listen for real-time profile updates
+  useEffect(() => {
+    const handleProfileUpdated = (data: any) => {
+      if (data && currentUser && data.userId === currentUser._id) {
+        console.log('[Profile] Current user profile updated via socket:', data.user);
+        setCurrentUser(data.user);
+        (global as any).currentUser = data.user;
+        loadUserData();
+      }
+    };
+
+    SocketService.on('profile_updated', handleProfileUpdated);
+    return () => {
+      SocketService.off('profile_updated', handleProfileUpdated);
+    };
+  }, [currentUser?._id]);
 
   // Add Portfolio Highlight states
   const [showAddHighlightModal, setShowAddHighlightModal] = useState(false);
@@ -160,7 +184,6 @@ export default function ProfileScreen() {
       body: formData,
       headers: {
         'Accept': 'application/json',
-        'Content-Type': 'multipart/form-data',
       },
     });
 
@@ -556,8 +579,71 @@ export default function ProfileScreen() {
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
   const [registeredLabours, setRegisteredLabours] = useState<any[]>([]);
   const [registeredArchitects, setRegisteredArchitects] = useState<any[]>([]);
+  const [registeredContractors, setRegisteredContractors] = useState<any[]>([]);
+  const [modalSearchQuery, setModalSearchQuery] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+
+  const handleVoiceSearchPress = () => {
+    setModalSearchQuery('');
+    setShowVoiceModal(true);
+    setIsListening(true);
+    
+    const SpeechRecognition = (Platform.OS === 'web') 
+      ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)
+      : null;
+
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event: any) => {
+          const speechToText = event.results[0][0].transcript;
+          console.log('[VoiceSearch] Result:', speechToText);
+          setModalSearchQuery(speechToText);
+          setShowVoiceModal(false);
+        };
+
+        recognition.onerror = (e: any) => {
+          console.error('[VoiceSearch] Error:', e);
+          setIsListening(false);
+          setShowVoiceModal(false);
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+          setShowVoiceModal(false);
+        };
+
+        recognition.start();
+      } catch (err) {
+        console.error('[VoiceSearch] Start error:', err);
+        setIsListening(false);
+        setShowVoiceModal(false);
+      }
+    } else {
+      console.log('[VoiceSearch] Web Speech API not available. Simulating Voice Input...');
+      const mockKeywords = 
+        activeModalTab === 'Labour' 
+          ? ['Plumber', 'Mason', 'Electrician', 'Tile Layer']
+          : activeModalTab === 'Contractor'
+            ? ['Bumrah', 'Anuj', 'Mumbai', 'Thane']
+            : ['Design Space', 'Sustainable', 'Residential'];
+      const randomKeyword = mockKeywords[Math.floor(Math.random() * mockKeywords.length)];
+
+      setTimeout(() => {
+        setModalSearchQuery(randomKeyword);
+        setIsListening(false);
+        setShowVoiceModal(false);
+      }, 2500);
+    }
+  };
+
   const [loadingProfessionals, setLoadingProfessionals] = useState(false);
-  const [activeModalTab, setActiveModalTab] = useState<'Labour' | 'Architect'>('Labour');
+  const [activeModalTab, setActiveModalTab] = useState<string>('Labour');
 
   const fetchTeamMembers = (userId: string) => {
     fetch(`${BACKEND_URL}/api/professional/${userId}/team`)
@@ -590,6 +676,19 @@ export default function ProfileScreen() {
         }
       })
       .catch(err => console.error("Error fetching registered labours:", err));
+
+    // Fetch Contractors
+    fetch(`${BACKEND_URL}/api/professionals/Contractor`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.professionals) {
+          const filtered = currentUser 
+            ? data.professionals.filter((p: any) => p._id !== currentUser._id)
+            : data.professionals;
+          setRegisteredContractors(filtered);
+        }
+      })
+      .catch(err => console.error("Error fetching registered contractors:", err));
 
     // Fetch Architects
     fetch(`${BACKEND_URL}/api/professionals/Architect`)
@@ -716,6 +815,16 @@ export default function ProfileScreen() {
                 }
               })
               .catch(err => console.error("Error fetching my portfolio highlights:", err));
+
+            // Fetch user uploaded posts (discover + design)
+            fetch(`${BACKEND_URL}/api/posts/user/${parsed._id}`)
+              .then(res => res.json())
+              .then(data => {
+                if (data.success && data.posts) {
+                  setUserUploadedPosts(data.posts);
+                }
+              })
+              .catch(err => console.error("Error fetching my uploaded posts:", err));
           }
 
           if (parsed.role === 'Client') {
@@ -775,6 +884,71 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleEditMediaPress = (item: any) => {
+    setEditingPostId(item.postId);
+    setEditingPostTitle(item.title);
+    setEditingPostDesc(item.description || '');
+    setEditingPostType(item.postType || 'media');
+    setShowEditPostModal(true);
+  };
+
+  const handleSavePostEdit = async () => {
+    if (!editingPostId) return;
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/posts/${editingPostId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editingPostTitle,
+          description: editingPostDesc
+        })
+      });
+      const data = await response.json();
+      if (response.ok) {
+        Alert.alert('Success', 'Post updated successfully');
+        setShowEditPostModal(false);
+        loadUserData();
+      } else {
+        Alert.alert('Error', data.message || 'Failed to update post');
+      }
+    } catch (error) {
+      console.error('Error updating post:', error);
+      Alert.alert('Error', 'An error occurred while updating the post');
+    }
+  };
+
+  const handleDeletePostPress = () => {
+    if (!editingPostId) return;
+    Alert.alert(
+      'Delete Post',
+      'Are you sure you want to permanently delete this post?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch(`${BACKEND_URL}/api/posts/${editingPostId}`, {
+                method: 'DELETE'
+              });
+              if (response.ok) {
+                Alert.alert('Success', 'Post deleted successfully');
+                setShowEditPostModal(false);
+                loadUserData();
+              } else {
+                Alert.alert('Error', 'Failed to delete post');
+              }
+            } catch (error) {
+              console.error('Error deleting post:', error);
+              Alert.alert('Error', 'An error occurred while deleting the post');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   useEffect(() => {
     loadUserData();
     const unsubscribe = navigation.addListener('focus', () => {
@@ -822,6 +996,11 @@ export default function ProfileScreen() {
         let foundHours: number | undefined;
         let foundLatitude: number | undefined;
         let foundLongitude: number | undefined;
+        let foundCheckInTime: string | undefined;
+        let foundCheckOutTime: string | undefined;
+        let foundAddress: string | undefined;
+        let foundDistanceFromSite: string | undefined;
+        let foundGoogleMapsLink: string | undefined;
         let foundAdvance = 0;
         let foundRemarks = '-';
 
@@ -836,6 +1015,12 @@ export default function ProfileScreen() {
               foundHours = matchingRecord.hours;
               foundLatitude = matchingRecord.latitude;
               foundLongitude = matchingRecord.longitude;
+              foundCheckInTime = matchingRecord.checkInTime;
+              foundCheckOutTime = matchingRecord.checkOutTime;
+              foundAddress = matchingRecord.address;
+              foundDistanceFromSite = matchingRecord.distanceFromSite;
+              foundGoogleMapsLink = matchingRecord.googleMapsLink;
+              foundRemarks = matchingRecord.remarks || '-';
             }
           }
 
@@ -859,7 +1044,12 @@ export default function ProfileScreen() {
           advance: foundAdvance || dObj.advance,
           remarks: foundRemarks,
           latitude: foundLatitude,
-          longitude: foundLongitude
+          longitude: foundLongitude,
+          checkInTime: foundCheckInTime,
+          checkOutTime: foundCheckOutTime,
+          address: foundAddress,
+          distanceFromSite: foundDistanceFromSite,
+          googleMapsLink: foundGoogleMapsLink
         };
       });
     };
@@ -893,6 +1083,21 @@ export default function ProfileScreen() {
     (global as any).currentUser = null;
     router.replace('/login');
   };
+
+function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3; // metres
+  const phi1 = lat1 * Math.PI/180;
+  const phi2 = lat2 * Math.PI/180;
+  const deltaPhi = (lat2-lat1) * Math.PI/180;
+  const deltaLambda = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(deltaPhi/2) * Math.sin(deltaPhi/2) +
+            Math.cos(phi1) * Math.cos(phi2) *
+            Math.sin(deltaLambda/2) * Math.sin(deltaLambda/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return Math.round(R * c);
+}
 
   const handleLabourCheckIn = async () => {
     if (!selectedDay || !currentUser?._id) return;
@@ -939,6 +1144,49 @@ export default function ProfileScreen() {
         return;
       }
 
+      // Reverse geocode current coordinates to get address
+      let readableAddress = 'Unknown Location';
+      try {
+        const reverseGeocode = await Location.reverseGeocodeAsync({
+          latitude: lat,
+          longitude: lng
+        });
+        if (reverseGeocode && reverseGeocode.length > 0) {
+          const addr = reverseGeocode[0];
+          const addressParts = [
+            addr.name || addr.streetNumber,
+            addr.street,
+            addr.district || addr.city,
+            addr.region
+          ].filter(Boolean);
+          readableAddress = addressParts.join(', ');
+        }
+      } catch (revErr) {
+        console.error('Reverse geocode failed:', revErr);
+      }
+
+      // Calculate distance from site
+      let distanceFromSite = 'Unknown';
+      const currentWorkspace = allWorkspaces.find((w: any) => w._id === targetWorkspaceId);
+      if (currentWorkspace?.location) {
+        try {
+          const geocoded = await Location.geocodeAsync(currentWorkspace.location);
+          if (geocoded && geocoded.length > 0) {
+            const projectLat = geocoded[0].latitude;
+            const projectLng = geocoded[0].longitude;
+            const dist = getDistanceInMeters(lat, lng, projectLat, projectLng);
+            distanceFromSite = `${dist} meters`;
+          }
+        } catch (geoErr) {
+          console.error('Geocoding project location failed:', geoErr);
+        }
+      }
+
+      // Format current time and maps link
+      const now = new Date();
+      const checkInTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
+      const mapsLink = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+
       const formatDateString = (y: number, m: number, d: number) => {
         const monthStr = m + 1;
         return `${y}-${monthStr < 10 ? '0' + monthStr : monthStr}-${d < 10 ? '0' + d : d}`;
@@ -955,7 +1203,11 @@ export default function ProfileScreen() {
             status: selectedDay.status || 'Present',
             hours: selectedDay.hours || 0,
             latitude: lat,
-            longitude: lng
+            longitude: lng,
+            checkInTime: checkInTimeStr,
+            address: readableAddress,
+            distanceFromSite,
+            googleMapsLink: mapsLink
           }],
           senderId: currentUser._id
         })
@@ -968,7 +1220,7 @@ export default function ProfileScreen() {
       }
 
       fetchClientProjects(currentUser._id, currentUser.role);
-      Alert.alert('Success', 'Checked in successfully! GPS location stamped.');
+      Alert.alert('Success', 'Checked in successfully! GPS location and address details stamped.');
       setSelectedDay(null);
 
     } catch (err) {
@@ -1073,6 +1325,11 @@ export default function ProfileScreen() {
               advance: 0,
               latitude: match.latitude,
               longitude: match.longitude,
+              checkInTime: match.checkInTime,
+              checkOutTime: match.checkOutTime,
+              address: match.address,
+              distanceFromSite: match.distanceFromSite,
+              googleMapsLink: match.googleMapsLink,
               rawDay: {
                 day: new Date(att.date).getDate(),
                 isCurrentMonth: new Date(att.date).getMonth() === currentMonth && new Date(att.date).getFullYear() === currentYear,
@@ -1081,7 +1338,12 @@ export default function ProfileScreen() {
                 advance: 0,
                 remarks: match.remarks || '-',
                 latitude: match.latitude,
-                longitude: match.longitude
+                longitude: match.longitude,
+                checkInTime: match.checkInTime,
+                checkOutTime: match.checkOutTime,
+                address: match.address,
+                distanceFromSite: match.distanceFromSite,
+                googleMapsLink: match.googleMapsLink
               }
             });
           }
@@ -1100,6 +1362,11 @@ export default function ProfileScreen() {
               advance: p.amount || 0,
               latitude: undefined,
               longitude: undefined,
+              checkInTime: undefined,
+              checkOutTime: undefined,
+              address: undefined,
+              distanceFromSite: undefined,
+              googleMapsLink: undefined,
               rawDay: {
                 day: pDate.getDate(),
                 isCurrentMonth: pDate.getMonth() === currentMonth && pDate.getFullYear() === currentYear,
@@ -1132,6 +1399,11 @@ export default function ProfileScreen() {
         advance: act.advance || 0,
         latitude: act.latitude,
         longitude: act.longitude,
+        checkInTime: act.checkInTime,
+        checkOutTime: act.checkOutTime,
+        address: act.address,
+        distanceFromSite: act.distanceFromSite,
+        googleMapsLink: act.googleMapsLink,
         rawDay: act.rawDay
       };
     });
@@ -1166,47 +1438,60 @@ export default function ProfileScreen() {
   );
 
   const getCombinedMedia = () => {
-    const list: { id: string; type: 'image' | 'video'; url: string; title: string; duration?: string; image?: string }[] = [];
+    const list: { 
+      id: string; 
+      type: 'image' | 'video'; 
+      url: string; 
+      title: string; 
+      duration?: string; 
+      image?: string;
+      postId?: string;
+      postType?: 'media' | 'design';
+      description?: string;
+      quotation?: any;
+    }[] = [];
 
-    realVideos.forEach((vid: any) => {
-      list.push({
-        id: vid.id,
-        type: 'video',
-        url: vid.videoUrl,
-        title: vid.title,
-        duration: vid.duration,
-        image: vid.image
-      });
-    });
+    // Map userUploadedPosts (discover feed media + design section layouts)
+    if (userUploadedPosts && Array.isArray(userUploadedPosts)) {
+      userUploadedPosts.forEach((post: any) => {
+        const titleStr = post.title || '';
+        const descStr = post.description || '';
+        if (/project update|progress update/i.test(titleStr) || /project update|progress update/i.test(descStr)) {
+          return; // Skip project updates
+        }
 
-    if (allWorkspaces && Array.isArray(allWorkspaces)) {
-      allWorkspaces.forEach((w: any) => {
-        if (w.updates && Array.isArray(w.updates)) {
-          w.updates.forEach((up: any, upIdx: number) => {
-            if (up.img) {
-              const imgs = up.img.split(',').map((s: string) => s.trim()).filter(Boolean);
-              imgs.forEach((img: string, imgIdx: number) => {
-                list.push({
-                  id: `${w._id}-img-${upIdx}-${imgIdx}`,
-                  type: 'image',
-                  url: resolveAvatarUrl(img),
-                  title: up.title || w.title || 'Project Update'
-                });
-              });
-            }
-            if (up.video) {
-              list.push({
-                id: `${w._id}-vid-${upIdx}`,
-                type: 'video',
-                url: resolveAvatarUrl(up.video),
-                title: up.title || w.title || 'Project Update',
-                duration: '0:15'
-              });
-            }
+        if (post.mediaUrls && Array.isArray(post.mediaUrls)) {
+          post.mediaUrls.forEach((url: string, mediaIdx: number) => {
+            const isVideo = /\.(mp4|mov|m4v|3gp|avi|webm|mkv)/i.test(url) || url.includes('/video/') || url.includes('video') || url.includes('mp4');
+            list.push({
+              id: `${post._id}-${mediaIdx}`,
+              type: isVideo ? 'video' : 'image',
+              url: resolveAvatarUrl(url),
+              title: post.title || post.description || 'Uploaded Media',
+              image: isVideo ? undefined : resolveAvatarUrl(url),
+              postId: post._id,
+              postType: post.type,
+              description: post.description,
+              quotation: post.quotation
+            });
           });
         }
       });
     }
+
+    // Keep highlight videos if they exist and are unique
+    realVideos.forEach((vid: any) => {
+      if (!list.some(item => item.url === vid.videoUrl)) {
+        list.push({
+          id: vid.id,
+          type: 'video',
+          url: vid.videoUrl,
+          title: vid.title,
+          duration: vid.duration,
+          image: vid.image
+        });
+      }
+    });
 
     return list;
   };
@@ -1671,17 +1956,58 @@ export default function ProfileScreen() {
                               </View>
                             </View>
 
-                            {/* Middle row: Hours & GPS Stamp */}
-                            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginTop: 2 }}>
-                              <Text style={styles.timelineHours}>{act.hours} Hours</Text>
+                            {/* Middle row: Hours & GPS Stamp / Rich Proof */}
+                            <View style={{ marginTop: 2, width: '100%' }}>
                               {act.latitude && act.longitude ? (
-                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                  <Feather name="map-pin" size={10} color="#10B981" style={{ marginRight: 3 }} />
-                                  <Text style={{ fontSize: 10, color: '#64748B', fontWeight: '500' }}>
-                                    {act.latitude.toFixed(4)}, {act.longitude.toFixed(4)}
-                                  </Text>
+                                <View style={styles.proofContainer}>
+                                  {/* Time Details */}
+                                  <View style={styles.proofTimeRow}>
+                                    <Text style={styles.proofTimeLabel}>Check-in: <Text style={styles.proofTimeValue}>{act.checkInTime || '--'}</Text></Text>
+                                    <Text style={styles.proofTimeSeparator}>|</Text>
+                                    <Text style={styles.proofTimeLabel}>Check-out: <Text style={styles.proofTimeValue}>{act.checkOutTime || '--'}</Text></Text>
+                                  </View>
+
+                                  {/* Readable Address */}
+                                  <View style={styles.proofLocRow}>
+                                    <Feather name="map-pin" size={11} color="#10B981" style={{ marginTop: 1, marginRight: 4 }} />
+                                    <Text style={styles.proofAddressText}>
+                                      {act.address && act.address !== 'Unknown Location' && !/^\s*-?\d+\.\d+\s*,\s*-?\d+\.\d+\s*$/.test(act.address) ? (
+                                        act.address
+                                      ) : (
+                                        "Address Unavailable\nExact GPS location captured successfully."
+                                      )}
+                                    </Text>
+                                  </View>
+
+                                  {/* Distance and Maps Link */}
+                                  <View style={styles.proofFooterRow}>
+                                    {act.distanceFromSite ? (
+                                      <View style={styles.proofDistanceBadge}>
+                                        <Text style={styles.proofDistanceText}>
+                                          Distance from Site: {act.distanceFromSite}
+                                        </Text>
+                                        {parseInt(act.distanceFromSite) <= 200 ? (
+                                          <Text style={{ fontSize: 9, marginLeft: 2 }}>✅</Text>
+                                        ) : (
+                                          <Text style={{ fontSize: 9, marginLeft: 2 }}>⚠️</Text>
+                                        )}
+                                      </View>
+                                    ) : null}
+
+                                    <TouchableOpacity
+                                      style={styles.mapsLinkBtn}
+                                      onPress={() => {
+                                        const url = act.googleMapsLink || `https://www.google.com/maps/search/?api=1&query=${act.latitude},${act.longitude}`;
+                                        Linking.openURL(url).catch(err => console.error("Couldn't load maps url", err));
+                                      }}
+                                    >
+                                      <Text style={styles.mapsLinkText}>View on Google Maps ↗</Text>
+                                    </TouchableOpacity>
+                                  </View>
                                 </View>
-                              ) : null}
+                              ) : (
+                                <Text style={styles.timelineHours}>{act.hours}</Text>
+                              )}
                             </View>
                           </View>
 
@@ -1921,29 +2247,40 @@ export default function ProfileScreen() {
             {activeTab === 'media' && (
               <View style={styles.videosGrid}>
                 {getCombinedMedia().map((item, idx) => (
-                  <TouchableOpacity 
-                    key={item.id || idx} 
-                    style={styles.videoCard}
-                    onPress={() => {
-                      if (item.type === 'video') {
-                        handleOpenVideo(item.url, item.title);
-                      } else {
-                        handleOpenPhoto(item.url, item.title);
-                      }
-                    }}
-                    activeOpacity={0.85}
-                  >
-                    <Image source={{ uri: item.image || item.url }} style={styles.videoThumbnail} contentFit="cover" />
-                    {item.type === 'video' && (
-                      <View style={styles.videoPlayOverlay}>
-                        <Feather name="play" size={24} color={COLORS.white} />
+                  <View key={item.id || idx} style={styles.videoCard}>
+                    <TouchableOpacity 
+                      style={{ flex: 1 }}
+                      onPress={() => {
+                        if (item.type === 'video') {
+                          handleOpenVideo(item.url, item.title);
+                        } else {
+                          handleOpenPhoto(item.url, item.title);
+                        }
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Image source={{ uri: item.image || item.url }} style={styles.videoThumbnail} contentFit="cover" />
+                      {item.type === 'video' && (
+                        <View style={styles.videoPlayOverlay}>
+                          <Feather name="play" size={24} color={COLORS.white} />
+                        </View>
+                      )}
+                      <View style={styles.videoInfoBar}>
+                        <Text style={styles.videoTitleText} numberOfLines={1}>{item.title}</Text>
+                        {item.duration && <Text style={styles.videoDurationText}>{item.duration}</Text>}
                       </View>
+                    </TouchableOpacity>
+
+                    {item.postId && (
+                      <TouchableOpacity 
+                        style={styles.editMediaBtn}
+                        onPress={() => handleEditMediaPress(item)}
+                        activeOpacity={0.7}
+                      >
+                        <Feather name="edit-2" size={12} color={COLORS.white} />
+                      </TouchableOpacity>
                     )}
-                    <View style={styles.videoInfoBar}>
-                      <Text style={styles.videoTitleText} numberOfLines={1}>{item.title}</Text>
-                      {item.duration && <Text style={styles.videoDurationText}>{item.duration}</Text>}
-                    </View>
-                  </TouchableOpacity>
+                  </View>
                 ))}
                 {getCombinedMedia().length === 0 && (
                   <View style={styles.emptyVideosContainer}>
@@ -1961,6 +2298,8 @@ export default function ProfileScreen() {
                   <TouchableOpacity 
                     style={styles.teamAddBtn} 
                     onPress={() => {
+                      setActiveModalTab(currentUser?.role === 'Architect' ? 'Contractor' : 'Labour');
+                      setModalSearchQuery('');
                       setShowAddTeamModal(true);
                       fetchRegisteredProfessionals();
                     }}
@@ -2143,30 +2482,180 @@ export default function ProfileScreen() {
 
       </ScrollView>
 
+      {/* Edit Post/Design Modal */}
+      <Modal
+        visible={showEditPostModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowEditPostModal(false)}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' }}>
+          <View style={{
+            backgroundColor: COLORS.white,
+            borderRadius: 16,
+            width: width * 0.85,
+            maxWidth: 360,
+            padding: 20,
+            ...Platform.select({
+              ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.25,
+                shadowRadius: 4,
+              },
+              android: { elevation: 5 }
+            })
+          }}>
+            {/* Modal Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.textDark }}>
+                Edit {editingPostType === 'design' ? 'Design' : 'Media Post'}
+              </Text>
+              <TouchableOpacity onPress={() => setShowEditPostModal(false)}>
+                <Feather name="x" size={20} color={COLORS.textDark} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Title Input (only for design posts) */}
+            {editingPostType === 'design' && (
+              <View style={{ marginBottom: 12 }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: COLORS.textMuted, marginBottom: 6 }}>Title</Text>
+                <TextInput
+                  style={{
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    height: 40,
+                    fontSize: 14,
+                    color: COLORS.textDark,
+                    backgroundColor: COLORS.bgLight
+                  }}
+                  placeholder="Enter title..."
+                  value={editingPostTitle}
+                  onChangeText={setEditingPostTitle}
+                />
+              </View>
+            )}
+
+            {/* Description Input */}
+            <View style={{ marginBottom: 20 }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: COLORS.textMuted, marginBottom: 6 }}>Description</Text>
+              <TextInput
+                style={{
+                  borderWidth: 1,
+                  borderColor: COLORS.border,
+                  borderRadius: 8,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  minHeight: 80,
+                  maxHeight: 120,
+                  fontSize: 14,
+                  color: COLORS.textDark,
+                  backgroundColor: COLORS.bgLight,
+                  textAlignVertical: 'top'
+                }}
+                multiline={true}
+                numberOfLines={3}
+                placeholder="Enter description..."
+                value={editingPostDesc}
+                onChangeText={setEditingPostDesc}
+              />
+            </View>
+
+            {/* Action Buttons */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity 
+                style={{
+                  flex: 1,
+                  height: 40,
+                  backgroundColor: COLORS.red || '#EF4444',
+                  borderRadius: 8,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  flexDirection: 'row'
+                }}
+                onPress={handleDeletePostPress}
+              >
+                <Feather name="trash-2" size={14} color={COLORS.white} style={{ marginRight: 6 }} />
+                <Text style={{ color: COLORS.white, fontWeight: '600', fontSize: 14 }}>Delete</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={{
+                  flex: 1,
+                  height: 40,
+                  backgroundColor: COLORS.green || '#16A34A',
+                  borderRadius: 8,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  flexDirection: 'row'
+                }}
+                onPress={handleSavePostEdit}
+              >
+                <Feather name="save" size={14} color={COLORS.white} style={{ marginRight: 6 }} />
+                <Text style={{ color: COLORS.white, fontWeight: '600', fontSize: 14 }}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Add Team Member Modal */}
       <Modal
         visible={showAddTeamModal}
         transparent={true}
         animationType="slide"
-        onRequestClose={() => setShowAddTeamModal(false)}
+        onRequestClose={() => {
+          setShowAddTeamModal(false);
+          setModalSearchQuery('');
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { height: '80%', padding: 16 }]}>
             <Text style={styles.modalTitle}>Add Team Member</Text>
             
             {/* Modal Sub-Tabs */}
-            <View style={styles.modalTabRow}>
-              <TouchableOpacity 
-                style={[styles.modalTabBtn, activeModalTab === 'Labour' && styles.modalActiveTabBtn]}
-                onPress={() => setActiveModalTab('Labour')}
-              >
-                <Text style={[styles.modalTabBtnText, activeModalTab === 'Labour' && styles.modalActiveTabBtnText]}>Labours</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalTabBtn, activeModalTab === 'Architect' && styles.modalActiveTabBtn]}
-                onPress={() => setActiveModalTab('Architect')}
-              >
-                <Text style={[styles.modalTabBtnText, activeModalTab === 'Architect' && styles.modalActiveTabBtnText]}>Architects</Text>
+            {currentUser?.role !== 'Architect' && (
+              <View style={styles.modalTabRow}>
+                <TouchableOpacity 
+                  style={[styles.modalTabBtn, activeModalTab === 'Labour' && styles.modalActiveTabBtn]}
+                  onPress={() => {
+                    setActiveModalTab('Labour');
+                    setModalSearchQuery('');
+                  }}
+                >
+                  <Text style={[styles.modalTabBtnText, activeModalTab === 'Labour' && styles.modalActiveTabBtnText]}>Labours</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.modalTabBtn, activeModalTab === 'Architect' && styles.modalActiveTabBtn]}
+                  onPress={() => {
+                    setActiveModalTab('Architect');
+                    setModalSearchQuery('');
+                  }}
+                >
+                  <Text style={[styles.modalTabBtnText, activeModalTab === 'Architect' && styles.modalActiveTabBtnText]}>Architects</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Modal Search Bar */}
+            <View style={styles.modalSearchContainer}>
+              <Feather name="search" size={16} color={COLORS.textMuted} style={styles.modalSearchIcon} />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Search by name, firm name, skill, location..."
+                value={modalSearchQuery}
+                onChangeText={setModalSearchQuery}
+                placeholderTextColor={COLORS.textMuted}
+              />
+              {modalSearchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setModalSearchQuery('')} style={{ marginRight: 8 }}>
+                  <Feather name="x" size={16} color={COLORS.textMuted} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity onPress={handleVoiceSearchPress}>
+                <Feather name="mic" size={16} color={isListening ? COLORS.red : COLORS.primary} />
               </TouchableOpacity>
             </View>
 
@@ -2176,17 +2665,49 @@ export default function ProfileScreen() {
               </View>
             ) : (
               <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1, marginVertical: 12 }}>
-                {(activeModalTab === 'Labour' ? registeredLabours : registeredArchitects).length === 0 ? (
-                  <Text style={styles.noProfessionalsText}>No registered {activeModalTab.toLowerCase()}s found.</Text>
-                ) : (
-                  (activeModalTab === 'Labour' ? registeredLabours : registeredArchitects).map((prof: any) => {
+                {(() => {
+                  const rawList = 
+                    activeModalTab === 'Labour' 
+                      ? registeredLabours 
+                      : activeModalTab === 'Contractor' 
+                        ? registeredContractors 
+                        : registeredArchitects;
+
+                  const filteredList = rawList.filter((prof: any) => {
+                    const query = modalSearchQuery.trim().toLowerCase();
+                    const matchesName = (prof.fullName || '').toLowerCase().includes(query);
+                    const matchesFirm = (prof.firmName || '').toLowerCase().includes(query);
+                    const matchesSkill = 
+                      (prof.skillType || '').toLowerCase().includes(query) ||
+                      (prof.role || '').toLowerCase().includes(query) ||
+                      (Array.isArray(prof.specialization) 
+                        ? prof.specialization.some((s: string) => s.toLowerCase().includes(query)) 
+                        : (prof.specialization || '').toLowerCase().includes(query)) ||
+                      (Array.isArray(prof.skills)
+                        ? prof.skills.some((s: string) => s.toLowerCase().includes(query))
+                        : (prof.skills || '').toLowerCase().includes(query));
+                    const matchesLocation = 
+                      (prof.city || '').toLowerCase().includes(query) ||
+                      (prof.state || '').toLowerCase().includes(query);
+
+                    return matchesName || matchesFirm || matchesSkill || matchesLocation;
+                  });
+
+                  if (filteredList.length === 0) {
+                    return <Text style={styles.noProfessionalsText}>No registered {activeModalTab.toLowerCase()}s found.</Text>;
+                  }
+
+                  return filteredList.map((prof: any) => {
                     const isAlreadyMember = teamMembers.some(m => m.id === prof._id);
                     return (
                       <View key={prof._id} style={styles.profListItem}>
                         <Image source={{ uri: resolveAvatarUrl(prof.avatarUrl) || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=150&auto=format&fit=crop' }} style={styles.profAvatar} contentFit="cover" />
                         <View style={styles.profDetails}>
                           <Text style={styles.profName}>{prof.fullName}</Text>
-                          <Text style={styles.profRole}>{prof.role === 'Labour' ? (prof.skillType || 'Labour') : 'Architect'}</Text>
+                          {prof.firmName ? (
+                            <Text style={styles.profFirm}>{prof.firmName}</Text>
+                          ) : null}
+                          <Text style={styles.profRole}>{prof.role === 'Labour' ? (prof.skillType || 'Labour') : prof.role}</Text>
                           <Text style={styles.profExp}>{prof.experience || '3-5 Years Exp'} • {prof.city || 'Mumbai'}</Text>
                         </View>
                         <TouchableOpacity 
@@ -2198,16 +2719,82 @@ export default function ProfileScreen() {
                         </TouchableOpacity>
                       </View>
                     );
-                  })
-                )}
+                  });
+                })()}
               </ScrollView>
             )}
 
             <TouchableOpacity 
               style={[styles.modalBtn, styles.modalCancelBtn, { marginTop: 12 }]} 
-              onPress={() => setShowAddTeamModal(false)}
+              onPress={() => {
+                setShowAddTeamModal(false);
+                setModalSearchQuery('');
+              }}
             >
               <Text style={styles.modalCancelBtnText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Voice Search Listening Modal Overlay */}
+      <Modal
+        visible={showVoiceModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          setShowVoiceModal(false);
+          setIsListening(false);
+        }}
+      >
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.6)' }}>
+          <View style={{
+            backgroundColor: COLORS.white,
+            padding: 30,
+            borderRadius: 16,
+            alignItems: 'center',
+            width: width * 0.8,
+            maxWidth: 320,
+          }}>
+            <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 }}>Listening...</Text>
+            
+            <View style={{
+              width: 80,
+              height: 80,
+              borderRadius: 40,
+              backgroundColor: '#FEE2E2',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginVertical: 20,
+            }}>
+              <Feather name="mic" size={32} color={COLORS.red} />
+            </View>
+
+            <Text style={{ fontSize: 12, color: COLORS.textMuted, textAlign: 'center', marginBottom: 20 }}>
+              Speak now to search team members...
+            </Text>
+
+            {Platform.OS !== 'web' && (
+              <Text style={{ fontSize: 10, color: COLORS.primary, textAlign: 'center', marginBottom: 20, fontStyle: 'italic' }}>
+                Note: Simulating speech input on native environment. Tapping phone keyboard's microphone provides native dictation.
+              </Text>
+            )}
+
+            <TouchableOpacity 
+              style={{
+                paddingVertical: 8,
+                paddingHorizontal: 20,
+                borderRadius: 20,
+                borderWidth: 1,
+                borderColor: COLORS.border,
+                backgroundColor: COLORS.bgLight
+              }}
+              onPress={() => {
+                setShowVoiceModal(false);
+                setIsListening(false);
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '600', color: COLORS.textDark }}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -2265,6 +2852,64 @@ export default function ProfileScreen() {
             <View style={[styles.attendanceInputWrapper, { height: 40, backgroundColor: '#F1F5F9', justifyContent: 'center' }]}>
               <Text style={{ color: COLORS.textDark, fontSize: 13, paddingHorizontal: 8 }} numberOfLines={1}>{selectedDay?.remarks || '-'}</Text>
             </View>
+
+            {/* GPS Stamping Indicator / Display */}
+            {selectedDay?.latitude && selectedDay?.longitude ? (
+              <View style={{ marginTop: 12, padding: 12, backgroundColor: '#F0FDF4', borderRadius: 8, borderWidth: 1, borderColor: '#DCFCE7' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <Feather name="map-pin" size={14} color="#16A34A" />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#16A34A' }}>📍 GPS Attendance Stamp</Text>
+                </View>
+                
+                {/* Time Details */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Text style={{ fontSize: 12, color: COLORS.textMuted }}>Check-in: <Text style={{ color: COLORS.textDark, fontWeight: '600' }}>{selectedDay.checkInTime || '--'}</Text></Text>
+                  <Text style={{ fontSize: 12, color: COLORS.textMuted }}>Check-out: <Text style={{ color: COLORS.textDark, fontWeight: '600' }}>{selectedDay.checkOutTime || '--'}</Text></Text>
+                </View>
+
+                {/* Readable Address */}
+                <Text style={{ fontSize: 12, color: COLORS.textDark, marginBottom: 8, lineHeight: 16 }}>
+                  <Text style={{ fontWeight: '600', color: COLORS.textMuted }}>Address: </Text>
+                  {selectedDay.address && selectedDay.address !== 'Unknown Location' && !/^\s*-?\d+\.\d+\s*,\s*-?\d+\.\d+\s*$/.test(selectedDay.address) ? (
+                    selectedDay.address
+                  ) : (
+                    "Address Unavailable\nExact GPS location captured successfully."
+                  )}
+                </Text>
+
+                {/* Distance and Google Maps Link Row */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                  {selectedDay.distanceFromSite ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E2E8F0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                      <Text style={{ fontSize: 11, color: COLORS.textDark, fontWeight: '600' }}>
+                        Site Distance: {selectedDay.distanceFromSite}
+                      </Text>
+                      {parseInt(selectedDay.distanceFromSite) <= 200 ? (
+                        <Text style={{ fontSize: 10, marginLeft: 3 }}>✅</Text>
+                      ) : (
+                        <Text style={{ fontSize: 10, marginLeft: 3 }}>⚠️</Text>
+                      )}
+                    </View>
+                  ) : <View />}
+
+                  <TouchableOpacity 
+                    style={{
+                      backgroundColor: '#16A34A',
+                      paddingVertical: 5,
+                      paddingHorizontal: 10,
+                      borderRadius: 6,
+                      alignItems: 'center'
+                    }}
+                    onPress={() => {
+                      const url = selectedDay.googleMapsLink || `https://www.google.com/maps/search/?api=1&query=${selectedDay.latitude},${selectedDay.longitude}`;
+                      Linking.openURL(url).catch(err => console.error("Couldn't load map", err));
+                    }}
+                  >
+                    <Text style={{ color: COLORS.white, fontSize: 11, fontWeight: '700' }}>View on Maps ↗</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
 
             {/* Close Button */}
             <View style={styles.attendanceModalButtons}>
@@ -3204,6 +3849,18 @@ const styles = StyleSheet.create({
   projectStatusText: { fontSize: 12, fontWeight: '700' },
   videosGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   videoCard: { width: (width - 50) / 2, height: 130, borderRadius: 10, overflow: 'hidden', backgroundColor: COLORS.bgLight, position: 'relative' },
+  editMediaBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
   videoThumbnail: { width: '100%', height: '100%' },
   videoPlayOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -3475,6 +4132,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.textDark,
   },
+  profFirm: {
+    fontSize: 12,
+    color: '#7C3AED',
+    fontWeight: '600',
+    marginTop: 1,
+    marginBottom: 1,
+  },
   profRole: {
     fontSize: 11,
     color: COLORS.textMuted,
@@ -3503,15 +4167,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   modalBtn: {
-    flex: 1,
     borderRadius: 8,
     paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   modalCancelBtn: {
-    flex: 1,
     height: 44,
+    width: '100%',
     borderWidth: 1,
     borderColor: COLORS.border,
     borderRadius: 22,
@@ -3523,6 +4186,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.textDark,
+  },
+  modalSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    height: 40,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  modalSearchIcon: {
+    marginRight: 8,
+  },
+  modalSearchInput: {
+    flex: 1,
+    height: '100%',
+    color: '#111827',
+    fontSize: 14,
+    padding: 0,
   },
   attendanceOverlayContainer: {
     flex: 1,
@@ -3918,6 +4601,70 @@ const styles = StyleSheet.create({
   viewBidsBtnText: {
     color: COLORS.white,
     fontSize: 13,
+    fontWeight: '700',
+  },
+  proofContainer: {
+    marginTop: 6,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 6,
+  },
+  proofTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  proofTimeLabel: {
+    fontSize: 10,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  proofTimeValue: {
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  proofTimeSeparator: {
+    fontSize: 10,
+    color: '#CBD5E1',
+  },
+  proofLocRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  proofAddressText: {
+    flex: 1,
+    fontSize: 10,
+    color: '#475569',
+    lineHeight: 14,
+  },
+  proofFooterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  proofDistanceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  proofDistanceText: {
+    fontSize: 9,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  mapsLinkBtn: {
+    paddingVertical: 2,
+  },
+  mapsLinkText: {
+    fontSize: 10,
+    color: '#2563EB',
     fontWeight: '700',
   },
 });

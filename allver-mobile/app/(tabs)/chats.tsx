@@ -235,12 +235,20 @@ export default function ChatsScreen() {
       fetchUnreadJobsCount(currentUser);
     };
 
+    const handleReconnect = () => {
+      console.log('[Chats] Socket reconnected. Syncing conversations...');
+      loadConversations(currentUser);
+      fetchUnreadJobsCount(currentUser);
+    };
+
     SocketService.on('receive_message', handleMessage);
     SocketService.on('new_notification', handleNotification);
+    SocketService.on('connect', handleReconnect);
 
     return () => {
       SocketService.off('receive_message', handleMessage);
       SocketService.off('new_notification', handleNotification);
+      SocketService.off('connect', handleReconnect);
     };
   }, [currentUser, loadConversations, fetchUnreadJobsCount]);
 

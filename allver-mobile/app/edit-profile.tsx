@@ -84,6 +84,7 @@ export default function EditProfileScreen() {
   // Form Fields State
   const [fullName, setFullName] = useState('');
   const [firmName, setFirmName] = useState('');
+  const [firmNameError, setFirmNameError] = useState('');
   const [about, setAbout] = useState('');
   const [experience, setExperience] = useState('');
   const [phone, setPhone] = useState('');
@@ -96,6 +97,31 @@ export default function EditProfileScreen() {
   const [coverPhoto, setCoverPhoto] = useState('');
   const [specialization, setSpecialization] = useState<string[]>([]);
   const [selectedLanguageCode, setSelectedLanguageCode] = useState('en');
+
+  // Real-time unique check for Firm Name
+  useEffect(() => {
+    const trimmed = firmName.trim();
+    if (!trimmed) {
+      setFirmNameError('');
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/user/check-firm-name?name=${encodeURIComponent(trimmed)}${currentUser?._id ? `&excludeUserId=${currentUser._id}` : ''}`);
+        const data = await response.json();
+        if (response.ok && !data.available) {
+          setFirmNameError('This firm name is already taken');
+        } else {
+          setFirmNameError('');
+        }
+      } catch (error) {
+        console.error('Error checking firm name availability:', error);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [firmName, currentUser]);
 
   // Picker Modals Visibility
   const [experienceModalVisible, setExperienceModalVisible] = useState(false);
@@ -297,6 +323,17 @@ export default function EditProfileScreen() {
   const handleSave = async () => {
     if (!fullName.trim()) {
       showAlert('Validation Error', 'Full Name is required.');
+      return;
+    }
+
+    const isArchitectOrContractor = currentUser?.role === 'Architect' || currentUser?.role === 'Contractor';
+    if (isArchitectOrContractor && !firmName.trim()) {
+      showAlert('Validation Error', 'Company / Firm Name is required.');
+      return;
+    }
+
+    if (isArchitectOrContractor && firmNameError) {
+      showAlert('Validation Error', 'This Firm Name is already registered on Allver. Please use a different Firm Name.');
       return;
     }
 
@@ -576,8 +613,10 @@ export default function EditProfileScreen() {
                 {currentUser?.role !== 'Client' && (
                   <>
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>COMPANY / FIRM NAME</Text>
-                      <View style={styles.inputContainer}>
+                      <Text style={styles.fieldLabel}>
+                        COMPANY / FIRM NAME{(currentUser?.role === 'Architect' || currentUser?.role === 'Contractor') ? ' *' : ''}
+                      </Text>
+                      <View style={[styles.inputContainer, firmNameError ? { borderColor: COLORS.red } : {}]}>
                         <Feather name="briefcase" size={14} color={COLORS.textMuted} style={styles.fieldIcon} />
                         <TextInput
                           style={styles.textInput}
@@ -587,6 +626,11 @@ export default function EditProfileScreen() {
                           onChangeText={setFirmName}
                         />
                       </View>
+                      {firmNameError ? (
+                        <Text style={{ color: COLORS.red, fontSize: 11, marginTop: 4, fontWeight: '600' }}>
+                          {firmNameError}
+                        </Text>
+                      ) : null}
                     </View>
 
                     <View style={styles.rowFields}>

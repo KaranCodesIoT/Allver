@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as ScreenCapture from 'expo-screen-capture';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { Video, ResizeMode } from 'expo-av';
 import SocketService from '../utils/SocketService';
@@ -25,6 +26,9 @@ const COLORS = {
 export default function DesignDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+
+  // Prevent screenshots or screen recording of this screen
+  ScreenCapture.usePreventScreenCapture();
 
   // Load params
   const designId = (params.id as string) || '1';
@@ -341,6 +345,27 @@ export default function DesignDetailScreen() {
       SocketService.off('post_updated', handlePostUpdated);
     };
   }, [designId, currentUser]);
+
+  // Handle real-time updates for design author profile changes
+  useEffect(() => {
+    if (!authorId) return;
+
+    const handleProfileUpdated = (data: any) => {
+      if (data && data.userId === authorId && data.user) {
+        console.log('[DesignDetail] Author profile updated via socket:', data.user);
+        if (data.user.fullName) setAuthorName(data.user.fullName);
+        if (data.user.avatarUrl) setAuthorAvatar(resolveAvatarUrl(data.user.avatarUrl) || data.user.avatarUrl);
+        if (data.user.firmName) setAuthorFirm(data.user.firmName);
+        if (data.user.experience) setAuthorExperience(data.user.experience);
+        if (data.user.followersCount !== undefined) setAuthorFollowersVal(data.user.followersCount);
+      }
+    };
+
+    SocketService.on('profile_updated', handleProfileUpdated);
+    return () => {
+      SocketService.off('profile_updated', handleProfileUpdated);
+    };
+  }, [authorId]);
 
   useEffect(() => {
     const fetchSimilarDesigns = async () => {

@@ -12,6 +12,7 @@ import { Fonts } from '../../constants/theme';
 import SocketService from '../../utils/SocketService';
 import { useUnreadMessages } from '../../context/UnreadMessageContext';
 import { useUnreadActivities } from '../../context/UnreadActivityContext';
+import * as Location from 'expo-location';
 
 const { width } = Dimensions.get('window');
 
@@ -121,6 +122,22 @@ const SERVICE_DIRECT_NAV: Record<string, string> = {
 
 
 
+// Helper to calculate distance in meters using Haversine formula
+function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3; // metres
+  const phi1 = lat1 * Math.PI/180;
+  const phi2 = lat2 * Math.PI/180;
+  const deltaPhi = (lat2-lat1) * Math.PI/180;
+  const deltaLambda = (lon2-lon1) * Math.PI/180;
+
+  const a = Math.sin(deltaPhi/2) * Math.sin(deltaPhi/2) +
+            Math.cos(phi1) * Math.cos(phi2) *
+            Math.sin(deltaLambda/2) * Math.sin(deltaLambda/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return Math.round(R * c);
+}
+
 export default function DashboardScreen() {
   const router = useRouter();
   const { t } = useTranslation();
@@ -139,6 +156,134 @@ export default function DashboardScreen() {
   const { unreadMsgCount } = useUnreadMessages();
   const { unreadActivityCount, refreshUnreadActivityCount } = useUnreadActivities();
   const [directInvitations, setDirectInvitations] = useState<any[]>([]);
+  const [todayWork, setTodayWork] = useState<any>(null);
+  const [checkingIn, setCheckingIn] = useState(false);
+
+  // Fetch labour's today work status
+  const fetchTodayWork = useCallback(async () => {
+    if (!currentUser?._id || currentUser?.role !== 'Labour') return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/labour/today-status/${currentUser._id}`);
+      const data = await res.json();
+      setTodayWork(data);
+    } catch (err) {
+      console.error('Error fetching today work status:', err);
+    }
+  }, [currentUser?._id, currentUser?.role]);
+
+  // Handle CHECK IN
+  const handleCheckIn = async () => {
+    if (!currentUser?._id || !todayWork?.workspace?._id) return;
+    setCheckingIn(true);
+
+    try {
+      // Request location permission
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Location permission is required to check in.');
+        setCheckingIn(false);
+        return;
+      }
+
+      // Get current GPS location
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High
+      });
+
+      // Reverse geocode current coordinates to get address
+      let readableAddress = 'Unknown Location';
+      try {
+        const reverseGeocode = await Location.reverseGeocodeAsync({
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude
+        });
+        if (reverseGeocode && reverseGeocode.length > 0) {
+          const addr = reverseGeocode[0];
+          const addressParts = [
+            addr.name || addr.streetNumber,
+            addr.street,
+            addr.district || addr.city,
+            addr.region
+          ].filter(Boolean);
+          readableAddress = addressParts.join(', ');
+        }
+      } catch (revErr) {
+        console.error('Reverse geocode failed:', revErr);
+      }
+
+      // Calculate distance from site
+      let distanceFromSite = 'Unknown';
+      if (todayWork.workspace?.location) {
+        try {
+          const geocoded = await Location.geocodeAsync(todayWork.workspace.location);
+          if (geocoded && geocoded.length > 0) {
+            const projectLat = geocoded[0].latitude;
+            const projectLng = geocoded[0].longitude;
+            const dist = getDistanceInMeters(
+              location.coords.latitude,
+              location.coords.longitude,
+              projectLat,
+              projectLng
+            );
+            distanceFromSite = `${dist} meters`;
+          }
+        } catch (geoErr) {
+          console.error('Geocoding project location failed:', geoErr);
+        }
+      }
+
+      // Format current time and date
+      const now = new Date();
+      const checkInTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const checkInDateStr = `${String(now.getDate()).padStart(2, '0')} ${monthNames[now.getMonth()]} ${now.getFullYear()}`;
+
+      // Google maps link
+      const mapsLink = `https://www.google.com/maps/search/?api=1&query=${location.coords.latitude},${location.coords.longitude}`;
+
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+      // Post attendance using existing API
+      const res = await fetch(`${BACKEND_URL}/api/project-workspaces/${todayWork.workspace._id}/labour/attendance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: todayStr,
+          senderId: currentUser._id,
+          records: [{
+            labourId: currentUser._id,
+            status: 'Present',
+            hours: 0,
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            checkInTime: checkInTimeStr,
+            address: readableAddress,
+            distanceFromSite,
+            googleMapsLink: mapsLink
+          }]
+        })
+      });
+
+      if (res.ok) {
+        // Update local state immediately
+        setTodayWork((prev: any) => ({
+          ...prev,
+          checkedIn: true,
+          checkInTime: now.toISOString(),
+          isApproved: false
+        }));
+        Alert.alert('✅ Checked In!', 'Your GPS location and reverse geocoded address have been recorded. Waiting for contractor approval.');
+      } else {
+        const err = await res.json();
+        Alert.alert('Check-In Failed', err.message || 'Could not record attendance.');
+      }
+    } catch (error) {
+      console.error('Check-in error:', error);
+      Alert.alert('Error', 'Failed to check in. Please try again.');
+    } finally {
+      setCheckingIn(false);
+    }
+  };
 
   const handleInvitationResponse = async (requestId: string, status: 'Accepted' | 'Rejected') => {
     if (!currentUser?._id) return;
@@ -311,13 +456,15 @@ export default function DashboardScreen() {
     useCallback(() => {
       fetchUnreadJobsCount();
       fetchRequests();
-    }, [fetchUnreadJobsCount, fetchRequests])
+      fetchTodayWork();
+    }, [fetchUnreadJobsCount, fetchRequests, fetchTodayWork])
   );
 
   useEffect(() => {
     fetchUnreadJobsCount();
     fetchRequests();
-  }, [fetchUnreadJobsCount, fetchRequests]);
+    fetchTodayWork();
+  }, [fetchUnreadJobsCount, fetchRequests, fetchTodayWork]);
 
   // Handle real-time updates via Socket.IO
   useEffect(() => {
@@ -334,12 +481,30 @@ export default function DashboardScreen() {
       fetchRequests();
     };
 
+    const handleProfileUpdated = (data: any) => {
+      if (data && data.userId === currentUser?._id && data.user) {
+        console.log('[Home] Current user profile updated via socket:', data.user);
+        setCurrentUser(data.user);
+        (global as any).currentUser = data.user;
+      }
+    };
+
+    const handleReconnect = () => {
+      console.log('[Home] Socket reconnected. Syncing requests & unread count...');
+      fetchUnreadJobsCount();
+      fetchRequests();
+    };
+
     SocketService.on('new_notification', handleNotification);
     SocketService.on('workspace_updated', handleWorkspaceUpdate);
+    SocketService.on('profile_updated', handleProfileUpdated);
+    SocketService.on('connect', handleReconnect);
 
     return () => {
       SocketService.off('new_notification', handleNotification);
       SocketService.off('workspace_updated', handleWorkspaceUpdate);
+      SocketService.off('profile_updated', handleProfileUpdated);
+      SocketService.off('connect', handleReconnect);
     };
   }, [currentUser?._id, fetchUnreadJobsCount, fetchRequests]);
 
@@ -351,7 +516,9 @@ export default function DashboardScreen() {
     }
     const run = async () => {
       try {
-        setActivitiesLoading(true);
+        if (!recentActivities || recentActivities.length === 0) {
+          setActivitiesLoading(true);
+        }
         const res = await fetch(`${BACKEND_URL}/api/notifications/${currentUser._id}`);
         const data = await res.json();
         if (data.success && data.notifications) {
@@ -470,7 +637,9 @@ export default function DashboardScreen() {
     }
     const fetchFeatured = async () => {
       try {
-        setFeaturedLoading(true);
+        if (!featuredProfessionals || featuredProfessionals.length === 0) {
+          setFeaturedLoading(true);
+        }
         const res = await fetch(`${BACKEND_URL}/api/featured-professionals/${currentUser._id}`);
         const data = await res.json();
         if (data.featured) {
@@ -819,6 +988,103 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* ================= TODAY'S WORK (Labour Only) ================= */}
+        {currentUser?.role === 'Labour' && todayWork?.hasActiveProject && (
+          <View style={styles.todayWorkContainer}>
+            {todayWork.checkedIn ? (
+              /* ── Checked-In State ── */
+              <TouchableOpacity
+                style={styles.todayWorkCheckedCard}
+                activeOpacity={0.85}
+                onPress={() => {
+                  if (todayWork.workspace?._id) {
+                    router.push({
+                      pathname: '/project-progress',
+                      params: { workspaceId: todayWork.workspace._id }
+                    });
+                  }
+                }}
+              >
+                <View style={styles.twCheckedHeader}>
+                  <View style={styles.twCheckedIconWrap}>
+                    <Feather name="check-circle" size={18} color="#10B981" />
+                  </View>
+                  <Text style={styles.twCheckedTitle}>Checked In Today</Text>
+                </View>
+
+                <View style={styles.twCheckedBody}>
+                  <Text style={styles.twCheckedTime}>
+                    {todayWork.checkInTime
+                      ? (/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(todayWork.checkInTime)
+                        ? todayWork.checkInTime.toUpperCase()
+                        : (() => {
+                            const parsed = new Date(todayWork.checkInTime);
+                            return !isNaN(parsed.getTime()) 
+                              ? parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()
+                              : todayWork.checkInTime;
+                          })())
+                      : ''}
+                  </Text>
+                  <Text style={styles.twCheckedProject}>{todayWork.workspace?.title?.toUpperCase() || 'PROJECT'}</Text>
+                </View>
+
+                <View style={styles.twCheckedFooter}>
+                  <Feather name="clock" size={12} color={COLORS.textMuted} />
+                  <Text style={styles.twCheckedFooterText}>
+                    {todayWork.isApproved ? 'Approved by contractor ✓' : 'Waiting for contractor approval'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              /* ── Check-In State ── */
+              <View style={styles.todayWorkCard}>
+                <View style={styles.twHeader}>
+                  <FontAwesome5 name="map-marker-alt" size={14} color="#10B981" />
+                  <Text style={styles.twHeaderText}>Today's Work</Text>
+                </View>
+
+                <View style={styles.twProjectRow}>
+                  <View style={styles.twProjectIconWrap}>
+                    <MaterialCommunityIcons name="crane" size={22} color="#10B981" />
+                  </View>
+                  <View style={styles.twProjectInfo}>
+                    <Text style={styles.twProjectName} numberOfLines={1}>
+                      {todayWork.workspace?.title?.toUpperCase() || 'PROJECT'}
+                    </Text>
+                    <View style={styles.twLocationRow}>
+                      <Feather name="map-pin" size={11} color={COLORS.textMuted} />
+                      <Text style={styles.twLocationText}>
+                        {todayWork.workspace?.location?.toUpperCase() || 'LOCATION'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.checkInBtn, checkingIn && { opacity: 0.7 }]}
+                  onPress={handleCheckIn}
+                  disabled={checkingIn}
+                  activeOpacity={0.85}
+                >
+                  {checkingIn ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <>
+                      <Feather name="check-circle" size={18} color="#FFF" style={{ marginRight: 8 }} />
+                      <Text style={styles.checkInBtnText}>CHECK IN</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <View style={styles.twFooterNote}>
+                  <Feather name="map-pin" size={10} color={COLORS.textMuted} />
+                  <Text style={styles.twFooterNoteText}>Your location will be recorded for attendance</Text>
+                </View>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* ================= QUICK ACTIONS ================= */}
         <View style={styles.sectionContainer}>
@@ -2059,5 +2325,139 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
+  },
+
+  /* ======= TODAY'S WORK CARD ======= */
+  todayWorkContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 5,
+  },
+  todayWorkCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#10B981',
+    padding: 16,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  twHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  twHeaderText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#10B981',
+    marginLeft: 8,
+  },
+  twProjectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  twProjectIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  twProjectInfo: {
+    flex: 1,
+  },
+  twProjectName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+    letterSpacing: 0.3,
+    marginBottom: 3,
+  },
+  twLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  twLocationText: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  checkInBtn: {
+    backgroundColor: '#10B981',
+    borderRadius: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  checkInBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  twFooterNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  twFooterNoteText: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    marginLeft: 4,
+  },
+
+  /* Checked-In State */
+  todayWorkCheckedCard: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    padding: 16,
+  },
+  twCheckedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  twCheckedIconWrap: {
+    marginRight: 8,
+  },
+  twCheckedTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  twCheckedBody: {
+    marginBottom: 12,
+  },
+  twCheckedTime: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  twCheckedProject: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+    letterSpacing: 0.3,
+  },
+  twCheckedFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  twCheckedFooterText: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginLeft: 6,
   },
 });

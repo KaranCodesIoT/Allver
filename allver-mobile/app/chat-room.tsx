@@ -8,6 +8,7 @@ import SocketService from '../utils/SocketService';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
 import TransliteratedTextInput from '../components/TransliteratedTextInput';
+import { useUnreadMessages } from '../context/UnreadMessageContext';
 
 const { width } = Dimensions.get('window');
 
@@ -58,6 +59,7 @@ interface Message {
 export default function ChatRoomScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { refreshUnreadMsgCount } = useUnreadMessages();
 
   const receiverId = params.receiverId as string;
   const receiverName = (params.name as string) || 'User';
@@ -280,9 +282,27 @@ export default function ChatRoomScreen() {
     const s = SocketService;
     setSocket(s);
 
-    // Join room
-    s.emit('join_room', { roomId: conversationId });
+    const markAsRead = async () => {
+      if (conversationId && currentUser?._id && !workspace) {
+        try {
+          const res = await fetch(`${BACKEND_URL}/api/conversations/${conversationId}/read`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser._id }),
+          });
+          if (res.ok) {
+            refreshUnreadMsgCount();
+          }
+        } catch (err) {
+          console.log('[ChatRoom] Error marking as read:', err);
+        }
+      }
+    };
+
+    // Join room & mark read initially
+    s.emit('join_room', { roomId: conversationId, userId: currentUser._id });
     s.emit('go_online', { userId: currentUser._id });
+    markAsRead();
     
     // Query if the other user is online initially
     s.emit('check_online', { userId: receiverId }, (res: any) => {
@@ -316,6 +336,9 @@ export default function ChatRoomScreen() {
           if (sentMessageIdsRef.current.has(data.message._id)) return prev;
           return [...prev, { ...data.message, status: 'delivered' }];
         });
+
+        // Mark as read immediately on receiving message since we are in the chat room
+        markAsRead();
       }
     };
 
@@ -335,20 +358,87 @@ export default function ChatRoomScreen() {
       if (userId === receiverId) setOtherUserOnline(false);
     };
 
+    const handleMessagesRead = (data: any) => {
+      if (data && data.conversationId === conversationId && data.userId !== currentUser._id) {
+        console.log('[ChatRoom] Other user read our messages:', data.userId);
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (!msg.readBy?.includes(data.userId)) {
+              return {
+                ...msg,
+                readBy: [...(msg.readBy || []), data.userId],
+                status: 'read'
+              };
+            }
+            return msg;
+          })
+        );
+      }
+    };
+
+    const handleMessageDelivered = (data: any) => {
+      if (data && data.roomId === conversationId && data.userId !== currentUser._id) {
+        console.log('[ChatRoom] Message delivered to other user:', data.messageId);
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (msg._id === data.messageId && msg.status !== 'read') {
+              return { ...msg, status: 'delivered' };
+            }
+            return msg;
+          })
+        );
+      }
+    };
+
+    const handleReconnect = () => {
+      console.log('[ChatRoom] Socket reconnected. Re-joining room and syncing message history...');
+      s.emit('join_room', { roomId: conversationId, userId: currentUser._id });
+      markAsRead();
+
+      if (conversationId && !workspace) {
+        fetch(`${BACKEND_URL}/api/conversations/${conversationId}/messages?userId=${currentUser._id}`)
+          .then(res => res.json())
+          .then(msgData => {
+            if (msgData.messages) {
+              const uniqueMessages: Message[] = [];
+              const seenIds = new Set<string>();
+              msgData.messages.forEach((m: any) => {
+                if (m && (m._id || m.tempId)) {
+                  const id = m._id || m.tempId;
+                  if (!seenIds.has(id)) {
+                    seenIds.add(id);
+                    uniqueMessages.push(m);
+                  }
+                }
+              });
+              setMessages(uniqueMessages);
+            }
+          })
+          .catch(err => console.error('[ChatRoom] Error syncing messages on reconnect:', err));
+      }
+    };
+
     s.on('receive_message', handleReceiveMessage);
     s.on('user_typing', handleUserTyping);
     s.on('user_stop_typing', handleUserStopTyping);
     s.on('user_online', handleUserOnline);
     s.on('user_offline', handleUserOffline);
+    s.on('messages_read', handleMessagesRead);
+    s.on('message_delivered', handleMessageDelivered);
+    s.on('connect', handleReconnect);
 
     return () => {
+      s.emit('leave_room', { roomId: conversationId });
       s.off('receive_message', handleReceiveMessage);
       s.off('user_typing', handleUserTyping);
       s.off('user_stop_typing', handleUserStopTyping);
       s.off('user_online', handleUserOnline);
       s.off('user_offline', handleUserOffline);
+      s.off('messages_read', handleMessagesRead);
+      s.off('message_delivered', handleMessageDelivered);
+      s.off('connect', handleReconnect);
     };
-  }, [conversationId, currentUser._id, receiverId]);
+  }, [conversationId, currentUser._id, receiverId, workspace]);
 
   const scrollToEnd = () => {
     setTimeout(() => { flatListRef.current?.scrollToEnd({ animated: true }); }, 100);
@@ -691,9 +781,6 @@ export default function ChatRoomScreen() {
       const response = await fetch(`${BACKEND_URL}/api/transcribe`, {
         method: 'POST',
         body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
       });
 
       const data = await response.json();
@@ -1357,7 +1444,7 @@ export default function ChatRoomScreen() {
     const readByCount = msg.readBy?.length || 0;
     const status = msg.status;
 
-    // Read by other user → blue double tick
+    // Read by other user → double blue tick
     if (readByCount > 1 || status === 'read') {
       return (
         <View style={styles.tickRow}>
@@ -1365,15 +1452,15 @@ export default function ChatRoomScreen() {
         </View>
       );
     }
-    // Delivered → grey double tick
-    if (status === 'delivered' || status === 'sent') {
+    // Delivered → double grey tick
+    if (status === 'delivered') {
       return (
         <View style={styles.tickRow}>
           <Ionicons name="checkmark-done" size={16} color="#94A3B8" />
         </View>
       );
     }
-    // Sending → single grey tick
+    // Sent / Sending → single grey tick
     return (
       <View style={styles.tickRow}>
         <Ionicons name="checkmark" size={16} color="#94A3B8" />

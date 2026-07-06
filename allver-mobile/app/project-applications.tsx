@@ -5,6 +5,7 @@ import { Feather, FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
+import SocketService from '../utils/SocketService';
 
 const { width } = Dimensions.get('window');
 
@@ -49,36 +50,79 @@ export default function ProjectApplicationsScreen() {
   const [acceptingBidId, setAcceptingBidId] = useState<string | null>(null);
 
   // Fetch real bids from backend
+  const fetchBids = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/project-bids/request/${requestId}`);
+      const data = await res.json();
+      if (data.bids) {
+        setBids(data.bids);
+        const acceptedContractor = data.bids.find((b: any) => b.status === 'Accepted' && b.professional?.role === 'Contractor');
+        const acceptedArchitect = data.bids.find((b: any) => b.status === 'Accepted' && b.professional?.role === 'Architect');
+        setHasAcceptedContractor(!!acceptedContractor);
+        setHasAcceptedArchitect(!!acceptedArchitect);
+        setHasAccepted(!!acceptedContractor || !!acceptedArchitect);
+        if (acceptedContractor) {
+          setAcceptedBidId(acceptedContractor._id);
+        } else if (acceptedArchitect) {
+          setAcceptedBidId(acceptedArchitect._id);
+        } else {
+          setAcceptedBidId(null);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching bids:', err);
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!requestId) {
       setLoading(false);
       return;
     }
-    const fetchBids = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`${BACKEND_URL}/api/project-bids/request/${requestId}`);
-        const data = await res.json();
-        if (data.bids) {
-          setBids(data.bids);
-          const acceptedContractor = data.bids.find((b: any) => b.status === 'Accepted' && b.professional?.role === 'Contractor');
-          const acceptedArchitect = data.bids.find((b: any) => b.status === 'Accepted' && b.professional?.role === 'Architect');
-          setHasAcceptedContractor(!!acceptedContractor);
-          setHasAcceptedArchitect(!!acceptedArchitect);
-          setHasAccepted(!!acceptedContractor || !!acceptedArchitect);
-          if (acceptedContractor) {
-            setAcceptedBidId(acceptedContractor._id);
-          } else if (acceptedArchitect) {
-            setAcceptedBidId(acceptedArchitect._id);
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching bids:', err);
-      } finally {
-        setLoading(false);
+    fetchBids(true);
+  }, [requestId]);
+
+  // Real-time synchronization via global socket for new proposals and proposal statuses
+  useEffect(() => {
+    if (!requestId) return;
+
+    // Join the room for this project applications request
+    SocketService.emit('join_room', { roomId: requestId });
+
+    const handleNewBid = (data: any) => {
+      if (data && data.requestId === requestId && data.bid) {
+        console.log('[ProjectApplications] New bid received via socket:', data.bid);
+        setBids(prev => {
+          if (prev.some(b => b._id === data.bid._id)) return prev;
+          return [data.bid, ...prev];
+        });
       }
     };
-    fetchBids();
+
+    const handleBidStatusUpdated = (data: any) => {
+      if (data && data.requestId === requestId) {
+        console.log('[ProjectApplications] Bid status updated via socket, refreshing list...');
+        fetchBids(false); // Refresh without full screen loading spinner
+      }
+    };
+
+    const handleReconnect = () => {
+      console.log('[ProjectApplications] Socket reconnected. Re-fetching bids...');
+      fetchBids(false);
+    };
+
+    SocketService.on('new_bid_received', handleNewBid);
+    SocketService.on('bid_status_updated', handleBidStatusUpdated);
+    SocketService.on('connect', handleReconnect);
+
+    return () => {
+      SocketService.off('new_bid_received', handleNewBid);
+      SocketService.off('bid_status_updated', handleBidStatusUpdated);
+      SocketService.off('connect', handleReconnect);
+    };
   }, [requestId]);
 
   // Edit & Delete Modal States & Handlers

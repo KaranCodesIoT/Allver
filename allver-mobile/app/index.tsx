@@ -13,9 +13,6 @@ export default function Index() {
   useEffect(() => {
     const checkAuthAndRouting = async () => {
       try {
-        setLoadingMessage('Initializing...');
-
-        // 1. Check if a valid session exists first
         const token = await getToken();
         const storedUserStr = await getStoredUser();
 
@@ -32,41 +29,7 @@ export default function Index() {
             return;
           }
 
-          // Verify session/token validity with the backend
-          setLoadingMessage('Securing your connection...');
-          try {
-            const res = await fetch(`${BACKEND_URL}/api/user/${userObj._id}`, {
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-              }
-            });
-
-            if (res.ok) {
-              const data = await res.json();
-              if (data.success && data.user) {
-                // Session is valid. Update cached details
-                await saveStoredUser(data.user);
-                (global as any).currentUser = data.user;
-                userObj = data.user;
-                console.log('[StartupGuard] Session validated with backend. Logged in as:', userObj.fullName);
-              }
-            } else if (res.status === 404 || res.status === 401) {
-              // User was deleted or session is expired/invalid
-              console.log('[StartupGuard] Session invalid or user deleted. Clearing credentials.');
-              await removeToken();
-              await removeStoredUser();
-              (global as any).currentUser = null;
-              router.replace('/login');
-              return;
-            }
-          } catch (netErr) {
-            // Network request failed (offline fallback). Proceed with cached session
-            console.warn('[StartupGuard] Network error during session validation. Proceeding offline.', netErr);
-          }
-
-          // Set global current user
+          // Set global current user immediately from storage
           (global as any).currentUser = userObj;
 
           // Apply saved language if any

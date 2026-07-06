@@ -53,6 +53,7 @@ export default function ArchitectProfileScreen() {
   
   // State for inputs
   const [firmName, setFirmName] = useState('');
+  const [firmNameError, setFirmNameError] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [experience, setExperience] = useState('');
   const [portfolioImages, setPortfolioImages] = useState<string[]>([]);
@@ -75,6 +76,31 @@ export default function ArchitectProfileScreen() {
       setCurrentUser(user);
     }
   }, []);
+
+  // Real-time unique check for Firm Name
+  useEffect(() => {
+    const trimmed = firmName.trim();
+    if (!trimmed) {
+      setFirmNameError('');
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/user/check-firm-name?name=${encodeURIComponent(trimmed)}${currentUser?._id ? `&excludeUserId=${currentUser._id}` : ''}`);
+        const data = await response.json();
+        if (response.ok && !data.available) {
+          setFirmNameError('This firm name is already taken');
+        } else {
+          setFirmNameError('');
+        }
+      } catch (error) {
+        console.error('Error checking firm name availability:', error);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [firmName, currentUser]);
 
   const handleToggleMultiSelect = (item: string, list: string[], setList: React.Dispatch<React.SetStateAction<string[]>>) => {
     if (list.includes(item)) {
@@ -232,20 +258,34 @@ export default function ArchitectProfileScreen() {
     );
   };
 
-  const handleSave = async (isSkip = false) => {
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web') {
+      alert(`${title}\n\n${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
+  const handleSave = async () => {
     if (!currentUser) {
       router.push('/(tabs)');
       return;
     }
 
+    const trimmedFirm = firmName.trim();
+    if (!trimmedFirm) {
+      showAlert('Required Field', 'Company / Firm Name is required.');
+      return;
+    }
+
+    if (firmNameError) {
+      showAlert('Validation Error', 'This Firm Name is already registered on Allver. Please use a different Firm Name.');
+      return;
+    }
+
     setSaving(true);
-    const payload = isSkip ? {
-      experience: 'Less than 1 year',
-      specialization: ['Residential'],
-      serviceArea: ['Mumbai'],
-      portfolioImages: [],
-    } : {
-      firmName: firmName || 'Architect Office',
+    const payload = {
+      firmName: trimmedFirm,
       experience: experience || '1-3 years',
       specialization: specialization.length > 0 ? specialization : ['Residential'],
       serviceArea: serviceArea.length > 0 ? serviceArea : ['Mumbai'],
@@ -261,20 +301,24 @@ export default function ArchitectProfileScreen() {
         body: JSON.stringify(payload),
       });
 
+      const data = await res.json();
+
       if (res.ok) {
-        const data = await res.json();
         const updatedUser = { ...currentUser, ...payload, ...data.user };
         
         if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
           localStorage.setItem('currentUser', JSON.stringify(updatedUser));
         }
         (global as any).currentUser = updatedUser;
+        router.push('/(tabs)');
+      } else {
+        showAlert('Firm Registration Failed', data.message || 'Failed to update profile.');
       }
     } catch (err) {
       console.error(err);
+      showAlert('Network Error', 'Server connection failed. Please try again.');
     } finally {
       setSaving(false);
-      router.push('/(tabs)');
     }
   };
 
@@ -352,8 +396,8 @@ export default function ArchitectProfileScreen() {
                 <FontAwesome5 name="building" size={20} color={COLORS.green} />
               </View>
               <View style={styles.inputCol}>
-                <Text style={styles.inputLabel}>Firm Name <Text style={styles.optionalText}>(Optional)</Text></Text>
-                <View style={styles.inputBox}>
+                <Text style={styles.inputLabel}>Firm Name <Text style={styles.asterisk}>*</Text></Text>
+                <View style={[styles.inputBox, firmNameError ? { borderColor: COLORS.red } : {}]}>
                   <TextInput 
                     style={styles.input} 
                     placeholder="Enter your firm / company name" 
@@ -362,7 +406,12 @@ export default function ArchitectProfileScreen() {
                     onChangeText={setFirmName}
                   />
                 </View>
-                <Text style={styles.helperText}>You can add this later</Text>
+                {firmNameError ? (
+                  <Text style={{ color: COLORS.red, fontSize: 11, marginTop: 4, fontWeight: '600' }}>
+                    {firmNameError}
+                  </Text>
+                ) : null}
+                <Text style={styles.helperText}>Mandatory. A Firm Name can have only one profile on Allver.</Text>
               </View>
             </View>
 
@@ -388,7 +437,7 @@ export default function ArchitectProfileScreen() {
                 <Feather name="image" size={20} color={COLORS.green} />
               </View>
               <View style={styles.inputCol}>
-                <Text style={styles.inputLabel}>Portfolio Images <Text style={styles.asterisk}>*</Text></Text>
+                <Text style={styles.inputLabel}>Portfolio Images</Text>
                 
                 {portfolioImages.length > 0 && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imagesScroll}>
@@ -504,7 +553,7 @@ export default function ArchitectProfileScreen() {
           <View style={styles.bottomActions}>
             <TouchableOpacity 
               style={[styles.saveBtn, saving && { opacity: 0.7 }]} 
-              onPress={() => handleSave(false)}
+              onPress={() => handleSave()}
               disabled={saving}
             >
               {saving ? (
@@ -512,14 +561,6 @@ export default function ArchitectProfileScreen() {
               ) : (
                 <Text style={styles.saveBtnText}>Save & Continue</Text>
               )}
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.skipBtn, saving && { opacity: 0.7 }]} 
-              onPress={() => handleSave(true)}
-              disabled={saving}
-            >
-              <Text style={styles.skipBtnText}>Skip for Now</Text>
             </TouchableOpacity>
           </View>
 

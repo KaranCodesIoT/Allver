@@ -15,7 +15,31 @@ const notificationSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  workspaceId: {
+    type: String,
+    default: ''
+  },
+  conversationId: {
+    type: String,
+    default: ''
+  },
+  projectId: {
+    type: String,
+    default: ''
+  },
+  postId: {
+    type: String,
+    default: ''
+  },
+  postType: {
+    type: String,
+    default: ''
+  },
   isRead: {
+    type: Boolean,
+    default: false
+  },
+  isMarked: {
     type: Boolean,
     default: false
   },
@@ -67,7 +91,13 @@ notificationSchema.post('save', async function(doc) {
         body: cleanBody,
         data: {
           notificationId: doc._id.toString(),
-          text: doc.text
+          text: doc.text,
+          workspaceId: doc.workspaceId || '',
+          conversationId: doc.conversationId || '',
+          projectId: doc.projectId || '',
+          postId: doc.postId || '',
+          postType: doc.postType || '',
+          senderId: doc.senderId ? doc.senderId.toString() : ''
         },
         android: {
           channelId: 'default',
@@ -76,12 +106,6 @@ notificationSchema.post('save', async function(doc) {
           lightColor: '#FF231F7C',
         }
       };
-
-      // Only send real push notifications in production environment
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`[Push Notification] [DEV MODE - NOT SENT] Would have sent to ${recipient.fullName}:`, JSON.stringify(message, null, 2));
-        return;
-      }
 
       try {
         const response = await fetch('https://exp.host/--/api/v2/push/send', {

@@ -71,7 +71,13 @@ const projectWorkspaceSchema = new mongoose.Schema({
         status: { type: String, enum: ['Present', 'Half Day', 'Absent', 'Overtime'] },
         hours: { type: Number, default: 0 },
         latitude: { type: Number },
-        longitude: { type: Number }
+        longitude: { type: Number },
+        checkInTime: { type: String },
+        checkOutTime: { type: String },
+        address: { type: String },
+        distanceFromSite: { type: String },
+        googleMapsLink: { type: String },
+        isMarked: { type: Boolean, default: false }
       }],
       markedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
     }],

@@ -7,6 +7,7 @@ import { BACKEND_URL } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import { getStoredUser } from '../constants/Auth';
 import { useUnreadActivities } from '../context/UnreadActivityContext';
+import SocketService from '../utils/SocketService';
 
 const { width } = Dimensions.get('window');
 
@@ -31,8 +32,8 @@ export default function JobsScreen() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [jobs, setJobs] = useState<any[]>((global as any).cachedJobs || []);
+  const [loading, setLoading] = useState(!((global as any).cachedJobs && (global as any).cachedJobs.length > 0));
   const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Load current user details on mount
@@ -70,11 +71,15 @@ export default function JobsScreen() {
 
   const fetchJobs = useCallback(async () => {
     try {
-      setLoading(true);
+      const cached = (global as any).cachedJobs;
+      if (!cached || cached.length === 0) {
+        setLoading(true);
+      }
       const res = await fetch(`${BACKEND_URL}/api/contract-requests`);
       const data = await res.json();
       if (data.success && data.requests) {
         setJobs(data.requests);
+        (global as any).cachedJobs = data.requests;
       }
     } catch (err) {
       console.error('Error fetching jobs:', err);
@@ -85,6 +90,46 @@ export default function JobsScreen() {
 
   useEffect(() => {
     fetchJobs();
+  }, [fetchJobs]);
+
+  // Handle real-time updates via Socket.IO
+  useEffect(() => {
+    const handleNewContractRequest = (newRequest: any) => {
+      if (!newRequest || !newRequest._id) return;
+      console.log('[Jobs] Real-time job/contract request received:', newRequest);
+      setJobs((prevJobs) => {
+        if (prevJobs.some((j) => j._id === newRequest._id)) return prevJobs;
+        return [newRequest, ...prevJobs];
+      });
+    };
+
+    const handleContractStatusUpdated = (data: any) => {
+      if (!data || !data.requestId) return;
+      console.log('[Jobs] Job status updated via socket:', data);
+      setJobs((prevJobs) =>
+        prevJobs.map((job) => {
+          if (job._id === data.requestId) {
+            return { ...job, status: data.status };
+          }
+          return job;
+        })
+      );
+    };
+
+    const handleReconnect = () => {
+      console.log('[Jobs] Socket reconnected. Re-fetching jobs...');
+      fetchJobs();
+    };
+
+    SocketService.on('new_contract_request', handleNewContractRequest);
+    SocketService.on('contract_status_updated', handleContractStatusUpdated);
+    SocketService.on('connect', handleReconnect);
+
+    return () => {
+      SocketService.off('new_contract_request', handleNewContractRequest);
+      SocketService.off('contract_status_updated', handleContractStatusUpdated);
+      SocketService.off('connect', handleReconnect);
+    };
   }, [fetchJobs]);
 
   // Filter logic

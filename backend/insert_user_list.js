@@ -36,6 +36,9 @@ async function insertUsers() {
   let insertedCount = 0;
   for (const userData of usersToInsert) {
     try {
+      if (userData.firmName) {
+        userData.normalizedFirmName = userData.firmName.trim().toLowerCase().replace(/\s+/g, ' ');
+      }
       const existing = await User.findOne({ email: userData.email });
       if (!existing) {
         const newUser = new User(userData);

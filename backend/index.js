@@ -50,19 +50,126 @@ const onlineUsers = new Set();
 io.on('connection', (socket) => {
   console.log('[Socket] Socket connected:', socket.id);
 
-  // Join a specific room (project workspace or DM conversation)
-  socket.on('join_room', ({ roomId }) => {
-    socket.join(roomId);
-    console.log(`[Socket] Socket ${socket.id} joined room: ${roomId}`);
+  // Join a specific room (project workspace or DM conversation) with participant validation
+  socket.on('join_room', async ({ roomId, userId }) => {
+    if (!roomId) {
+      console.warn('[Socket] join_room failed: roomId is empty');
+      return;
+    }
+
+    const uId = userId || socket.userId;
+    if (!uId) {
+      console.warn('[Socket] join_room failed: userId is not set or passed.');
+      return;
+    }
+
+    // Cache the userId on the socket instance
+    socket.userId = uId;
+
+    // Validate ObjectId format
+    const isValidId = /^[0-9a-fA-F]{24}$/.test(roomId);
+    if (!isValidId) {
+      console.warn(`[Socket] join_room failed: Room ID "${roomId}" is not a valid ObjectId`);
+      return;
+    }
+
+    try {
+      const mongoose = require('mongoose');
+      const ProjectWorkspace = mongoose.model('ProjectWorkspace');
+      const Conversation = mongoose.model('Conversation');
+
+      // 1. Check if it's a ProjectWorkspace
+      const workspace = await ProjectWorkspace.findById(roomId).lean();
+      if (workspace) {
+        const isParticipant = 
+          (workspace.client && workspace.client.toString() === uId.toString()) ||
+          (workspace.professional && workspace.professional.toString() === uId.toString()) ||
+          (workspace.contractor && workspace.contractor.toString() === uId.toString()) ||
+          (workspace.architect && workspace.architect.toString() === uId.toString()) ||
+          (workspace.labourTeam && workspace.labourTeam.some(l => l.toString() === uId.toString()));
+
+        if (isParticipant) {
+          socket.join(roomId);
+          console.log(`[Socket] User ${uId} joined Workspace room: ${roomId}`);
+          return;
+        } else {
+          console.warn(`[Socket] Security Block: User ${uId} tried to join Workspace ${roomId} without permission.`);
+          return;
+        }
+      }
+
+      // 2. Check if it's a Conversation (one-to-one DM)
+      const conversation = await Conversation.findById(roomId).lean();
+      if (conversation) {
+        const isParticipant = conversation.participants && conversation.participants.some(p => p.toString() === uId.toString());
+        if (isParticipant) {
+          socket.join(roomId);
+          console.log(`[Socket] User ${uId} joined Conversation room: ${roomId}`);
+          return;
+        } else {
+          console.warn(`[Socket] Security Block: User ${uId} tried to join Conversation ${roomId} without permission.`);
+          return;
+        }
+      }
+
+      console.warn(`[Socket] join_room failed: Room ${roomId} not found in database.`);
+    } catch (err) {
+      console.error(`[Socket] Error validating room join for user ${uId} and room ${roomId}:`, err);
+    }
   });
 
-  // Direct message — broadcast
+  // Leave a specific room when exiting a chat
+  socket.on('leave_room', ({ roomId }) => {
+    if (roomId) {
+      socket.leave(roomId);
+      console.log(`[Socket] Socket ${socket.id} left room: ${roomId}`);
+    }
+  });
+
+  // Direct message — broadcast with validation
   socket.on('send_message', async ({ roomId, message }) => {
-    io.to(roomId).emit('receive_message', {
-      workspaceId: roomId,
-      message: message
-    });
-    console.log(`[Socket] Message broadcast to room ${roomId}:`, message.text?.substring(0, 50));
+    const userId = socket.userId;
+    if (!userId || !roomId) return;
+
+    try {
+      const mongoose = require('mongoose');
+      const ProjectWorkspace = mongoose.model('ProjectWorkspace');
+      const Conversation = mongoose.model('Conversation');
+
+      // Validate workspace/convo participant before emitting
+      const workspace = await ProjectWorkspace.findById(roomId).lean();
+      if (workspace) {
+        const isPart = 
+          (workspace.client && workspace.client.toString() === userId.toString()) ||
+          (workspace.professional && workspace.professional.toString() === userId.toString()) ||
+          (workspace.contractor && workspace.contractor.toString() === userId.toString()) ||
+          (workspace.architect && workspace.architect.toString() === userId.toString()) ||
+          (workspace.labourTeam && workspace.labourTeam.some(l => l.toString() === userId.toString()));
+        if (!isPart) {
+          console.warn(`[Socket] Blocked send_message from unauthorized user ${userId} in room ${roomId}`);
+          return;
+        }
+      } else {
+        const conversation = await Conversation.findById(roomId).lean();
+        if (conversation) {
+          const isPart = conversation.participants && conversation.participants.some(p => p.toString() === userId.toString());
+          if (!isPart) {
+            console.warn(`[Socket] Blocked send_message from unauthorized user ${userId} in room ${roomId}`);
+            return;
+          }
+        } else {
+          return;
+        }
+      }
+
+      io.to(roomId).emit('receive_message', {
+        workspaceId: roomId,
+        message: message
+      });
+      console.log(`[Socket] Message broadcast to room ${roomId}:`, message.text?.substring(0, 50));
+    } catch (err) {
+      console.error('Error on socket send_message:', err);
+    }
   });
 
   // Typing indicator
@@ -98,6 +205,16 @@ io.on('connection', (socket) => {
     }
   });
   
+  socket.on('message_delivered', ({ roomId, messageId, userId }) => {
+    io.to(roomId).emit('message_delivered', { roomId, messageId, userId });
+    console.log(`[Socket] Message ${messageId} marked delivered by user ${userId} in room ${roomId}`);
+  });
+
+  socket.on('message_read', ({ roomId, messageId, userId }) => {
+    io.to(roomId).emit('message_read', { roomId, messageId, userId });
+    console.log(`[Socket] Message ${messageId} marked read by user ${userId} in room ${roomId}`);
+  });
+
   socket.on('disconnect', () => {
     if (socket.userId) {
       onlineUsers.delete(socket.userId);
@@ -174,7 +291,57 @@ mongoose.connect(process.env.MONGODB_URI)
     
     try {
       const User = require('./models/User');
+      
+      // Step A: Unset normalizedFirmName for users without a firmName to prevent unique index conflicts
+      const unsetResult = await User.updateMany(
+        { $or: [ { firmName: { $exists: false } }, { firmName: '' } ] },
+        { $unset: { normalizedFirmName: 1 } }
+      );
+      console.log(`Unset normalizedFirmName for ${unsetResult.modifiedCount} users`);
+
+      // Self-healing Migration: Normalize firmName for all existing users and resolve duplicates
+      console.log('Running self-healing firmName normalization migration...');
+      const usersToFix = await User.find({ firmName: { $exists: true, $ne: '' } });
+      const seenNormalized = new Map();
+      
+      for (const u of usersToFix) {
+        let norm = u.firmName.trim().toLowerCase().replace(/\s+/g, ' ');
+        
+        if (seenNormalized.has(norm)) {
+          let counter = 1;
+          let candidate = `${norm}-${counter}`;
+          while (seenNormalized.has(candidate)) {
+            counter++;
+            candidate = `${norm}-${counter}`;
+          }
+          norm = candidate;
+          u.firmName = `${u.firmName} (Duplicate ${counter})`;
+          console.log(`Resolved duplicate firmName conflict for user ${u.fullName}. New firm: "${u.firmName}"`);
+        }
+        
+        seenNormalized.set(norm, u._id.toString());
+        
+        if (u.normalizedFirmName !== norm || u.isModified('firmName')) {
+          u.normalizedFirmName = norm;
+          await u.save();
+          console.log(`Migrated normalizedFirmName for user ${u.fullName}: "${norm}"`);
+        }
+      }
+      
+      await User.syncIndexes();
+      console.log('Database indexes synchronized successfully');
+      
       const Post = mongoose.model('Post');
+      
+      // Step B: Clean up accidental project/progress update posts in the Post collection
+      const deletePostsResult = await Post.deleteMany({
+        $or: [
+          { title: { $regex: /project update|progress update/i } },
+          { description: { $regex: /project update|progress update/i } }
+        ]
+      });
+      console.log(`Deleted ${deletePostsResult.deletedCount} accidental project/progress update posts from Post collection`);
+      
       const fs = require('fs');
       
       const allUsers = await User.find({}, 'fullName email role');
@@ -448,6 +615,13 @@ app.post('/api/posts', async (req, res) => {
       console.error('Error triggering new project notifications:', notifErr);
     }
 
+    // Emit new_post socket event for real-time Discover Feed updating
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('new_post', populatedPost);
+      console.log(`[Socket] Emitted new_post for post ID ${populatedPost._id}`);
+    }
+
     res.status(201).json({ message: 'Post created successfully', post: populatedPost });
   } catch (error) {
     console.error('Error creating post:', error);
@@ -474,6 +648,12 @@ app.put('/api/posts/:id', async (req, res) => {
       return res.status(404).json({ message: 'Post not found.' });
     }
     
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('post_edited', updatedPost);
+      console.log(`[Socket] Emitted post_edited for post ID ${updatedPost._id}`);
+    }
+
     res.status(200).json({ message: 'Post updated successfully', post: updatedPost });
   } catch (error) {
     console.error('Error updating post:', error);
@@ -488,6 +668,13 @@ app.delete('/api/posts/:id', async (req, res) => {
     if (!deletedPost) {
       return res.status(404).json({ message: 'Post not found.' });
     }
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('post_deleted', { postId: req.params.id });
+      console.log(`[Socket] Emitted post_deleted for post ID ${req.params.id}`);
+    }
+
     res.status(200).json({ message: 'Post deleted successfully' });
   } catch (error) {
     console.error('Error deleting post:', error);
@@ -518,6 +705,20 @@ app.get('/api/posts/design', async (req, res) => {
   } catch (error) {
     console.error('Error fetching design posts:', error);
     res.status(500).json({ message: 'Error fetching design posts' });
+  }
+});
+
+// Get all posts (media + design) uploaded by a specific user
+app.get('/api/posts/user/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const posts = await Post.find({ creator: userId })
+      .populate('creator', 'fullName role avatarUrl city rating firmName experience projects')
+      .sort({ createdAt: -1 });
+    res.status(200).json({ success: true, posts });
+  } catch (error) {
+    console.error('Error fetching user posts:', error);
+    res.status(500).json({ message: 'Error fetching user posts: ' + error.message });
   }
 });
 
@@ -828,11 +1029,88 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
+// Check Firm Name Availability (Case-insensitive, space-insensitive, regex fallback)
+app.get('/api/user/check-firm-name', async (req, res) => {
+  try {
+    const { name, excludeUserId } = req.query;
+    if (!name || !name.trim()) {
+      return res.status(200).json({ available: true });
+    }
+    
+    const trimmed = name.trim();
+    const normalized = trimmed.toLowerCase().replace(/\s+/g, ' ');
+    
+    const escapedPattern = trimmed.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&').replace(/\s+/g, '\\s+');
+    const query = {
+      $or: [
+        { normalizedFirmName: normalized },
+        { firmName: { $regex: new RegExp('^\\s*' + escapedPattern + '\\s*$', 'i') } }
+      ]
+    };
+    
+    if (excludeUserId && mongoose.Types.ObjectId.isValid(excludeUserId)) {
+      query._id = { $ne: new mongoose.Types.ObjectId(excludeUserId) };
+    }
+    
+    const existing = await User.findOne(query);
+    res.status(200).json({ available: !existing });
+  } catch (error) {
+    console.error('Error checking firm name availability:', error);
+    res.status(500).json({ message: 'Error checking firm name availability' });
+  }
+});
+
 // Update User Profile
 app.put('/api/user/profile/:id', async (req, res) => {
   try {
     const userId = req.params.id;
     const profileData = req.body;
+
+    const userObj = await User.findById(userId);
+    if (!userObj) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const isArchitectOrContractor = userObj.role === 'Architect' || userObj.role === 'Contractor';
+
+    if (isArchitectOrContractor) {
+      if (profileData.firmName === undefined && !userObj.firmName) {
+        return res.status(400).json({ message: 'Company / Firm Name is required.' });
+      }
+      if (profileData.firmName !== undefined) {
+        const trimmedFirmName = (profileData.firmName || '').trim();
+        if (!trimmedFirmName) {
+          return res.status(400).json({ message: 'Company / Firm Name is required.' });
+        }
+
+        // Normalize (trim, lowercase, collapse spaces)
+        const normalized = trimmedFirmName.toLowerCase().replace(/\s+/g, ' ');
+
+        // Check for duplicate in database (excluding current user)
+        const escapedPattern = trimmedFirmName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&').replace(/\s+/g, '\\s+');
+        const dupQuery = {
+          $or: [
+            { normalizedFirmName: normalized },
+            { firmName: { $regex: new RegExp('^\\s*' + escapedPattern + '\\s*$', 'i') } }
+          ]
+        };
+
+        if (mongoose.Types.ObjectId.isValid(userId)) {
+          dupQuery._id = { $ne: new mongoose.Types.ObjectId(userId) };
+        }
+
+        const duplicate = await User.findOne(dupQuery);
+
+        if (duplicate) {
+          return res.status(400).json({
+            message: 'This Firm Name is already registered on Allver. Please use a different Firm Name or contact your company administrator if you belong to this firm.'
+          });
+        }
+
+        profileData.firmName = trimmedFirmName;
+        profileData.normalizedFirmName = normalized;
+      }
+    }
     
     // Format phone numbers to E.164 if they are updated
     if (profileData.phoneNumber !== undefined) {
@@ -850,6 +1128,16 @@ app.put('/api/user/profile/:id', async (req, res) => {
     
     if (!updatedUser) {
       return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Emit profile_updated socket event
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('profile_updated', {
+        userId,
+        user: updatedUser
+      });
+      console.log(`[Socket] Emitted profile_updated for user ${userId}`);
     }
     
     res.status(200).json({ message: 'Profile updated successfully', user: updatedUser });
@@ -1674,9 +1962,20 @@ app.post('/api/contract-requests', async (req, res) => {
       console.error('Error triggering project invitation/application/post notification:', notifErr);
     }
     
+    const populatedRequest = await ContractRequest.findById(newRequest._id)
+      .populate('client', 'fullName email avatarUrl role phoneNumber city')
+      .populate('professional', 'fullName email avatarUrl role');
+
+    // Emit new_contract_request socket event
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('new_contract_request', populatedRequest);
+      console.log(`[Socket] Emitted new_contract_request for request ID ${newRequest._id}`);
+    }
+
     res.status(201).json({ 
       message: 'Contract request sent successfully', 
-      contractRequest: newRequest 
+      contractRequest: populatedRequest
     });
   } catch (error) {
     console.error('Error creating contract request:', error);
@@ -1863,7 +2162,8 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
           const acceptNotif = new Notification({
             recipientId: professional,
             senderId: request.client,
-            text: acceptText
+            text: acceptText,
+            projectId: id
           });
           await acceptNotif.save();
 
@@ -1896,7 +2196,8 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
             const rejectNotif = new Notification({
               recipientId: bid.professional._id,
               senderId: request.client,
-              text: rejectText
+              text: rejectText,
+              projectId: id
             });
             await rejectNotif.save();
 
@@ -1919,7 +2220,8 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
           const clientNotif = new Notification({
             recipientId: request.client,
             senderId: professional,
-            text: clientConfirmText
+            text: clientConfirmText,
+            projectId: id
           });
           await clientNotif.save();
 
@@ -1963,11 +2265,6 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
             workspace.labourTeam.push(professional);
           }
           
-          workspace.messages.push({
-            sender: request.client,
-            text: `📢 Hired professional assigned to project team: ${professionalUser.fullName} (${selectedRole})`,
-            createdAt: new Date()
-          });
           workspace.updates.push({
             title: `${selectedRole} Hired`,
             description: `${professionalUser.fullName} has been hired and added to the project team.`,
@@ -2002,11 +2299,6 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
           workspace.labourTeam.push(professional);
         }
 
-        workspace.messages.push({
-          sender: request.client,
-          text: `📢 Hired professional assigned to project team: ${professionalUser.fullName} (${selectedRole})`,
-          createdAt: new Date()
-        });
         workspace.updates.push({
           title: `${selectedRole} Hired`,
           description: `${professionalUser.fullName} has been hired and added to the project team.`,
@@ -2038,6 +2330,21 @@ app.put('/api/contract-requests/:id/status', async (req, res) => {
       request.status = status;
     }
     await request.save();
+
+    // Emit real-time status updates via Socket.io
+    if (io) {
+      io.emit('contract_status_updated', {
+        requestId: id,
+        status: request.status
+      });
+      io.emit('bid_status_updated', {
+        requestId: id,
+        bidId: bidId || null,
+        professionalId: professional || null,
+        status: status
+      });
+      console.log(`[Socket] Emitted contract_status_updated and bid_status_updated for request ${id}`);
+    }
 
     res.status(200).json({ 
       message: `Contract request status updated successfully`, 
@@ -2116,6 +2423,13 @@ app.post('/api/project-bids', async (req, res) => {
           isRead: false,
           createdAt: notification.createdAt
         });
+
+        const populatedBid = await ProjectBid.findById(bid._id).populate('professional');
+        io.to(request.client.toString()).emit('new_bid_received', {
+          requestId: contractRequest.toString(),
+          bid: populatedBid
+        });
+        console.log(`[Socket] Emitted new_bid_received for bid ID ${bid._id}`);
       }
     } catch (notifErr) {
       console.error('Error sending bid notification:', notifErr);
@@ -2415,7 +2729,36 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
 
     await workspace.save();
 
-    // Message/chat notifications are disabled per user request
+    // Send push notification to other participants in the workspace
+    try {
+      const senderUser = await User.findById(sender);
+      const participants = [
+        workspace.client,
+        workspace.professional,
+        workspace.contractor,
+        workspace.architect,
+        ...(workspace.labourTeam || [])
+      ];
+
+      const membersSet = new Set();
+      participants.forEach(pId => {
+        if (pId && pId.toString() !== sender) {
+          membersSet.add(pId.toString());
+        }
+      });
+
+      for (const recipientId of membersSet) {
+        const notification = new Notification({
+          recipientId,
+          senderId: sender,
+          text: `💬 New Message in ${workspace.title}\n${senderUser ? senderUser.fullName : 'Someone'}: "${text || 'Sent an attachment'}"`,
+          workspaceId: workspace._id.toString()
+        });
+        await notification.save();
+      }
+    } catch (notifErr) {
+      console.error('Error generating notification for workspace message:', notifErr);
+    }
 
 
     const updatedWorkspace = await ProjectWorkspace.findById(id)
@@ -2679,11 +3022,6 @@ app.put('/api/project-workspaces/:id/assign-architect', async (req, res) => {
     }
     
     workspace.architect = architectId;
-    workspace.messages.push({
-      sender: userId,
-      text: `📢 Architect assigned: ${arch.fullName}`,
-      createdAt: new Date()
-    });
     workspace.updates.push({
       title: 'Architect Assigned',
       description: `Ar. ${arch.fullName} has been assigned to the project.`,
@@ -2736,11 +3074,6 @@ app.put('/api/project-workspaces/:id/assign-contractor', async (req, res) => {
     }
     
     workspace.contractor = contractorId;
-    workspace.messages.push({
-      sender: userId,
-      text: `📢 Contractor assigned: ${contr.fullName}`,
-      createdAt: new Date()
-    });
     workspace.updates.push({
       title: 'Contractor Assigned',
       description: `Contractor ${contr.fullName} has been assigned to the project.`,
@@ -2806,11 +3139,6 @@ app.put('/api/project-workspaces/:id/add-labour', async (req, res) => {
     }
     
     workspace.labourTeam.push(labourId);
-    workspace.messages.push({
-      sender: userId,
-      text: `📢 Added to Labour Team: ${lab.fullName} (${lab.skillType || 'Labour'})`,
-      createdAt: new Date()
-    });
     workspace.updates.push({
       title: 'Labourer Added',
       description: `${lab.fullName} (${lab.skillType || 'Skilled Labour'}) has joined the project team.`,
@@ -2903,11 +3231,6 @@ app.put('/api/project-workspaces/:id/remove-labour', async (req, res) => {
     const lab = await User.findById(labourId);
     const name = lab ? lab.fullName : 'Labourer';
     
-    workspace.messages.push({
-      sender: userId,
-      text: `📢 Removed from Labour Team: ${name}`,
-      createdAt: new Date()
-    });
     workspace.updates.push({
       title: 'Labourer Removed',
       description: `${name} has been removed from the project team.`,
@@ -3027,17 +3350,6 @@ app.put('/api/project-workspaces/:id/project-status', async (req, res) => {
       createdAt: new Date()
     });
     
-    // Add system notification to messages
-    let msgText = `📢 Project status changed from ${oldStatus} to ${status}`;
-    if (status === 'Rework Required' && reworkComment) {
-      msgText += `\nComment: "${reworkComment}"`;
-    }
-    workspace.messages.push({
-      sender: senderId || workspace.client,
-      text: msgText,
-      createdAt: new Date()
-    });
-    
     await workspace.save();
 
     // Increment/decrement project count for all participants
@@ -3134,10 +3446,20 @@ app.post('/api/project-workspaces/:id/ratings', async (req, res) => {
     const reviewsCount = allRatingsForUser.length;
     const avgRating = reviewsCount > 0 ? (allRatingsForUser.reduce((sum, val) => sum + val, 0) / reviewsCount) : 0;
 
-    await User.findByIdAndUpdate(to, {
+    const updatedUser = await User.findByIdAndUpdate(to, {
       rating: parseFloat(avgRating.toFixed(1)),
       reviews: reviewsCount
-    });
+    }, { new: true });
+
+    // Emit profile_updated socket event
+    const ioInstance = req.app.get('io');
+    if (ioInstance) {
+      ioInstance.emit('profile_updated', {
+        userId: to.toString(),
+        user: updatedUser
+      });
+      console.log(`[Socket] Emitted profile_updated for user ${to} (rating update)`);
+    }
 
     const updated = await ProjectWorkspace.findById(id)
       .populate('client', 'fullName email phoneNumber role city avatarUrl')
@@ -3205,13 +3527,6 @@ app.post('/api/project-workspaces/:id/updates', async (req, res) => {
     };
 
     workspace.updates.push(newUpdate);
-
-    // Also send a system notification in the chat
-    workspace.messages.push({
-      sender: senderId,
-      text: `📢 Progress Update: "${title}" posted by [${senderRoleName}] ${user ? user.fullName : ''}. Check the Timeline tab.`,
-      createdAt: new Date()
-    });
 
     await workspace.save();
 
@@ -3400,6 +3715,7 @@ app.post('/api/project-workspaces/:id/updates/:updateId/like', async (req, res) 
       .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
       .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
 
+    emitWorkspaceUpdate(req, id, updated);
     res.status(200).json({ message: 'Like toggled successfully', workspace: updated });
   } catch (error) {
     console.error('Error toggling like:', error);
@@ -3464,6 +3780,71 @@ app.post('/api/project-workspaces/:id/updates/:updateId/comments', async (req, r
   }
 });
 
+// Labour Today's Work Status — check if labour has an active project today and attendance status
+app.get('/api/labour/today-status/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Find active workspaces where this labour is in the team
+    const activeWorkspaces = await ProjectWorkspace.find({
+      labourTeam: userId,
+      status: { $nin: ['Completed', 'Cancelled'] }
+    })
+      .populate('contractRequest', 'location')
+      .populate('contractor', 'fullName')
+      .populate('professional', 'fullName')
+      .lean();
+
+    if (!activeWorkspaces || activeWorkspaces.length === 0) {
+      return res.status(200).json({ hasActiveProject: false });
+    }
+
+    // Use the first active workspace
+    const ws = activeWorkspaces[0];
+    const location = ws.contractRequest?.location || '';
+
+    // Check today's attendance
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    let checkedIn = false;
+    let checkInTime = null;
+    let isApproved = false;
+
+    const attendance = ws.labourManagement?.attendance || [];
+    const todayEntry = attendance.find(a => a.date === todayStr);
+
+    if (todayEntry) {
+      const labourRecord = todayEntry.records?.find(r => {
+        const rId = r.labourId?._id || r.labourId;
+        return rId?.toString() === userId;
+      });
+
+      if (labourRecord) {
+        checkedIn = true;
+        isApproved = labourRecord.isMarked === true;
+        checkInTime = labourRecord.checkInTime || todayEntry.createdAt || today.toISOString();
+      }
+    }
+
+    res.status(200).json({
+      hasActiveProject: true,
+      workspace: {
+        _id: ws._id,
+        title: ws.title,
+        location: location,
+        contractor: ws.contractor?.fullName || ws.professional?.fullName || ''
+      },
+      checkedIn,
+      checkInTime,
+      isApproved
+    });
+  } catch (error) {
+    console.error('Error fetching labour today status:', error);
+    res.status(500).json({ message: 'Error fetching today status: ' + error.message });
+  }
+});
+
 // 16. Record Labour Attendance
 app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
   try {
@@ -3501,27 +3882,37 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
       }
 
       if (existingDateIndex > -1) {
-        // Find the labour's own record and only patch lat/lng
+        // Find the labour's own record and only patch check-in data
         const existingRecords = workspace.labourManagement.attendance[existingDateIndex].records || [];
         const ownRecordIdx = existingRecords.findIndex(r => (r.labourId?._id || r.labourId)?.toString() === senderId);
         if (ownRecordIdx > -1) {
           existingRecords[ownRecordIdx].latitude = gpsRecord.latitude;
           existingRecords[ownRecordIdx].longitude = gpsRecord.longitude;
+          existingRecords[ownRecordIdx].checkInTime = gpsRecord.checkInTime;
+          existingRecords[ownRecordIdx].checkOutTime = gpsRecord.checkOutTime;
+          existingRecords[ownRecordIdx].address = gpsRecord.address;
+          existingRecords[ownRecordIdx].distanceFromSite = gpsRecord.distanceFromSite;
+          existingRecords[ownRecordIdx].googleMapsLink = gpsRecord.googleMapsLink;
           existingRecords[ownRecordIdx].isMarked = false;
         } else {
-          // No existing record for this labour yet — add a GPS-only entry
+          // No existing record for this labour yet — add entry
           existingRecords.push({
             labourId: senderId,
             status: gpsRecord.status || 'Present',
             hours: gpsRecord.hours || 0,
             latitude: gpsRecord.latitude,
             longitude: gpsRecord.longitude,
+            checkInTime: gpsRecord.checkInTime,
+            checkOutTime: gpsRecord.checkOutTime,
+            address: gpsRecord.address,
+            distanceFromSite: gpsRecord.distanceFromSite,
+            googleMapsLink: gpsRecord.googleMapsLink,
             isMarked: false
           });
         }
         workspace.markModified('labourManagement');
       } else {
-        // No attendance entry for this date yet — create one with GPS data only
+        // No attendance entry for this date yet — create one with GPS data
         workspace.labourManagement.attendance.push({
           date,
           records: [{
@@ -3530,6 +3921,11 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
             hours: gpsRecord.hours || 0,
             latitude: gpsRecord.latitude,
             longitude: gpsRecord.longitude,
+            checkInTime: gpsRecord.checkInTime,
+            checkOutTime: gpsRecord.checkOutTime,
+            address: gpsRecord.address,
+            distanceFromSite: gpsRecord.distanceFromSite,
+            googleMapsLink: gpsRecord.googleMapsLink,
             isMarked: false
           }],
           markedBy: senderId
@@ -3548,9 +3944,15 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
         markedRecords.forEach(mr => {
           const idx = existingRecords.findIndex(er => (er.labourId?._id || er.labourId)?.toString() === mr.labourId?.toString());
           if (idx > -1) {
+            const existing = existingRecords[idx].toObject ? existingRecords[idx].toObject() : existingRecords[idx];
             existingRecords[idx] = {
-              ...(existingRecords[idx].toObject ? existingRecords[idx].toObject() : existingRecords[idx]),
-              ...mr
+              ...existing,
+              ...mr,
+              checkInTime: mr.checkInTime !== undefined && mr.checkInTime !== null ? mr.checkInTime : existing.checkInTime,
+              checkOutTime: mr.checkOutTime !== undefined && mr.checkOutTime !== null ? mr.checkOutTime : existing.checkOutTime,
+              address: mr.address !== undefined && mr.address !== null ? mr.address : existing.address,
+              distanceFromSite: mr.distanceFromSite !== undefined && mr.distanceFromSite !== null ? mr.distanceFromSite : existing.distanceFromSite,
+              googleMapsLink: mr.googleMapsLink !== undefined && mr.googleMapsLink !== null ? mr.googleMapsLink : existing.googleMapsLink
             };
           } else {
             existingRecords.push(mr);
@@ -3584,7 +3986,8 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
           const contractorNotif = new Notification({
             recipientId: contractorId,
             senderId: senderId,
-            text: contractorNotifText
+            text: contractorNotifText,
+            workspaceId: id
           });
           await contractorNotif.save();
 
@@ -3611,7 +4014,8 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
           const clientNotif = new Notification({
             recipientId: workspace.client,
             senderId: senderId,
-            text: clientNotifText
+            text: clientNotifText,
+            workspaceId: id
           });
           await clientNotif.save();
 
@@ -3632,12 +4036,30 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
           }
         }
       } else {
+        // Update any matching "Labour Checked In" notifications for these labourers to isMarked: true
+        try {
+          const dateStr = date; // YYYY-MM-DD
+          const labourIds = records.map(r => r.labourId?.toString()).filter(Boolean);
+          if (labourIds.length > 0) {
+            await Notification.updateMany(
+              {
+                senderId: { $in: labourIds },
+                text: { $regex: new RegExp(`Labour Checked In.*${dateStr}`, 'i') }
+              },
+              { $set: { isMarked: true } }
+            );
+          }
+        } catch (updateNotifErr) {
+          console.error('Error marking notifications as processed:', updateNotifErr);
+        }
+
         // Contractor marked attendance -> Notify Client
         const notificationText = `📋 Attendance Submitted\nLabour attendance for ${formattedDate} has been marked by Contractor ${senderUser.fullName}\n\n[View Attendance]`;
         const notification = new Notification({
           recipientId: workspace.client,
           senderId: senderId,
-          text: notificationText
+          text: notificationText,
+          workspaceId: id
         });
         await notification.save();
 
@@ -3666,7 +4088,8 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
               const labourNotif = new Notification({
                 recipientId: lId,
                 senderId: senderId,
-                text: labourNotifText
+                text: labourNotifText,
+                workspaceId: id
               });
               await labourNotif.save();
 
@@ -3701,6 +4124,7 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
       .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
       .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
 
+    emitWorkspaceUpdate(req, id, updated);
     res.status(200).json({ message: 'Attendance recorded successfully', workspace: updated });
   } catch (error) {
     console.error('Error recording attendance:', error);
@@ -3748,7 +4172,8 @@ app.post('/api/project-workspaces/:id/labour/payment', async (req, res) => {
       const notification = new Notification({
         recipientId: labourId,
         senderId: senderId,
-        text: notificationText
+        text: notificationText,
+        workspaceId: id
       });
       await notification.save();
 
@@ -3780,6 +4205,7 @@ app.post('/api/project-workspaces/:id/labour/payment', async (req, res) => {
       .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
       .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
 
+    emitWorkspaceUpdate(req, id, updated);
     res.status(200).json({ message: 'Payment recorded successfully', workspace: updated });
   } catch (error) {
     console.error('Error recording payment:', error);
@@ -4164,6 +4590,13 @@ app.post('/api/notifications/read-projects/:userId', async (req, res) => {
       }, 
       { $set: { isRead: true } }
     );
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(userId.toString()).emit('notifications_read', { userId });
+      console.log(`[Socket] Emitted notifications_read (projects) for user ${userId}`);
+    }
+
     res.status(200).json({ success: true, message: 'Project notifications marked as read' });
   } catch (error) {
     res.status(500).json({ message: 'Error marking project notifications as read: ' + error.message });
@@ -4175,6 +4608,13 @@ app.post('/api/notifications/read/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     await Notification.updateMany({ recipientId: userId, isRead: false }, { $set: { isRead: true } });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(userId.toString()).emit('notifications_read', { userId });
+      console.log(`[Socket] Emitted notifications_read (all) for user ${userId}`);
+    }
+
     res.status(200).json({ success: true, message: 'All notifications marked as read' });
   } catch (error) {
     res.status(500).json({ message: 'Error marking notifications as read: ' + error.message });
@@ -4541,7 +4981,24 @@ app.post('/api/conversations/:conversationId/messages', async (req, res) => {
     conversation.updatedAt = new Date();
     await conversation.save();
 
-    // Message/chat notifications are disabled per user request
+    // Send push notification to other participants in the conversation
+    try {
+      const senderUser = await User.findById(senderId);
+      for (const pId of conversation.participants) {
+        const participantId = pId.toString();
+        if (participantId !== senderId) {
+          const notification = new Notification({
+            recipientId: participantId,
+            senderId: senderId,
+            text: `💬 New Message\n${senderUser ? senderUser.fullName : 'Someone'}: "${text || 'Sent an attachment'}"`,
+            conversationId: conversationId
+          });
+          await notification.save();
+        }
+      }
+    } catch (notifErr) {
+      console.error('Error generating notification for DM message:', notifErr);
+    }
 
 
     // Get the saved message with its MongoDB _id
@@ -4623,6 +5080,31 @@ app.post('/api/conversations/:conversationId/read', async (req, res) => {
     });
 
     await conversation.save();
+
+    // Broadcast message read event to the room and all participants
+    const io = req.app.get('io');
+    if (io) {
+      // 1. Emit to the conversation room (for users currently inside the chat room)
+      io.to(conversationId).emit('messages_read', {
+        conversationId,
+        userId
+      });
+
+      // 2. Emit to the personal rooms of all participants (for real-time badge count updates on other screens/devices)
+      conversation.participants.forEach(pId => {
+        const participantId = pId.toString();
+        io.to(participantId).emit('messages_read', {
+          conversationId,
+          userId
+        });
+        io.to(`user:${participantId}`).emit('messages_read', {
+          conversationId,
+          userId
+        });
+      });
+      console.log(`[Socket] Emitted messages_read for room ${conversationId} to all participants by user ${userId}`);
+    }
+
     res.status(200).json({ success: true });
   } catch (error) {
     res.status(500).json({ message: 'Error marking as read: ' + error.message });
@@ -4643,11 +5125,6 @@ app.post('/api/project-workspaces/:id/site-visits', async (req, res) => {
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
 
     const senderUser = await User.findById(senderId);
-    workspace.messages.push({
-      sender: senderId,
-      text: `📅 Site visit scheduled for ${new Date(date).toLocaleDateString()} by ${senderUser.fullName}`,
-      createdAt: new Date()
-    });
     await workspace.save();
 
     const members = new Set();
@@ -4665,7 +5142,8 @@ app.post('/api/project-workspaces/:id/site-visits', async (req, res) => {
       const notification = new Notification({
         recipientId,
         senderId,
-        text: `📅 Site Visit Scheduled\nSite visit scheduled for ${workspace.title} on ${new Date(date).toLocaleDateString()}\n\n[View Schedule]`
+        text: `📅 Site Visit Scheduled\nSite visit scheduled for ${workspace.title} on ${new Date(date).toLocaleDateString()}\n\n[View Schedule]`,
+        workspaceId: id
       });
       await notification.save();
 

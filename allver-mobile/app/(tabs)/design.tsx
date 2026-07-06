@@ -7,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { BACKEND_URL } from '../../constants/Config';
 import NotificationBell from '../../components/NotificationBell';
 import { useTranslation } from '../../utils/i18n';
+import SocketService from '../../utils/SocketService';
 
 const { width } = Dimensions.get('window');
 
@@ -19,6 +20,7 @@ const COLORS = {
   white: '#FFFFFF',
   bgLight: '#F3F4F6',
   gold: '#F59E0B',
+  orange: '#F97316',
 };
 
 interface DesignItem {
@@ -43,6 +45,7 @@ interface DesignItem {
   description?: string;
   quotation?: any;
   price?: number;
+  likedBy?: string[];
 }
 
 const DESIGN_DATA: DesignItem[] = [];
@@ -79,6 +82,7 @@ const mapBackendPostToDesign = (bp: any): DesignItem => {
     description: bp.description || '',
     quotation: bp.quotation || null,
     price: itemPrice,
+    likedBy: bp.likedBy || [],
   };
 };
 
@@ -137,6 +141,83 @@ export default function DesignScreen() {
       fetchSavedDesigns(currentUser._id);
     }
   }, [currentUser]);
+
+  // Real-time synchronization via global socket for new posts and updates
+  useEffect(() => {
+    const handleNewPost = (newPost: any) => {
+      if (!newPost || !newPost._id || newPost.type !== 'design') return;
+      console.log('[DesignFeed] New design post received via socket:', newPost._id);
+      setDesigns((prevDesigns) => {
+        if (prevDesigns.some((d) => d.id === newPost._id)) return prevDesigns;
+        const mapped = mapBackendPostToDesign(newPost);
+        return [mapped, ...prevDesigns];
+      });
+    };
+
+    const handlePostUpdated = (data: any) => {
+      if (!data || !data.postId) return;
+      console.log('[DesignFeed] Design post updated via socket:', data);
+      setDesigns((prevDesigns) =>
+        prevDesigns.map((design) => {
+          if (design.id === data.postId) {
+            return {
+              ...design,
+              likes: data.likes ?? design.likes,
+              comments: data.comments ?? design.comments,
+              likedBy: data.likedBy || design.likedBy,
+            };
+          }
+          return design;
+        })
+      );
+    };
+
+    const handlePostEdited = (editedPost: any) => {
+      if (!editedPost || !editedPost._id || editedPost.type !== 'design') return;
+      console.log('[DesignFeed] Design post edited via socket:', editedPost._id);
+      setDesigns((prevDesigns) =>
+        prevDesigns.map((design) => {
+          if (design.id === editedPost._id) {
+            return mapBackendPostToDesign(editedPost);
+          }
+          return design;
+        })
+      );
+    };
+
+    const handlePostDeleted = (data: any) => {
+      if (!data || !data.postId) return;
+      console.log('[DesignFeed] Design post deleted via socket:', data.postId);
+      setDesigns((prevDesigns) => prevDesigns.filter((d) => d.id !== data.postId));
+    };
+
+    const handleReconnect = () => {
+      console.log('[DesignFeed] Socket reconnected. Re-fetching designs...');
+      fetch(`${BACKEND_URL}/api/posts/design`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.designs) {
+            const mapped = data.designs.map(mapBackendPostToDesign);
+            setDesigns([...mapped, ...DESIGN_DATA]);
+          }
+        })
+        .catch(err => console.error('Error re-fetching designs on reconnect:', err));
+    };
+
+    SocketService.on('new_post', handleNewPost);
+    SocketService.on('post_updated', handlePostUpdated);
+    SocketService.on('post_edited', handlePostEdited);
+    SocketService.on('post_deleted', handlePostDeleted);
+    SocketService.on('connect', handleReconnect);
+
+    return () => {
+      SocketService.off('new_post', handleNewPost);
+      SocketService.off('post_updated', handlePostUpdated);
+      SocketService.off('post_edited', handlePostEdited);
+      SocketService.off('post_deleted', handlePostDeleted);
+      SocketService.off('connect', handleReconnect);
+    };
+  }, []);
 
   const handleToggleSaved = () => {
     if (!currentUser) {
@@ -232,6 +313,63 @@ export default function DesignScreen() {
     });
   };
 
+  const handleLikePress = async (e: any, postId: string) => {
+    if (e && e.stopPropagation) {
+      e.stopPropagation();
+    }
+
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      (document.activeElement as HTMLElement)?.blur();
+    }
+
+    const userId = currentUser?.role === 'Labour' ? (global as any).currentUser?._id : currentUser?._id;
+    const finalUserId = userId || 'default-user-id';
+
+    // 1. Optimistic UI update
+    setDesigns((prev) =>
+      prev.map((d) => {
+        if (d.id !== postId) return d;
+
+        const likedBy = d.likedBy || [];
+        const isLiked = likedBy.includes(finalUserId);
+        const nextLikedBy = isLiked 
+          ? likedBy.filter((uid) => uid !== finalUserId)
+          : [...likedBy, finalUserId];
+
+        return {
+          ...d,
+          likedBy: nextLikedBy,
+          likes: nextLikedBy.length
+        };
+      })
+    );
+
+    // 2. Network Request
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/posts/${postId}/like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: finalUserId })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Sync with exact server count and liked list
+        setDesigns((prev) =>
+          prev.map((d) => {
+            if (d.id !== postId) return d;
+            return {
+              ...d,
+              likes: typeof data.likes === 'number' ? data.likes : d.likes,
+              likedBy: Array.isArray(data.likedBy) ? data.likedBy : d.likedBy
+            };
+          })
+        );
+      }
+    } catch (err) {
+      console.error('Error liking post:', err);
+    }
+  };
+
   const renderDesignCard = ({ item }: { item: DesignItem }) => {
     return (
       <TouchableOpacity style={styles.designCard} activeOpacity={0.9} onPress={() => handleCardPress(item)}>
@@ -252,10 +390,28 @@ export default function DesignScreen() {
 
           <View style={styles.cardFooter}>
             <View style={styles.cardStatsCol}>
-              <View style={styles.statItem}>
-                <Feather name="heart" size={14} color={COLORS.textMuted} />
-                <Text style={styles.statValueText}>{item.likes}</Text>
-              </View>
+              {(() => {
+                const userId = currentUser?.role === 'Labour' ? (global as any).currentUser?._id : currentUser?._id;
+                const finalUserId = userId || 'default-user-id';
+                const isLiked = item.likedBy && item.likedBy.includes(finalUserId);
+                return (
+                  <TouchableOpacity 
+                    style={styles.statItem} 
+                    activeOpacity={0.7} 
+                    onPress={(e) => handleLikePress(e, item.id)}
+                  >
+                    <Feather 
+                      name="heart" 
+                      size={14} 
+                      color={isLiked ? COLORS.orange : COLORS.textMuted} 
+                      style={isLiked ? { fill: COLORS.orange } : undefined}
+                    />
+                    <Text style={[styles.statValueText, isLiked && { color: COLORS.orange, fontWeight: '700' }]}>
+                      {item.likes}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })()}
               <View style={[styles.statItem, { marginLeft: 12 }]}>
                 <Feather name="message-square" size={14} color={COLORS.textMuted} />
                 <Text style={styles.statValueText}>{item.comments}</Text>
