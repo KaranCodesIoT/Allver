@@ -60,15 +60,9 @@ export default function Index() {
           return;
         }
 
-        // 2. If no valid session, check language selection
-        const storedLanguage = await getStoredLanguage();
-        if (!storedLanguage) {
-          console.log('[StartupGuard] No language chosen yet. Routing to Choose Language screen.');
-          router.replace('/choose-language');
-        } else {
-          console.log('[StartupGuard] No session. Routing to Login.');
-          router.replace('/login');
-        }
+        // 2. If no valid session, route to Choose Language screen
+        console.log('[StartupGuard] No session. Routing to Choose Language screen.');
+        router.replace('/choose-language');
 
       } catch (error) {
         console.error('[StartupGuard] Unexpected error during startup check:', error);

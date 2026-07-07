@@ -458,8 +458,9 @@ export default function ContractorDetailScreen() {
 
   const handleShare = async () => {
     try {
+      const profileUrl = `https://allver.onrender.com/contractor/${id}`;
       await Share.share({
-        message: `Check out ${name} on Allver: Specialists in construction from ${location}. Contact: ${phone}`,
+        message: `Check out ${name} on Allver: Specialists in construction from ${location}. Contact: ${phone}\nLink: ${profileUrl}`,
       });
     } catch (err) {
       console.error(err);

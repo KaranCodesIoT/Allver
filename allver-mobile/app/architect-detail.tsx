@@ -457,8 +457,9 @@ export default function ArchitectDetailScreen() {
 
   const handleShare = async () => {
     try {
+      const profileUrl = `https://allver.onrender.com/architect/${architectId}`;
       await Share.share({
-        message: `Check out ${name}'s profile on Allver: ${firmName} from ${location}`,
+        message: `Check out ${name}'s profile on Allver: ${firmName} from ${location}\nLink: ${profileUrl}`,
       });
     } catch (error) {
       console.error(error);

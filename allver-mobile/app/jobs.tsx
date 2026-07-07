@@ -23,7 +23,6 @@ const COLORS = {
   pageBg: '#F3F4F6'
 };
 
-const CATEGORY_CHIPS = ['All', 'Residential', 'Commercial', 'Interior', 'Renovation', 'General'];
 
 export default function JobsScreen() {
   const router = useRouter();
@@ -31,7 +30,7 @@ export default function JobsScreen() {
   const { refreshUnreadActivityCount } = useUnreadActivities();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const selectedCategory = 'All';
   const [jobs, setJobs] = useState<any[]>((global as any).cachedJobs || []);
   const [loading, setLoading] = useState(!((global as any).cachedJobs && (global as any).cachedJobs.length > 0));
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -197,27 +196,6 @@ export default function JobsScreen() {
           ) : null}
         </View>
 
-        {/* Category Filter Chips */}
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
-          contentContainerStyle={styles.chipsScroll}
-        >
-          {CATEGORY_CHIPS.map((cat) => {
-            const isSelected = selectedCategory === cat;
-            return (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.chip, isSelected && styles.chipActive]}
-                onPress={() => setSelectedCategory(cat)}
-              >
-                <Text style={[styles.chipText, isSelected && styles.chipTextActive]}>
-                  {cat}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
       </View>
 
       {/* Jobs List */}
@@ -397,7 +375,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     height: 44,
     paddingHorizontal: 12,
-    marginBottom: 12,
   },
   searchIcon: {
     marginRight: 8,

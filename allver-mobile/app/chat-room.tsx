@@ -8,7 +8,9 @@ import SocketService from '../utils/SocketService';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
 import TransliteratedTextInput from '../components/TransliteratedTextInput';
+import * as WebBrowser from 'expo-web-browser';
 import { useUnreadMessages } from '../context/UnreadMessageContext';
+import { useTranslation } from '../utils/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -60,6 +62,7 @@ export default function ChatRoomScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { refreshUnreadMsgCount } = useUnreadMessages();
+  const { i18n } = useTranslation();
 
   const receiverId = params.receiverId as string;
   const receiverName = (params.name as string) || 'User';
@@ -111,6 +114,39 @@ export default function ChatRoomScreen() {
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [voiceProgress, setVoiceProgress] = useState(0);
   const soundRef = useRef<Audio.Sound | null>(null);
+
+  // In-app calling state
+  const [callState, setCallState] = useState<'idle' | 'calling' | 'incoming' | 'active'>('idle');
+  const [callerInfo, setCallerInfo] = useState<{ callerId: string; callerName: string; callerAvatar: string } | null>(null);
+  const [callTimer, setCallTimer] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isSpeaker, setIsSpeaker] = useState(false);
+
+  const callStateRef = useRef<string>('idle');
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
+
+  useEffect(() => {
+    let timerInterval: any = null;
+    if (callState === 'active') {
+      setCallTimer(0);
+      timerInterval = setInterval(() => {
+        setCallTimer(prev => prev + 1);
+      }, 1000);
+    } else {
+      setCallTimer(0);
+    }
+    return () => {
+      if (timerInterval) clearInterval(timerInterval);
+    };
+  }, [callState]);
+
+  const formatTimer = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // Sync conversationId to global state for push notification filtering
   useEffect(() => {
@@ -418,6 +454,54 @@ export default function ChatRoomScreen() {
       }
     };
 
+    const handleIncomingCall = (data: any) => {
+      console.log('[Socket] Incoming call from:', data.callerName);
+      if (callStateRef.current !== 'idle') {
+        s.emit('busy_call', { callerId: data.callerId });
+        return;
+      }
+      setCallerInfo({
+        callerId: data.callerId,
+        callerName: data.callerName,
+        callerAvatar: data.callerAvatar
+      });
+      setCallState('incoming');
+    };
+
+    const handleCallAnswered = (data: any) => {
+      console.log('[Socket] Call answered by:', data.receiverId);
+      setCallState('active');
+    };
+
+    const handleCallRejected = (data: any) => {
+      console.log('[Socket] Call rejected by:', data.receiverId);
+      setCallState('idle');
+      setCallerInfo(null);
+      Alert.alert('Call Declined', `${receiverName} declined your call.`);
+    };
+
+    const handleCallBusy = () => {
+      console.log('[Socket] Target is busy');
+      setCallState('idle');
+      setCallerInfo(null);
+      Alert.alert('User Busy', `${receiverName} is currently in another call.`);
+    };
+
+    const handleCallEnded = () => {
+      console.log('[Socket] Call ended');
+      setCallState('idle');
+      setCallerInfo(null);
+      Alert.alert('Call Ended', 'The call has ended.');
+    };
+
+    const handleReceiveVoiceChunk = (data: any) => {
+      console.log('[Socket] Received voice chunk:', data.url);
+      if (data && data.url) {
+        voiceQueueRef.current.push(data.url);
+        playNextInVoiceQueue();
+      }
+    };
+
     s.on('receive_message', handleReceiveMessage);
     s.on('user_typing', handleUserTyping);
     s.on('user_stop_typing', handleUserStopTyping);
@@ -426,6 +510,12 @@ export default function ChatRoomScreen() {
     s.on('messages_read', handleMessagesRead);
     s.on('message_delivered', handleMessageDelivered);
     s.on('connect', handleReconnect);
+    s.on('incoming_call', handleIncomingCall);
+    s.on('call_answered', handleCallAnswered);
+    s.on('call_rejected', handleCallRejected);
+    s.on('call_busy', handleCallBusy);
+    s.on('call_ended', handleCallEnded);
+    s.on('receive_voice_chunk', handleReceiveVoiceChunk);
 
     return () => {
       s.emit('leave_room', { roomId: conversationId });
@@ -437,6 +527,12 @@ export default function ChatRoomScreen() {
       s.off('messages_read', handleMessagesRead);
       s.off('message_delivered', handleMessageDelivered);
       s.off('connect', handleReconnect);
+      s.off('incoming_call', handleIncomingCall);
+      s.off('call_answered', handleCallAnswered);
+      s.off('call_rejected', handleCallRejected);
+      s.off('call_busy', handleCallBusy);
+      s.off('call_ended', handleCallEnded);
+      s.off('receive_voice_chunk', handleReceiveVoiceChunk);
     };
   }, [conversationId, currentUser._id, receiverId, workspace]);
 
@@ -772,10 +868,11 @@ export default function ChatRoomScreen() {
 
       const formData = new FormData();
       formData.append('audio', {
-        uri: Platform.OS === 'android' ? uri : uri.replace('file://', ''),
+        uri,
         type: 'audio/x-m4a',
         name: 'speech.m4a'
       } as any);
+      formData.append('language', i18n.language || 'en');
 
       console.log('[STT Client] Uploading to backend...');
       const response = await fetch(`${BACKEND_URL}/api/transcribe`, {
@@ -1642,6 +1739,205 @@ export default function ChatRoomScreen() {
     );
   };
 
+  const handlePhoneCall = async () => {
+    if (!currentUser || currentUser._id === 'default-user-id') {
+      Alert.alert('Call Not Available', 'Please log in to make calls.');
+      return;
+    }
+    
+    try {
+      // 1. Check follow status from backend
+      const followRes = await fetch(`${BACKEND_URL}/api/follow/status/${receiverId}?followerId=${currentUser._id}`);
+      if (!followRes.ok) {
+        throw new Error('Failed to verify follow status');
+      }
+      const followData = await followRes.json();
+      
+      if (!followData.isFollowing) {
+        Alert.alert(
+          'Cannot Call',
+          'You can only call users whom you are following. Please follow this user first from their profile page.'
+        );
+        return;
+      }
+      
+      // 2. Initiate Call
+      setCallState('calling');
+      setCallerInfo({
+        callerId: receiverId,
+        callerName: receiverName,
+        callerAvatar: receiverAvatar
+      });
+      
+      if (socket) {
+        socket.emit('initiate_call', {
+          callerId: currentUser._id,
+          receiverId: receiverId,
+          callerName: currentUser.fullName,
+          callerAvatar: currentUser.avatarUrl || ''
+        });
+      }
+    } catch (err) {
+      console.error('Call initialization error:', err);
+      Alert.alert('Error', 'An error occurred while trying to place the call.');
+    }
+  };
+
+  const handleAcceptCall = () => {
+    if (!socket || !callerInfo) return;
+    socket.emit('answer_call', {
+      callerId: callerInfo.callerId,
+      receiverId: currentUser._id
+    });
+    setCallState('active');
+  };
+
+  const handleDeclineCall = () => {
+    if (!socket || !callerInfo) return;
+    socket.emit('reject_call', {
+      callerId: callerInfo.callerId,
+      receiverId: currentUser._id
+    });
+    setCallState('idle');
+    setCallerInfo(null);
+  };
+
+  const handleEndCall = () => {
+    if (!socket || !callerInfo) {
+      setCallState('idle');
+      return;
+    }
+    socket.emit('end_call', {
+      targetId: callerInfo.callerId === currentUser._id || callerInfo.callerId === receiverId ? receiverId : callerInfo.callerId
+    });
+    setCallState('idle');
+    setCallerInfo(null);
+  };
+
+  // Call Streaming Management
+  const callRecordingRef = useRef<Audio.Recording | null>(null);
+  const callIntervalRef = useRef<any>(null);
+  const voiceQueueRef = useRef<string[]>([]);
+  const isPlayingQueueRef = useRef<boolean>(false);
+
+  const startCallRecordingChunk = async () => {
+    try {
+      await Audio.requestPermissionsAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const recordingInstance = new Audio.Recording();
+      await recordingInstance.prepareToRecordAsync(
+        Audio.RecordingOptionsPresets.LOW_QUALITY
+      );
+      await recordingInstance.startAsync();
+      callRecordingRef.current = recordingInstance;
+    } catch (err) {
+      console.error('Failed to start call recording chunk:', err);
+    }
+  };
+
+  const stopAndUploadCallChunk = async () => {
+    const rec = callRecordingRef.current;
+    if (!rec) return;
+
+    try {
+      await rec.stopAndUnloadAsync();
+      const uri = rec.getURI();
+      callRecordingRef.current = null;
+
+      if (uri && socket && callerInfo) {
+        const url = await uploadToCloudinary(uri, 'call_chunk.m4a');
+        if (url) {
+          const target = callerInfo.callerId === currentUser._id || callerInfo.callerId === receiverId ? receiverId : callerInfo.callerId;
+          socket.emit('voice_chunk', { url, targetId: target });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to stop and upload call chunk:', err);
+    }
+  };
+
+  const playNextInVoiceQueue = async () => {
+    if (isPlayingQueueRef.current || voiceQueueRef.current.length === 0) return;
+
+    isPlayingQueueRef.current = true;
+    const nextUrl = voiceQueueRef.current.shift();
+
+    if (nextUrl) {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+        });
+
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: nextUrl },
+          { shouldPlay: true }
+        );
+
+        sound.setOnPlaybackStatusUpdate((status) => {
+          if (status.isLoaded && status.didJustFinish) {
+            sound.unloadAsync();
+            isPlayingQueueRef.current = false;
+            playNextInVoiceQueue(); // Play next
+          }
+        });
+      } catch (err) {
+        console.error('Failed to play voice chunk:', err);
+        isPlayingQueueRef.current = false;
+        playNextInVoiceQueue();
+      }
+    } else {
+      isPlayingQueueRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (callState === 'active') {
+      voiceQueueRef.current = [];
+      isPlayingQueueRef.current = false;
+
+      const runStreaming = async () => {
+        await startCallRecordingChunk();
+        
+        callIntervalRef.current = setInterval(async () => {
+          await stopAndUploadCallChunk();
+          await startCallRecordingChunk();
+        }, 3500);
+      };
+
+      runStreaming();
+    } else {
+      if (callIntervalRef.current) {
+        clearInterval(callIntervalRef.current);
+        callIntervalRef.current = null;
+      }
+      
+      const cleanRec = async () => {
+        if (callRecordingRef.current) {
+          try {
+            await callRecordingRef.current.stopAndUnloadAsync();
+          } catch (e) {}
+          callRecordingRef.current = null;
+        }
+      };
+      cleanRec();
+
+      voiceQueueRef.current = [];
+      isPlayingQueueRef.current = false;
+    }
+
+    return () => {
+      if (callIntervalRef.current) {
+        clearInterval(callIntervalRef.current);
+        callIntervalRef.current = null;
+      }
+    };
+  }, [callState]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
 
@@ -1682,10 +1978,16 @@ export default function ChatRoomScreen() {
           </TouchableOpacity>
         </View>
         <View style={styles.headerRight}>
-          <TouchableOpacity style={styles.headerIconBtn}>
+          <TouchableOpacity 
+            style={styles.headerIconBtn}
+            onPress={() => Alert.alert('Video Call', 'Video calling is not supported in this region yet.')}
+          >
             <Feather name="video" size={20} color={COLORS.textDark} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerIconBtn}>
+          <TouchableOpacity 
+            style={styles.headerIconBtn}
+            onPress={handlePhoneCall}
+          >
             <Feather name="phone" size={20} color={COLORS.textDark} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.headerIconBtn} onPress={() => setShowMenu(true)}>
@@ -2070,7 +2372,7 @@ export default function ChatRoomScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* ===== SPEECH TO TEXT MODAL ===== */}
+      {/* ===== SPEECH TO TEXT MODAL (Commented out) =====
       <Modal visible={showSttModal} transparent animationType="fade" onRequestClose={handleCancelSttRecording}>
         <View style={styles.sttOverlay}>
           <View style={styles.sttCard}>
@@ -2116,6 +2418,7 @@ export default function ChatRoomScreen() {
           </View>
         </View>
       </Modal>
+      ===== */}
 
       {/* ===== INPUT FOOTER ===== */}
       <View>
@@ -2167,7 +2470,7 @@ export default function ChatRoomScreen() {
 
             <TouchableOpacity
               style={[styles.sendBtn, !text.trim() && styles.sendBtnMic]}
-              onPress={text.trim() ? handleSend : () => handleStartSttRecording(null)}
+              onPress={text.trim() ? handleSend : handleStartRecording}
               activeOpacity={0.8}
             >
               <Feather name={text.trim() ? 'send' : 'mic'} size={20} color={COLORS.white} />
@@ -2176,6 +2479,90 @@ export default function ChatRoomScreen() {
         )}
       </View>
       </KeyboardAvoidingView>
+
+      {/* ===== IN-APP VOIP CALL OVERLAY ===== */}
+      <Modal
+        visible={callState !== 'idle'}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={handleEndCall}
+      >
+        <SafeAreaView style={styles.callOverlayContainer}>
+          <View style={styles.callContent}>
+            {/* Top section: Status */}
+            <View style={styles.callHeaderContainer}>
+              <Feather name="shield" size={16} color="rgba(255,255,255,0.6)" />
+              <Text style={styles.callHeaderSecurityText}>End-to-end Encrypted</Text>
+            </View>
+
+            {/* Middle section: Profile details */}
+            <View style={styles.callProfileContainer}>
+              <View style={styles.callAvatarOutline}>
+                <Image
+                  source={{ uri: (callState === 'incoming' && callerInfo ? callerInfo.callerAvatar : receiverAvatar) || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=120&auto=format&fit=crop' }}
+                  style={styles.callAvatar}
+                />
+              </View>
+              <Text style={styles.callProfileName}>
+                {callState === 'incoming' && callerInfo ? callerInfo.callerName : receiverName}
+              </Text>
+              <Text style={styles.callStatusText}>
+                {callState === 'calling' ? 'Ringing...' : callState === 'incoming' ? 'Incoming Call...' : formatTimer(callTimer)}
+              </Text>
+            </View>
+
+            {/* Bottom section: Actions */}
+            <View style={styles.callActionsContainer}>
+              {callState === 'active' && (
+                <View style={styles.callControlRow}>
+                  <TouchableOpacity 
+                    style={[styles.callControlBtn, isMuted && styles.callControlBtnActive]} 
+                    onPress={() => setIsMuted(!isMuted)}
+                  >
+                    <Feather name={isMuted ? "mic-off" : "mic"} size={22} color={isMuted ? COLORS.white : "#FFFFFF"} />
+                    <Text style={styles.callControlLabel}>Mute</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.callControlBtn, isSpeaker && styles.callControlBtnActive]} 
+                    onPress={() => setIsSpeaker(!isSpeaker)}
+                  >
+                    <Feather name={isSpeaker ? "volume-2" : "volume-x"} size={22} color={isSpeaker ? COLORS.white : "#FFFFFF"} />
+                    <Text style={styles.callControlLabel}>Speaker</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              <View style={styles.callMainActionRow}>
+                {callState === 'incoming' ? (
+                  <>
+                    <TouchableOpacity 
+                      style={[styles.callCircleBtn, styles.declineBtn]} 
+                      onPress={handleDeclineCall}
+                    >
+                      <Feather name="phone-off" size={24} color="#FFFFFF" />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={[styles.callCircleBtn, styles.acceptBtn]} 
+                      onPress={handleAcceptCall}
+                    >
+                      <Feather name="phone" size={24} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity 
+                    style={[styles.callCircleBtn, styles.hangupBtn]} 
+                    onPress={handleEndCall}
+                  >
+                    <Feather name="phone-off" size={24} color="#FFFFFF" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
 
     </SafeAreaView>
   );
@@ -2815,5 +3202,121 @@ const styles = StyleSheet.create({
     color: '#475569',
     marginTop: 16,
     textAlign: 'center',
+  },
+  callOverlayContainer: {
+    flex: 1,
+    backgroundColor: '#0F172A',
+  },
+  callContent: {
+    flex: 1,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  callHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    opacity: 0.8,
+  },
+  callHeaderSecurityText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  callProfileContainer: {
+    alignItems: 'center',
+    marginTop: 60,
+  },
+  callAvatarOutline: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  callAvatar: {
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+  },
+  callProfileName: {
+    color: '#FFFFFF',
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  callStatusText: {
+    color: '#F59E0B',
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  callActionsContainer: {
+    width: '100%',
+    alignItems: 'center',
+    gap: 30,
+    marginBottom: 20,
+  },
+  callControlRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 40,
+    width: '100%',
+  },
+  callControlBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    gap: 4,
+  },
+  callControlBtnActive: {
+    backgroundColor: '#F59E0B',
+  },
+  callControlLabel: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  callMainActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 40,
+    width: '100%',
+  },
+  callCircleBtn: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  acceptBtn: {
+    backgroundColor: '#22C55E',
+  },
+  declineBtn: {
+    backgroundColor: '#EF4444',
+  },
+  hangupBtn: {
+    backgroundColor: '#EF4444',
   },
 });

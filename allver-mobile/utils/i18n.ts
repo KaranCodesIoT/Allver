@@ -150,7 +150,9 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // 3. Fall back to device language
     const deviceLang = getDeviceLanguage();
     setLocaleState(deviceLang);
-    setLocalLanguage(deviceLang);
+    // Note: Do NOT call setLocalLanguage(deviceLang) here. Persisting the default device language
+    // to storage during initialization will make it seem like the user has already explicitly chosen
+    // a language, causing index.tsx to skip the choose-language screen on the first app launch.
   }, []);
 
   const changeLanguage = (lang: string) => {

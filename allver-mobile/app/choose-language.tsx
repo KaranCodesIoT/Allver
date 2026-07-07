@@ -166,6 +166,20 @@ export default function ChooseLanguageScreen() {
             </View>
           )}
         </TouchableOpacity>
+
+        {/* Login Option for returning users */}
+        <TouchableOpacity 
+          onPress={async () => {
+            i18n.changeLanguage(selectedCode);
+            router.replace('/login');
+          }}
+          style={{ marginTop: 20, paddingVertical: 10 }}
+          activeOpacity={0.7}
+        >
+          <Text style={{ color: COLORS.green, fontWeight: '700', fontSize: 14 }}>
+            Already have an account? Log In
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );

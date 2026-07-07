@@ -24,9 +24,10 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
-    // If the active chat room is set (user is viewing a conversation), do not show push notifications
     const activeChatRoomId = (global as any).activeChatRoomId;
-    if (activeChatRoomId) {
+    const incomingConvoId = notification.request.content.data?.conversationId;
+    // Suppress push alerts only if the user is actively viewing the same chat room
+    if (activeChatRoomId && incomingConvoId && activeChatRoomId === incomingConvoId) {
       return {
         shouldShowAlert: false,
         shouldPlaySound: false,
@@ -218,6 +219,7 @@ export default function RootLayout() {
 
           if (response.ok) {
             console.log('[Push Notification] Registered push token with backend successfully.');
+            (global as any).currentPushToken = token;
           } else {
             console.warn('[Push Notification] Backend push token registration failed:', await response.text());
           }
@@ -234,20 +236,39 @@ export default function RootLayout() {
     // 2. Handle Responding to notifications (terminated, background, or foreground states)
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       const data = response.notification.request.content.data || {};
-      const text = data.text || '';
       console.log('[Push Notification] Notification tapped by user:', data);
 
-      // Route the user to correct screen based on notification content
-      if (text.includes('New Message') || text.includes('💬')) {
-        router.push('/(tabs)/messages');
-      } else if (text.includes('Project Invitation') || text.includes('📩')) {
-        router.push('/(tabs)');
-      } else if (text.includes('Team Invitation') || text.includes('💼')) {
-        router.push('/(tabs)');
-      } else if (text.includes('Applied') || text.includes('Application')) {
-        router.push('/(tabs)');
+      // Reset badge count on notification tap
+      Notifications.setBadgeCountAsync(0).catch(err => console.log('Error resetting badge:', err));
+
+      const category = data.category || '';
+      if (category === 'messages' || data.conversationId) {
+        router.push({
+          pathname: '/chat-room',
+          params: {
+            receiverId: data.senderId,
+            conversationId: data.conversationId,
+            name: data.senderName || 'Chat',
+            avatar: data.senderAvatar || ''
+          }
+        });
+      } else if (category === 'contracts' || category === 'payments' || category === 'attendance' || data.workspaceId) {
+        router.push({
+          pathname: '/project-progress',
+          params: { workspaceId: data.workspaceId }
+        });
+      } else if (category === 'projectUpdates' || data.projectId) {
+        router.push({
+          pathname: '/project-detail',
+          params: { id: data.projectId }
+        });
+      } else if (data.senderId) {
+        router.push({
+          pathname: '/architect-detail',
+          params: { id: data.senderId }
+        });
       } else {
-        router.push('/(tabs)');
+        router.push('/notifications');
       }
     });
 

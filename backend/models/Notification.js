@@ -35,6 +35,11 @@ const notificationSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  category: {
+    type: String,
+    enum: ['messages', 'projectUpdates', 'contracts', 'payments', 'attendance', 'marketing', 'systemAlerts'],
+    default: 'systemAlerts'
+  },
   isRead: {
     type: Boolean,
     default: false
@@ -53,42 +58,93 @@ notificationSchema.post('save', async function(doc) {
   try {
     const User = mongoose.model('User');
     const recipient = await User.findById(doc.recipientId);
-    if (recipient && recipient.expoPushToken) {
-      const expoPushToken = recipient.expoPushToken;
-      if (!expoPushToken.startsWith('ExponentPushToken')) {
-        console.log(`[Push Notification] Invalid Expo token for ${recipient.fullName}: ${expoPushToken}`);
+    if (!recipient) return;
+
+    // 1. Resolve notification category
+    let resolvedCategory = doc.category || 'systemAlerts';
+    if (!doc.category) {
+      const textLower = doc.text.toLowerCase();
+      if (textLower.includes('new message') || textLower.includes('💬') || doc.conversationId) {
+        resolvedCategory = 'messages';
+      } else if (textLower.includes('project invitation') || textLower.includes('📩') || textLower.includes('applied') || textLower.includes('application') || textLower.includes('accepted') || textLower.includes('rejected') || textLower.includes('proposal')) {
+        resolvedCategory = 'projectUpdates';
+      } else if (textLower.includes('assigned') || textLower.includes('contract')) {
+        resolvedCategory = 'contracts';
+      } else if (textLower.includes('payment') || textLower.includes('milestone') || textLower.includes('released')) {
+        resolvedCategory = 'payments';
+      } else if (textLower.includes('attendance') || textLower.includes('present')) {
+        resolvedCategory = 'attendance';
+      } else if (textLower.includes('marketing')) {
+        resolvedCategory = 'marketing';
+      }
+    }
+
+    // 2. Check recipient's notification settings preferences
+    if (recipient.notificationSettings) {
+      const isEnabled = recipient.notificationSettings[resolvedCategory];
+      if (isEnabled === false) {
+        console.log(`[Push Notification] Suppressed push for ${recipient.fullName}: category "${resolvedCategory}" is disabled in settings.`);
         return;
       }
+    }
 
-      // Determine a nice title and body based on notification text
-      let title = 'Allver';
-      let cleanBody = doc.text;
+    // 3. Resolve target Expo Push Tokens
+    let targetTokens = [];
+    if (recipient.expoPushTokens && recipient.expoPushTokens.length > 0) {
+      targetTokens = [...recipient.expoPushTokens];
+    } else if (recipient.expoPushToken) {
+      targetTokens = [recipient.expoPushToken];
+    }
 
-      if (doc.text.includes('New Message') || doc.text.includes('💬')) {
-        title = '💬 New Message';
-      } else if (doc.text.includes('Project Invitation') || doc.text.includes('📩')) {
-        title = '📩 Project Invitation';
-      } else if (doc.text.includes('Team Invitation') || doc.text.includes('💼')) {
-        title = '💼 Team Invitation';
-      } else if (doc.text.includes('Applied') || doc.text.includes('Applied')) {
-        title = '👥 New Application';
-      } else if (doc.text.includes('Accepted') || doc.text.includes('accepted')) {
-        title = '✅ Application Accepted';
-      } else if (doc.text.includes('Rejected') || doc.text.includes('rejected')) {
-        title = '❌ Application Update';
-      } else if (doc.text.includes('attendance') || doc.text.includes('Attendance')) {
-        title = '📋 Attendance Update';
-      } else if (doc.text.includes('payment') || doc.text.includes('Payment')) {
-        title = '💰 Payment Update';
-      } else if (doc.text.includes('Milestone') || doc.text.includes('milestone')) {
-        title = '🏗 Milestone Update';
+    // Filter out invalid/empty tokens
+    targetTokens = targetTokens.filter(token => token && token.startsWith('ExponentPushToken'));
+    if (targetTokens.length === 0) {
+      console.log(`[Push Notification] No valid push tokens found for ${recipient.fullName}.`);
+      return;
+    }
+
+    // 4. Compute unread notifications count (badge)
+    const badgeCount = await mongoose.model('Notification').countDocuments({
+      recipientId: doc.recipientId,
+      isRead: false
+    });
+
+    // Fetch sender details to assist client-side deep linking
+    let senderName = '';
+    let senderAvatar = '';
+    try {
+      const senderUser = await User.findById(doc.senderId);
+      if (senderUser) {
+        senderName = senderUser.fullName;
+        senderAvatar = senderUser.avatarUrl || '';
       }
+    } catch (e) {
+      console.log('Error fetching sender details:', e);
+    }
 
+    // 5. Determine title based on category & text
+    let title = 'Allver';
+    const textLower = doc.text.toLowerCase();
+    if (resolvedCategory === 'messages') {
+      title = '💬 New Message';
+    } else if (resolvedCategory === 'projectUpdates') {
+      title = textLower.includes('applied') || textLower.includes('application') ? '👥 New Application' : '📩 Project Invitation';
+    } else if (resolvedCategory === 'contracts') {
+      title = '🏗 New Contract Assigned';
+    } else if (resolvedCategory === 'payments') {
+      title = '💰 Payment Received';
+    } else if (resolvedCategory === 'attendance') {
+      title = '📋 Attendance Marked';
+    }
+
+    // Send push payload to all registered device tokens
+    for (const token of targetTokens) {
       const message = {
-        to: expoPushToken,
+        to: token,
         sound: 'default',
         title: title,
-        body: cleanBody,
+        body: doc.text,
+        badge: badgeCount,
         data: {
           notificationId: doc._id.toString(),
           text: doc.text,
@@ -97,7 +153,10 @@ notificationSchema.post('save', async function(doc) {
           projectId: doc.projectId || '',
           postId: doc.postId || '',
           postType: doc.postType || '',
-          senderId: doc.senderId ? doc.senderId.toString() : ''
+          senderId: doc.senderId ? doc.senderId.toString() : '',
+          senderName,
+          senderAvatar,
+          category: resolvedCategory
         },
         android: {
           channelId: 'default',
@@ -118,9 +177,9 @@ notificationSchema.post('save', async function(doc) {
           body: JSON.stringify(message),
         });
         const resData = await response.json();
-        console.log(`[Push Notification] Successfully sent to ${recipient.fullName}:`, resData);
+        console.log(`[Push Notification] Successfully sent to ${recipient.fullName} (${token}):`, resData);
       } catch (sendErr) {
-        console.error('[Push Notification] Fetch send error:', sendErr);
+        console.error(`[Push Notification] Error sending to ${token}:`, sendErr);
       }
     }
   } catch (error) {

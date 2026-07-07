@@ -72,7 +72,7 @@ const DEFAULT_USER_DATA = {
 export default function ProfileScreen() {
   const router = useRouter();
   const navigation = useNavigation();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [user, setUser] = useState(DEFAULT_USER_DATA);
   const [activeTab, setActiveTab] = useState<string>('projects');
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -87,6 +87,18 @@ export default function ProfileScreen() {
   const [editingPostDesc, setEditingPostDesc] = useState('');
   const [editingPostType, setEditingPostType] = useState<'media' | 'design'>('media');
   const [showEditPostModal, setShowEditPostModal] = useState(false);
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [notifSettings, setNotifSettings] = useState({
+    messages: true,
+    projectUpdates: true,
+    contracts: true,
+    payments: true,
+    attendance: true,
+    marketing: true,
+    systemAlerts: true
+  });
 
   // Listen for real-time profile updates
   useEffect(() => {
@@ -806,6 +818,18 @@ export default function ProfileScreen() {
           setCurrentUser(parsed);
           fetchReviews(parsed._id);
           
+          if (parsed.notificationSettings) {
+            setNotifSettings({
+              messages: parsed.notificationSettings.messages !== false,
+              projectUpdates: parsed.notificationSettings.projectUpdates !== false,
+              contracts: parsed.notificationSettings.contracts !== false,
+              payments: parsed.notificationSettings.payments !== false,
+              attendance: parsed.notificationSettings.attendance !== false,
+              marketing: parsed.notificationSettings.marketing !== false,
+              systemAlerts: parsed.notificationSettings.systemAlerts !== false,
+            });
+          }
+
           if (parsed.role !== 'Client') {
             fetch(`${BACKEND_URL}/api/professional/${parsed._id}/portfolio-highlights`)
               .then(res => res.json())
@@ -881,6 +905,35 @@ export default function ProfileScreen() {
       } catch (e) {
         console.error('Error parsing stored user:', e);
       }
+    }
+  };
+
+  const handleSaveNotificationSettings = async (updatedSettings: typeof notifSettings) => {
+    if (!currentUser?._id) return;
+    setSavingSettings(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/user/${currentUser._id}/notification-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedSettings)
+      });
+      const data = await res.json();
+      if (res.ok && data.user) {
+        (global as any).currentUser = data.user;
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          localStorage.setItem('currentUser', JSON.stringify(data.user));
+        }
+        setCurrentUser(data.user);
+        Alert.alert('Success', 'Notification settings saved successfully');
+        setShowSettingsModal(false);
+      } else {
+        Alert.alert('Error', data.message || 'Failed to save notification settings');
+      }
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'Network error occurred while saving notification settings');
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -1062,8 +1115,23 @@ export default function ProfileScreen() {
 
   const handleShare = async () => {
     try {
+      if (!currentUser?._id) return;
+      
+      const role = currentUser.role || 'Client';
+      let profileUrl = 'https://allver.onrender.com';
+      
+      if (role === 'Architect') {
+        profileUrl += `/architect/${currentUser._id}`;
+      } else if (role === 'Contractor') {
+        profileUrl += `/contractor/${currentUser._id}`;
+      } else if (role === 'Labour') {
+        profileUrl += `/labour/${currentUser._id}`;
+      } else {
+        profileUrl += `/profile`;
+      }
+
       await Share.share({
-        message: `Check out my profile on Allver: ${user.firmName} from ${user.location}`,
+        message: `Check out my profile on Allver: ${currentUser.fullName} (${t(role.toLowerCase()) || role})\nLink: ${profileUrl}`,
       });
     } catch (error) {
       console.error(error);
@@ -1072,6 +1140,20 @@ export default function ProfileScreen() {
 
   const handleLogout = async () => {
     try {
+      const activeToken = (global as any).currentPushToken;
+      if (activeToken && currentUser?._id) {
+        try {
+          await fetch(`${BACKEND_URL}/api/user/push-token`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser._id, token: activeToken })
+          });
+        } catch (fetchErr) {
+          console.warn('Failed to delete push token from backend on logout:', fetchErr);
+        }
+        (global as any).currentPushToken = null;
+      }
+
       await removeToken();
       await removeStoredUser();
     } catch (e) {
@@ -1502,8 +1584,11 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
       <View style={styles.navHeader}>
         <Text style={styles.headerTitle}>{t('myProfile')}</Text>
         <View style={styles.headerRightActions}>
-          <TouchableOpacity onPress={handleShare} style={styles.headerIconBtn}>
-            <Feather name="share-2" size={18} color={COLORS.textDark} />
+          <TouchableOpacity onPress={() => setShowSettingsModal(true)} style={styles.headerIconBtn}>
+            <Feather name="settings" size={18} color={COLORS.textDark} />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowLanguageModal(true)} style={styles.headerIconBtn}>
+            <Ionicons name="language" size={18} color={COLORS.textDark} />
           </TouchableOpacity>
           <TouchableOpacity onPress={handleLogout} style={styles.headerIconBtn}>
             <Feather name="log-out" size={18} color={COLORS.textDark} />
@@ -1666,7 +1751,7 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
           {/* ===== SPECIALIZATION ===== */}
           {currentUser?.role !== 'Client' && (
             <View style={styles.specializationSection}>
-              <Text style={styles.sectionHeaderTitle}>Specialization</Text>
+              <Text style={styles.sectionHeaderTitle}>{t('specialization') || 'Specialization'}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.specScrollRow}>
                 {(Array.isArray(user.specializations) && user.specializations.length > 0
                   ? user.specializations
@@ -1677,7 +1762,7 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
                           : ['Residential Design', 'Commercial Design', 'Interior Design', 'Landscape Design']))).map((spec, index) => (
                   <View key={index} style={styles.specTag}>
                     <View style={styles.specDot} />
-                    <Text style={styles.specTagText}>{spec}</Text>
+                    <Text style={styles.specTagText}>{t(spec.toLowerCase().replace(/\s+/g, '')) || spec}</Text>
                   </View>
                 ))}
               </ScrollView>
@@ -1688,10 +1773,10 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
           {currentUser?.role !== 'Client' && (
             <View style={styles.portfolioSection}>
               <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeaderTitle}>Portfolio Highlights</Text>
+                <Text style={styles.sectionHeaderTitle}>{t('portfolioHighlights') || 'Portfolio Highlights'}</Text>
                 {portfolioProjects.length > 0 && (
                   <TouchableOpacity onPress={() => router.push('/portfolio-highlights')}>
-                    <Text style={styles.viewAllText}>View All ›</Text>
+                    <Text style={styles.viewAllText}>{t('viewAll') || 'View All'} ›</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -1706,7 +1791,7 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
                     >
                       <Feather name="plus" size={24} color={COLORS.primary} />
                     </TouchableOpacity>
-                    <Text style={styles.storyHighlightTitle} numberOfLines={1}>Add</Text>
+                    <Text style={styles.storyHighlightTitle} numberOfLines={1}>{t('add') || 'Add'}</Text>
                   </View>
 
                   {portfolioProjects.map((item, index) => {
@@ -2051,7 +2136,9 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
                   onPress={() => setActiveTab(tab)}
                 >
                   <Text style={[styles.tabButtonText, activeTab === tab && styles.activeTabButtonText]}>
-                    {tab === 'your contracts' ? 'Your contracts' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {tab === 'your contracts' 
+                      ? t('yourContracts') || 'Your contracts' 
+                      : t(tab) || tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -2942,6 +3029,305 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
 
           </View>
         </View>
+      </Modal>
+
+      {/* ===== NOTIFICATION SETTINGS MODAL ===== */}
+      <Modal
+        visible={showSettingsModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowSettingsModal(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowSettingsModal(false)}
+        >
+          <TouchableOpacity 
+            activeOpacity={1}
+            style={{
+              width: width * 0.9,
+              maxWidth: 400,
+              backgroundColor: COLORS.white,
+              borderRadius: 24,
+              padding: 24,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.15,
+              shadowRadius: 20,
+              elevation: 10,
+            }}
+          >
+            {/* Modal Header */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 20,
+              borderBottomWidth: 1,
+              borderBottomColor: COLORS.border,
+              paddingBottom: 12,
+            }}>
+              <View>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.navy }}>
+                  Notification Settings
+                </Text>
+                <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                  Choose which alerts you want to receive
+                </Text>
+              </View>
+              <TouchableOpacity 
+                onPress={() => setShowSettingsModal(false)}
+                style={{
+                  backgroundColor: '#F1F5F9',
+                  borderRadius: 15,
+                  width: 30,
+                  height: 30,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <Feather name="x" size={16} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Toggles Container */}
+            <ScrollView style={{ maxHeight: 350 }} showsVerticalScrollIndicator={false}>
+              {[
+                { key: 'messages', label: 'Messages', desc: 'Direct chat messages & alerts', icon: 'message-square' },
+                { key: 'projectUpdates', label: 'Project Updates', desc: 'Bid selections, applications, invites', icon: 'briefcase' },
+                { key: 'contracts', label: 'Contracts', desc: 'Contract assignment notifications', icon: 'file-text' },
+                { key: 'payments', label: 'Payments', desc: 'Milestone and payout notifications', icon: 'dollar-sign' },
+                { key: 'attendance', label: 'Attendance', desc: 'Check-in and check-out logs', icon: 'clock' },
+                { key: 'marketing', label: 'Marketing', desc: 'News, tips, and AI recommendations', icon: 'gift' },
+                { key: 'systemAlerts', label: 'System Alerts', desc: 'Maintenance and official announcements', icon: 'bell' },
+              ].map((item) => {
+                const isChecked = notifSettings[item.key as keyof typeof notifSettings];
+                return (
+                  <TouchableOpacity
+                    key={item.key}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      paddingVertical: 12,
+                      borderBottomWidth: 1,
+                      borderBottomColor: '#F1F5F9',
+                    }}
+                    onPress={() => {
+                      setNotifSettings(prev => ({
+                        ...prev,
+                        [item.key]: !isChecked
+                      }));
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 12 }}>
+                      <View style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 10,
+                        backgroundColor: isChecked ? '#FEF3C7' : '#F1F5F9',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        marginRight: 12,
+                      }}>
+                        <Feather name={item.icon as any} size={16} color={isChecked ? COLORS.primary : COLORS.textMuted} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark }}>
+                          {item.label}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                          {item.desc}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Switch/Checkbox */}
+                    <View style={{
+                      width: 44,
+                      height: 24,
+                      borderRadius: 12,
+                      backgroundColor: isChecked ? COLORS.green : '#E2E8F0',
+                      padding: 2,
+                      justifyContent: 'center',
+                      alignItems: isChecked ? 'flex-end' : 'flex-start',
+                    }}>
+                      <View style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 10,
+                        backgroundColor: COLORS.white,
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.2,
+                        shadowRadius: 1.5,
+                        elevation: 2,
+                      }} />
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Save Buttons */}
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 20 }}>
+              <TouchableOpacity
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 22,
+                  borderWidth: 1.5,
+                  borderColor: COLORS.border,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  backgroundColor: COLORS.white,
+                }}
+                onPress={() => setShowSettingsModal(false)}
+                disabled={savingSettings}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark }}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{
+                  flex: 1.5,
+                  height: 44,
+                  borderRadius: 22,
+                  backgroundColor: COLORS.primary,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+                onPress={() => handleSaveNotificationSettings(notifSettings)}
+                disabled={savingSettings}
+              >
+                {savingSettings ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.white }}>
+                    Save Settings
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ===== LANGUAGE SELECTOR MODAL ===== */}
+      <Modal
+        visible={showLanguageModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowLanguageModal(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowLanguageModal(false)}
+        >
+          <TouchableOpacity 
+            activeOpacity={1}
+            style={{
+              width: width * 0.88,
+              maxWidth: 360,
+              backgroundColor: COLORS.white,
+              borderRadius: 24,
+              padding: 24,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.15,
+              shadowRadius: 20,
+              elevation: 10,
+            }}
+          >
+            {/* Modal Header */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 20,
+            }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.navy }}>
+                {t('chooseLanguage') || 'Choose Your Language'}
+              </Text>
+              <TouchableOpacity 
+                onPress={() => setShowLanguageModal(false)}
+                style={{
+                  backgroundColor: '#F1F5F9',
+                  borderRadius: 15,
+                  width: 30,
+                  height: 30,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <Feather name="x" size={16} color={COLORS.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Language Options */}
+            {[
+              { code: 'en', native: 'English', eng: 'English', emoji: '🇺🇸' },
+              { code: 'hi', native: 'हिन्दी', eng: 'Hindi', emoji: '🇮🇳' },
+              { code: 'mr', native: 'मराठी', eng: 'Marathi', emoji: '🇮🇳' }
+            ].map((lang) => {
+              const isSelected = i18n.language === lang.code;
+              return (
+                <TouchableOpacity
+                  key={lang.code}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingVertical: 14,
+                    paddingHorizontal: 18,
+                    borderRadius: 16,
+                    backgroundColor: isSelected ? '#FEF3C7' : '#F8FAFC',
+                    borderWidth: 1.5,
+                    borderColor: isSelected ? COLORS.primary : '#F1F5F9',
+                    marginBottom: 12,
+                  }}
+                  onPress={() => {
+                    i18n.changeLanguage(lang.code);
+                    setShowLanguageModal(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 20, marginRight: 12 }}>{lang.emoji}</Text>
+                    <View style={{ alignItems: 'flex-start' }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark }}>
+                        {lang.native}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                        {lang.eng}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    borderWidth: 2,
+                    borderColor: isSelected ? COLORS.primary : '#CBD5E1',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    backgroundColor: isSelected ? COLORS.primary : 'transparent',
+                  }}>
+                    {isSelected && (
+                      <Feather name="check" size={12} color={COLORS.white} />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {/* Month/Year Picker Modal */}

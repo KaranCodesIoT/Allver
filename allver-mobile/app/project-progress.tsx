@@ -6,8 +6,10 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Video, ResizeMode } from 'expo-av';
+import * as Location from 'expo-location';
 import SocketService from '../utils/SocketService';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
+import { useTranslation } from '../utils/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -152,6 +154,7 @@ export default function ProjectProgressScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const workspaceId = params.workspaceId as string;
+  const { t } = useTranslation();
 
   const blinkAnimStatus = useRef(new Animated.Value(1)).current;
   const pulseAnimStatus = useRef(new Animated.Value(1)).current;
@@ -289,16 +292,20 @@ export default function ProjectProgressScreen() {
     uri: string, 
     mediaType: 'image' | 'video', 
     assetFileName?: string | null, 
-    assetMimeType?: string | null
+    assetMimeType?: string | null,
+    latitude?: string,
+    longitude?: string,
+    address?: string
   ): Promise<string | null> => {
     // 1. Get clean filename
-    let filename = assetFileName || uri.split('/').pop() || (mediaType === 'image' ? 'photo.jpg' : 'video.mp4');
-    filename = filename.split('?')[0].split('#')[0]; // strip query string or hashes if any
+    // 1. Get filename
+    const filename = assetFileName || uri.split('/').pop() || (mediaType === 'image' ? 'photo.jpg' : 'video.mp4');
+    const cleanFilename = filename.split('?')[0].split('#')[0]; // strip query string or hashes if any
 
     // 2. Get clean mime type
     let type = assetMimeType;
     if (!type) {
-      const match = /\.(\w+)$/.exec(filename);
+      const match = /\.(\w+)$/.exec(cleanFilename);
       const ext = match ? match[1].toLowerCase() : (mediaType === 'image' ? 'jpg' : 'mp4');
       if (mediaType === 'image') {
         type = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
@@ -307,19 +314,30 @@ export default function ProjectProgressScreen() {
       }
     }
 
-    // 3. Clean up the URI (decode percent-encoding for React Native fetch file resolution)
-    const cleanUri = Platform.OS === 'ios' ? uri : decodeURIComponent(uri);
+    // 3. Fix local file path prefix on Android
+    let uploadUri = uri;
+    if (Platform.OS === 'android' && !uploadUri.startsWith('file://') && !uploadUri.startsWith('content://')) {
+      if (uploadUri.startsWith('file:')) {
+        uploadUri = uploadUri.replace('file:/', 'file:///');
+      } else {
+        uploadUri = `file://${uploadUri}`;
+      }
+    }
 
     const formData = new FormData();
+    formData.append('latitude', latitude || '');
+    formData.append('longitude', longitude || '');
+    formData.append('address', address || '');
+
     if (Platform.OS === 'web') {
       const response = await fetch(uri);
       const blob = await response.blob();
-      const file = new File([blob], filename, { type: blob.type || type });
+      const file = new File([blob], cleanFilename, { type: blob.type || type });
       formData.append('image', file);
     } else {
       formData.append('image', {
-        uri: uri,
-        name: filename,
+        uri: uploadUri,
+        name: cleanFilename,
         type: type,
       } as any);
     }
@@ -344,7 +362,42 @@ export default function ProjectProgressScreen() {
   ) => {
     setUploadingMedia(true);
     try {
-      const url = await uploadMediaFileDirect(uri, mediaType, assetFileName, assetMimeType);
+      // Fetch location ONCE
+      let latVal = '';
+      let lonVal = '';
+      let addressVal = '';
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          if (loc && loc.coords) {
+            latVal = loc.coords.latitude.toString();
+            lonVal = loc.coords.longitude.toString();
+            
+            try {
+              const rev = await Location.reverseGeocodeAsync({
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude
+              });
+              if (rev && rev.length > 0) {
+                const addr = rev[0];
+                const parts = [
+                  addr.name,
+                  addr.city || addr.subregion,
+                  addr.region
+                ].filter(Boolean);
+                addressVal = parts.join(', ');
+              }
+            } catch (geocodingErr) {
+              console.warn('Geocoding failed:', geocodingErr);
+            }
+          }
+        }
+      } catch (gpsErr) {
+        console.warn('Failed to fetch GPS coordinates for photo stamp:', gpsErr);
+      }
+
+      const url = await uploadMediaFileDirect(uri, mediaType, assetFileName, assetMimeType, latVal, lonVal, addressVal);
       if (url) {
         if (mediaType === 'image') {
           setFormImg(prev => {
@@ -353,7 +406,11 @@ export default function ProjectProgressScreen() {
             return combined.join(',');
           });
         } else {
-          setFormVideo(url);
+          setFormVideo(prev => {
+            const existing = prev ? prev.split(',').filter(Boolean) : [];
+            const combined = [...existing, url].slice(0, 2);
+            return combined.join(',');
+          });
         }
       } else {
         Alert.alert('Upload Failed', 'Could not upload file.');
@@ -373,21 +430,72 @@ export default function ProjectProgressScreen() {
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: mediaType === 'image' ? ['images'] : ['videos'],
-      allowsEditing: false,
-      allowsMultipleSelection: mediaType === 'image',
-      selectionLimit: mediaType === 'image' ? 5 : 1,
-      quality: 0.8,
-    });
+    if (mediaType === 'image') {
+      const existingCount = formImg ? formImg.split(',').filter(Boolean).length : 0;
+      if (existingCount >= 5) {
+        Alert.alert('Limit Reached', 'You can upload a maximum of 5 images.');
+        return;
+      }
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      if (mediaType === 'image') {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        allowsMultipleSelection: true,
+        selectionLimit: 5 - existingCount,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
+        for (const asset of result.assets) {
+          if (asset.fileSize && asset.fileSize > MAX_IMAGE_SIZE) {
+            Alert.alert(
+              'Image Too Large', 
+              `Image size is ${(asset.fileSize / (1024 * 1024)).toFixed(1)}MB. Please select an image smaller than 10MB.`
+            );
+            return;
+          }
+        }
         setUploadingMedia(true);
         try {
+          // Fetch location ONCE for the whole batch
+          let latVal = '';
+          let lonVal = '';
+          let addressVal = '';
+          try {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status === 'granted') {
+              const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+              if (loc && loc.coords) {
+                latVal = loc.coords.latitude.toString();
+                lonVal = loc.coords.longitude.toString();
+                
+                try {
+                  const rev = await Location.reverseGeocodeAsync({
+                    latitude: loc.coords.latitude,
+                    longitude: loc.coords.longitude
+                  });
+                  if (rev && rev.length > 0) {
+                    const addr = rev[0];
+                    const parts = [
+                      addr.name,
+                      addr.city || addr.subregion,
+                      addr.region
+                    ].filter(Boolean);
+                    addressVal = parts.join(', ');
+                  }
+                } catch (geocodingErr) {
+                  console.warn('Geocoding failed:', geocodingErr);
+                }
+              }
+            }
+          } catch (gpsErr) {
+            console.warn('Failed to fetch GPS coordinates for photo stamp:', gpsErr);
+          }
+
           const uploadedUrls: string[] = [];
           for (const asset of result.assets) {
-            const url = await uploadMediaFileDirect(asset.uri, 'image', asset.fileName, asset.mimeType);
+            const url = await uploadMediaFileDirect(asset.uri, 'image', asset.fileName, asset.mimeType, latVal, lonVal, addressVal);
             if (url) {
               uploadedUrls.push(url);
             }
@@ -407,9 +515,92 @@ export default function ProjectProgressScreen() {
         } finally {
           setUploadingMedia(false);
         }
-      } else {
-        const asset = result.assets[0];
-        await uploadMediaFile(asset.uri, mediaType, asset.fileName, asset.mimeType);
+      }
+    } else {
+      const existingCount = formVideo ? formVideo.split(',').filter(Boolean).length : 0;
+      if (existingCount >= 2) {
+        Alert.alert('Limit Reached', 'You can upload a maximum of 2 videos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: false,
+        allowsMultipleSelection: true,
+        selectionLimit: 2 - existingCount,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const MAX_VIDEO_SIZE = 15 * 1024 * 1024; // 15MB
+        for (const asset of result.assets) {
+          if (asset.fileSize && asset.fileSize > MAX_VIDEO_SIZE) {
+            Alert.alert(
+              'Video Too Large', 
+              `Video size is ${(asset.fileSize / (1024 * 1024)).toFixed(1)}MB. Please select a video smaller than 15MB.`
+            );
+            return;
+          }
+        }
+        setUploadingMedia(true);
+        try {
+          // Fetch location ONCE for the video batch
+          let latVal = '';
+          let lonVal = '';
+          let addressVal = '';
+          try {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status === 'granted') {
+              const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+              if (loc && loc.coords) {
+                latVal = loc.coords.latitude.toString();
+                lonVal = loc.coords.longitude.toString();
+                
+                try {
+                  const rev = await Location.reverseGeocodeAsync({
+                    latitude: loc.coords.latitude,
+                    longitude: loc.coords.longitude
+                  });
+                  if (rev && rev.length > 0) {
+                    const addr = rev[0];
+                    const parts = [
+                      addr.name,
+                      addr.city || addr.subregion,
+                      addr.region
+                    ].filter(Boolean);
+                    addressVal = parts.join(', ');
+                  }
+                } catch (geocodingErr) {
+                  console.warn('Geocoding failed:', geocodingErr);
+                }
+              }
+            }
+          } catch (gpsErr) {
+            console.warn('Failed to fetch GPS coordinates for photo stamp:', gpsErr);
+          }
+
+          const uploadedUrls: string[] = [];
+          for (const asset of result.assets) {
+            const url = await uploadMediaFileDirect(asset.uri, 'video', asset.fileName, asset.mimeType, latVal, lonVal, addressVal);
+            if (url) {
+              uploadedUrls.push(url);
+            }
+          }
+          if (uploadedUrls.length > 0) {
+            setFormVideo(prev => {
+              const existing = prev ? prev.split(',').filter(Boolean) : [];
+              const combined = [...existing, ...uploadedUrls].slice(0, 2);
+              return combined.join(',');
+            });
+          } else {
+            Alert.alert('Upload Failed', 'Could not upload selected videos.');
+          }
+        } catch (err) {
+          console.error('Error uploading videos:', err);
+          Alert.alert('Upload Error', 'An error occurred while uploading videos.');
+        } finally {
+          setUploadingMedia(false);
+        }
       }
     }
   };
@@ -1381,7 +1572,7 @@ export default function ProjectProgressScreen() {
           date: dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
           time: dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
           images: up.img ? up.img.split(',').map((url: string) => resolveAvatarUrl(url.trim())).filter((u): u is string => !!u) : [],
-          video: resolveAvatarUrl(up.video) || '',
+          videos: up.video ? up.video.split(',').map((url: string) => resolveAvatarUrl(url.trim())).filter((u): u is string => !!u) : [],
           icon: iconInfo.icon,
           iconColor: iconInfo.color,
           iconBg: iconInfo.bg,
@@ -1438,8 +1629,8 @@ export default function ProjectProgressScreen() {
           <Feather name="arrow-left" size={22} color={COLORS.textDark} />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerLabel}>PROJECT PROGRESS PAGE</Text>
-          <Text style={styles.headerSub}>(For {isContractor ? 'Contractor' : 'Home Owner'})</Text>
+          <Text style={styles.headerLabel}>{t('projectProgressTitle') || 'PROJECT PROGRESS PAGE'}</Text>
+          <Text style={styles.headerSub}>({t('for') || 'For'} {isContractor ? t('contractor') || 'Contractor' : t('homeOwner') || 'Home Owner'})</Text>
         </View>
         <View style={{ width: 30 }} />
       </View>
@@ -1459,13 +1650,13 @@ export default function ProjectProgressScreen() {
               ) : (
                 <View style={[styles.statusDot, { backgroundColor: statusInfo.dotColor }]} />
               )}
-              <Text style={[styles.statusPillText, { color: statusInfo.color, marginLeft: 4 }]}>{statusInfo.label}</Text>
+              <Text style={[styles.statusPillText, { color: statusInfo.color, marginLeft: 4 }]}>{t(`status${displayStatus.replace(/\s+/g, '')}`) || statusInfo.label}</Text>
             </View>
           </View>
 
           <View style={{ marginTop: 6, marginBottom: 12 }}>
             <Text style={{ fontSize: 13, color: COLORS.textMuted, lineHeight: 18 }}>
-              {statusInfo.description}
+              {t(`status${displayStatus.replace(/\s+/g, '')}Desc`) || statusInfo.description}
             </Text>
           </View>
 
@@ -1503,7 +1694,7 @@ export default function ProjectProgressScreen() {
                   }
                 }}
               >
-                <Text style={styles.viewProfileBtnText}>View Profile</Text>
+                <Text style={styles.viewProfileBtnText}>{t('viewProfile') || 'View Profile'}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1511,15 +1702,15 @@ export default function ProjectProgressScreen() {
           {/* Dates & Amount */}
           <View style={styles.datesRow}>
             <View style={styles.dateCol}>
-              <Text style={styles.dateLabel}>Start Date</Text>
+              <Text style={styles.dateLabel}>{t('startDate') || 'Start Date'}</Text>
               <Text style={styles.dateValue}>{startDate}</Text>
             </View>
             <View style={styles.dateCol}>
-              <Text style={styles.dateLabel}>End Date (Est.)</Text>
+              <Text style={styles.dateLabel}>{t('endDateEst') || 'End Date (Est.)'}</Text>
               <Text style={styles.dateValue}>{endDate}</Text>
             </View>
             <View style={[styles.dateCol, { alignItems: 'flex-end' }]}>
-              <Text style={styles.dateLabel}>Total Amount</Text>
+              <Text style={styles.dateLabel}>{t('totalAmount') || 'Total Amount'}</Text>
               <Text style={[styles.dateValue, { color: COLORS.primary, fontWeight: '800' }]}>{totalAmount}</Text>
             </View>
           </View>
@@ -1531,7 +1722,7 @@ export default function ProjectProgressScreen() {
             <View style={styles.actionPanelHeader}>
               <View style={styles.actionPanelHeaderLeft}>
                 <Feather name="shield" size={18} color={COLORS.navy} />
-                <Text style={styles.actionPanelTitle}>Project Status Controls</Text>
+                <Text style={styles.actionPanelTitle}>{t('projectStatusControls') || 'Project Status Controls'}</Text>
               </View>
               {isClient && !isReadOnly && (
                 <TouchableOpacity 
@@ -1539,7 +1730,7 @@ export default function ProjectProgressScreen() {
                   onPress={handleCancelProject}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.smallCancelBtnText}>Cancel Project</Text>
+                  <Text style={styles.smallCancelBtnText}>{t('cancelProject') || 'Cancel Project'}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -1552,7 +1743,7 @@ export default function ProjectProgressScreen() {
                     onPress={handleMarkWorkCompleted}
                   >
                     <Feather name="check-circle" size={16} color={COLORS.white} />
-                    <Text style={styles.primaryActionText}>Mark Work Completed</Text>
+                    <Text style={styles.primaryActionText}>{t('markWorkCompleted') || 'Mark Work Completed'}</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -1560,8 +1751,8 @@ export default function ProjectProgressScreen() {
                   <Feather name="info" size={16} color={COLORS.textMuted} style={{ marginRight: 8 }} />
                   <Text style={styles.infoBannerText}>
                     {projectStatus === 'Rework Required' 
-                      ? 'Waiting for contractor to finish rework.' 
-                      : 'Contractor is actively working on the project.'}
+                      ? (t('waitingRework') || 'Waiting for contractor to finish rework.') 
+                      : (t('contractorActivelyWorking') || 'Contractor is actively working on the project.')}
                   </Text>
                 </View>
               )
@@ -1570,14 +1761,14 @@ export default function ProjectProgressScreen() {
             {projectStatus === 'Waiting for Client Approval' ? (
               isClient ? (
                 <View style={styles.approvalActionRow}>
-                  <Text style={styles.approvalLabel}>Review the progress updates, photos, and videos below before approving:</Text>
+                  <Text style={styles.approvalLabel}>{t('reviewProgressBeforeApproving') || 'Review the progress updates, photos, and videos below before approving:'}</Text>
                   <View style={styles.approvalButtonsContainer}>
                     <TouchableOpacity 
                       style={[styles.approvalBtn, { backgroundColor: COLORS.green }]} 
                       onPress={handleApproveWork}
                     >
                       <Feather name="check" size={16} color={COLORS.white} />
-                      <Text style={styles.approvalBtnText}>Approve Work</Text>
+                      <Text style={styles.approvalBtnText}>{t('approveWork') || 'Approve Work'}</Text>
                     </TouchableOpacity>
                     
                     <TouchableOpacity 
@@ -1585,14 +1776,14 @@ export default function ProjectProgressScreen() {
                       onPress={handleRequestChanges}
                     >
                       <Feather name="x-circle" size={16} color={COLORS.white} />
-                      <Text style={styles.approvalBtnText}>Request Changes</Text>
+                      <Text style={styles.approvalBtnText}>{t('requestChanges') || 'Request Changes'}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
               ) : (
                 <View style={styles.infoBanner}>
                   <ActivityIndicator size="small" color={COLORS.primary} style={{ marginRight: 8 }} />
-                  <Text style={styles.infoBannerText}>Work completed! Waiting for Client's review and approval.</Text>
+                  <Text style={styles.infoBannerText}>{t('workCompletedWaitingApproval') || "Work completed! Waiting for Client's review and approval."}</Text>
                 </View>
               )
             ) : null}
@@ -1601,10 +1792,10 @@ export default function ProjectProgressScreen() {
               <View style={[styles.infoBanner, { backgroundColor: '#FEF2F2', flexDirection: 'column', alignItems: 'flex-start', padding: 16, gap: 4, borderColor: '#FCA5A5', borderWidth: 1 }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                   <Feather name="x-circle" size={20} color={COLORS.red} style={{ marginRight: 8 }} />
-                  <Text style={{ color: COLORS.red, fontSize: 16, fontWeight: '800' }}>Project Cancelled</Text>
+                  <Text style={{ color: COLORS.red, fontSize: 16, fontWeight: '800' }}>{t('projectCancelled') || 'Project Cancelled'}</Text>
                 </View>
                 <Text style={{ color: '#991B1B', fontSize: 13, lineHeight: 18, fontWeight: '500' }}>
-                  This project has been cancelled due to inconvenience. The project timeline is now read-only for all assigned members.
+                  {t('projectCancelledDesc') || 'This project has been cancelled due to inconvenience. The project timeline is now read-only for all assigned members.'}
                 </Text>
               </View>
             )}
@@ -1616,19 +1807,19 @@ export default function ProjectProgressScreen() {
                 <View style={[styles.infoBanner, { backgroundColor: COLORS.greenLight, flexDirection: 'column', alignItems: 'flex-start', padding: 16, gap: 4 }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                     <Feather name="award" size={20} color={COLORS.green} style={{ marginRight: 8 }} />
-                    <Text style={{ color: COLORS.green, fontSize: 16, fontWeight: '800' }}>Project Completed</Text>
+                    <Text style={{ color: COLORS.green, fontSize: 16, fontWeight: '800' }}>{t('projectCompletedTitle') || 'Project Completed'}</Text>
                   </View>
                   <Text style={{ color: '#065F46', fontSize: 13, lineHeight: 18, fontWeight: '500' }}>
-                    This project has been completed and approved. The project timeline is now read-only.
+                    {t('projectCompletedDesc') || 'This project has been completed and approved. The project timeline is now read-only.'}
                   </Text>
                 </View>
 
                 {/* Ratings & Reviews List */}
                 {isWorkspaceClient && (
                   <View style={styles.ratingsListSection}>
-                    <Text style={styles.ratingsSectionTitle}>Ratings & Reviews</Text>
+                    <Text style={styles.ratingsSectionTitle}>{t('ratingsAndReviews') || 'Ratings & Reviews'}</Text>
                     {getRateableTargets().length === 0 ? (
-                      <Text style={styles.noRatingsText}>No other participants available to rate on this project.</Text>
+                      <Text style={styles.noRatingsText}>{t('noRatingsDesc') || 'No other participants available to rate on this project.'}</Text>
                     ) : (
                       getRateableTargets().map((target) => {
                         const isRated = isAlreadyRated(target.user._id);
@@ -1670,14 +1861,14 @@ export default function ProjectProgressScreen() {
                             {isRated ? (
                               <View style={styles.ratedBadge}>
                                 <Feather name="check" size={12} color={COLORS.green} style={{ marginRight: 2 }} />
-                                <Text style={styles.ratedBadgeText}>Submitted</Text>
+                                <Text style={styles.ratedBadgeText}>{t('submitted') || 'Submitted'}</Text>
                               </View>
                             ) : (
                               <TouchableOpacity 
                                 style={styles.rateBtn}
                                 onPress={() => handleOpenRatingModal(target)}
                               >
-                                <Text style={styles.rateBtnText}>Rate</Text>
+                                <Text style={styles.rateBtnText}>{t('rate') || 'Rate'}</Text>
                               </TouchableOpacity>
                             )}
                           </View>
@@ -1700,8 +1891,8 @@ export default function ProjectProgressScreen() {
               onPress={() => setIsTeamExpanded(!isTeamExpanded)}
             >
               <View style={{ flex: 1 }}>
-                <Text style={styles.teamSectionTitle}>Project Team</Text>
-                <Text style={styles.teamSubtext}>Manage architects, contractors, and labour team members.</Text>
+                <Text style={styles.teamSectionTitle}>{t('projectTeam') || 'Project Team'}</Text>
+                <Text style={styles.teamSubtext}>{t('manageTeamMembers') || 'Manage architects, contractors, and labour team members.'}</Text>
               </View>
               <Feather 
                 name={isTeamExpanded ? "chevron-up" : "chevron-down"} 
@@ -1714,10 +1905,10 @@ export default function ProjectProgressScreen() {
               <>
                 {/* Contractor Row */}
                 <View style={styles.teamItemHeader}>
-                  <Text style={styles.teamItemHeaderTitle}>Contractor</Text>
+                  <Text style={styles.teamItemHeaderTitle}>{t('contractor') || 'Contractor'}</Text>
                   {canManageContractor && workspace.professional?.role !== 'Contractor' && (
                     <TouchableOpacity style={styles.teamActionBtn} onPress={handleOpenContractorModal}>
-                      <Text style={styles.teamActionBtnText}>{workspace.contractor ? 'Change' : 'Assign'}</Text>
+                      <Text style={styles.teamActionBtnText}>{workspace.contractor ? (t('change') || 'Change') : (t('assign') || 'Assign')}</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1739,17 +1930,17 @@ export default function ProjectProgressScreen() {
                     </View>
                   </View>
                 ) : (
-                  <Text style={styles.emptyTeamText}>No contractor assigned yet.</Text>
+                  <Text style={styles.emptyTeamText}>{t('noContractorAssigned') || 'No contractor assigned yet.'}</Text>
                 )}
 
                 <View style={styles.teamDivider} />
 
                 {/* Architect Row */}
                 <View style={styles.teamItemHeader}>
-                  <Text style={styles.teamItemHeaderTitle}>Architect</Text>
+                  <Text style={styles.teamItemHeaderTitle}>{t('architect') || 'Architect'}</Text>
                   {canManageArchitect && workspace.professional?.role !== 'Architect' && (
                     <TouchableOpacity style={styles.teamActionBtn} onPress={handleOpenArchitectModal}>
-                      <Text style={styles.teamActionBtnText}>{workspace.architect ? 'Change' : 'Assign'}</Text>
+                      <Text style={styles.teamActionBtnText}>{workspace.architect ? (t('change') || 'Change') : (t('assign') || 'Assign')}</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1776,17 +1967,17 @@ export default function ProjectProgressScreen() {
                     <Feather name="chevron-right" size={16} color={COLORS.textLight} />
                   </TouchableOpacity>
                 ) : (
-                  <Text style={styles.emptyTeamText}>No architect assigned yet.</Text>
+                  <Text style={styles.emptyTeamText}>{t('noArchitectAssigned') || 'No architect assigned yet.'}</Text>
                 )}
 
                 <View style={styles.teamDivider} />
 
                 {/* Labour Team Row */}
                 <View style={styles.teamItemHeader}>
-                  <Text style={styles.teamItemHeaderTitle}>Labour Team</Text>
+                  <Text style={styles.teamItemHeaderTitle}>{t('labourTeam') || 'Labour Team'}</Text>
                   {canManageLabour && (
                     <TouchableOpacity style={styles.teamActionBtn} onPress={handleOpenLabourModal}>
-                      <Text style={styles.teamActionBtnText}>Add Labourer</Text>
+                      <Text style={styles.teamActionBtnText}>{t('addLabourer') || 'Add Labourer'}</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1817,7 +2008,7 @@ export default function ProjectProgressScreen() {
                     </View>
                   ))
                 ) : (
-                  <Text style={styles.emptyTeamText}>No labourers added yet.</Text>
+                  <Text style={styles.emptyTeamText}>{t('noLabourersAdded') || 'No labourers added yet.'}</Text>
                 )}
               </>
             )}
@@ -1831,8 +2022,8 @@ export default function ProjectProgressScreen() {
         >
           <View style={styles.timelineHeaderRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.timelineSectionTitle}>Project Updates</Text>
-              <Text style={styles.timelineSubtext}>Recent updates and replies to discuss any changes.</Text>
+              <Text style={styles.timelineSectionTitle}>{t('projectUpdates') || 'Project Updates'}</Text>
+              <Text style={styles.timelineSubtext}>{t('timelineSubtext') || 'Recent updates and replies to discuss any changes.'}</Text>
             </View>
             {canPostUpdates && (
               <TouchableOpacity 
@@ -1847,7 +2038,7 @@ export default function ProjectProgressScreen() {
                 }}
               >
                 <Feather name="plus" size={14} color={COLORS.white} />
-                <Text style={styles.addUpdateBtnText}>Add Update</Text>
+                <Text style={styles.addUpdateBtnText}>{t('addUpdate') || 'Add Update'}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -1904,29 +2095,33 @@ export default function ProjectProgressScreen() {
                   </ScrollView>
                 )}
 
-                {/* Video */}
-                {update.video ? (
-                  <View style={styles.timelineVideoWrap}>
-                    <Video
-                      source={{ uri: update.video }}
-                      rate={1.0}
-                      volume={1.0}
-                      isMuted={false}
-                      resizeMode={ResizeMode.CONTAIN}
-                      shouldPlay={false}
-                      isLooping={false}
-                      useNativeControls
-                      style={styles.timelineVideo}
-                    />
-                    <TouchableOpacity 
-                      style={styles.videoFullscreenBtn}
-                      activeOpacity={0.8}
-                      onPress={() => setFullscreenMedia({ type: 'video', url: update.video })}
-                    >
-                      <Feather name="maximize" size={16} color={COLORS.white} />
-                    </TouchableOpacity>
+                {/* Videos */}
+                {update.videos && update.videos.length > 0 && (
+                  <View style={{ gap: 10, marginTop: 8 }}>
+                    {update.videos.map((vid, vidIdx) => (
+                      <View key={vidIdx} style={styles.timelineVideoWrap}>
+                        <Video
+                          source={{ uri: vid }}
+                          rate={1.0}
+                          volume={1.0}
+                          isMuted={false}
+                          resizeMode={ResizeMode.CONTAIN}
+                          shouldPlay={false}
+                          isLooping={false}
+                          useNativeControls
+                          style={styles.timelineVideo}
+                        />
+                        <TouchableOpacity 
+                          style={styles.videoFullscreenBtn}
+                          activeOpacity={0.8}
+                          onPress={() => setFullscreenMedia({ type: 'video', url: vid })}
+                        >
+                          <Feather name="maximize" size={16} color={COLORS.white} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
                   </View>
-                ) : null}
+                )}
 
                 {/* Existing comments/replies */}
                 {update.comments && update.comments.length > 0 && (
@@ -1961,7 +2156,7 @@ export default function ProjectProgressScreen() {
                         }}
                       >
                         <Feather name="message-circle" size={13} color={COLORS.blue} />
-                        <Text style={styles.replyBtnText}>Reply</Text>
+                        <Text style={styles.replyBtnText}>{t('reply') || 'Reply'}</Text>
                       </TouchableOpacity>
 
                       {(update.postedBy?.senderId ? update.postedBy.senderId === currentUserId : isContractor) && (
@@ -1978,7 +2173,7 @@ export default function ProjectProgressScreen() {
                           }}
                         >
                           <Feather name="edit-2" size={12} color={COLORS.orange} />
-                          <Text style={[styles.replyBtnText, { color: COLORS.orange }]}>Edit</Text>
+                          <Text style={[styles.replyBtnText, { color: COLORS.orange }]}>{t('edit') || 'Edit'}</Text>
                         </TouchableOpacity>
                       )}
                     </View>
@@ -1988,7 +2183,7 @@ export default function ProjectProgressScreen() {
                       <View style={styles.replyInputWrap}>
                         <TextInput
                           style={styles.replyInput}
-                          placeholder="Write a reply..."
+                          placeholder={t('writeReplyPlaceholder') || 'Write a reply...'}
                           placeholderTextColor={COLORS.textLight}
                           value={replyText}
                           onChangeText={setReplyText}
@@ -2014,15 +2209,15 @@ export default function ProjectProgressScreen() {
         <View style={styles.bottomBar}>
           <View style={styles.amountCols}>
             <View style={styles.amountCol}>
-              <Text style={styles.amountLabel}>Amount</Text>
+              <Text style={styles.amountLabel}>{t('amount') || 'Amount'}</Text>
               <Text style={styles.amountValue}>{totalAmount}</Text>
             </View>
             <View style={styles.amountCol}>
-              <Text style={styles.amountLabel}>Paid</Text>
+              <Text style={styles.amountLabel}>{t('paid') || 'Paid'}</Text>
               <Text style={[styles.amountValue, { color: COLORS.green }]}>{paidAmount}</Text>
             </View>
             <View style={styles.amountCol}>
-              <Text style={styles.amountLabel}>Due</Text>
+              <Text style={styles.amountLabel}>{t('due') || 'Due'}</Text>
               <Text style={[styles.amountValue, { color: COLORS.red }]}>{dueAmount}</Text>
             </View>
           </View>
@@ -2031,7 +2226,7 @@ export default function ProjectProgressScreen() {
             activeOpacity={0.85}
             onPress={handlePayNow}
           >
-            <Text style={styles.payNowBtnText}>Pay Now</Text>
+            <Text style={styles.payNowBtnText}>{t('payNow') || 'Pay Now'}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -2041,51 +2236,90 @@ export default function ProjectProgressScreen() {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowAddModal(false)}>
           <TouchableOpacity style={styles.modalCard} activeOpacity={1}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Progress Update</Text>
+              <Text style={styles.modalTitle}>{t('addProgressUpdate') || 'Add Progress Update'}</Text>
               <TouchableOpacity onPress={() => setShowAddModal(false)}>
                 <Feather name="x" size={22} color={COLORS.textDark} />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
-              <Text style={styles.modalLabel}>Title *</Text>
+              <Text style={styles.modalLabel}>{t('titleLabel') || 'Title *'}</Text>
               <TextInput
                 style={styles.modalInput}
-                placeholder="e.g. Plumbing Work Done"
+                placeholder={t('titlePlaceholder') || 'e.g. Plumbing Work Done'}
                 placeholderTextColor={COLORS.textLight}
                 value={formTitle}
                 onChangeText={setFormTitle}
               />
 
-              <Text style={styles.modalLabel}>Description</Text>
+              <Text style={styles.modalLabel}>{t('description') || 'Description'}</Text>
               <TextInput
                 style={[styles.modalInput, { height: 80, textAlignVertical: 'top' }]}
-                placeholder="Describe the progress..."
+                placeholder={t('descriptionPlaceholder') || 'Describe the progress...'}
                 placeholderTextColor={COLORS.textLight}
                 multiline
                 value={formDescription}
                 onChangeText={setFormDescription}
               />
 
-              <Text style={styles.modalLabel}>Media Attachments</Text>
+              <Text style={styles.modalLabel}>{t('mediaAttachments') || 'Media Attachments'}</Text>
+              
+              {/* Capture Photo Button (Full Width) */}
+              <TouchableOpacity 
+                style={[
+                  styles.mediaPickerBtn, 
+                  formImg ? styles.mediaPickerBtnActive : null,
+                  (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 ? { opacity: 0.5 } : null,
+                  { marginBottom: 8 }
+                ]} 
+                onPress={clickPhotoWithCamera}
+                disabled={uploadingMedia || (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5}
+              >
+                <Feather name="camera" size={16} color={formImg ? COLORS.white : COLORS.textDark} />
+                <Text style={[styles.mediaPickerBtnText, formImg ? styles.mediaPickerBtnTextActive : null]}>
+                  {(formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 
+                    ? (t('max5Images') || 'Max 5 Images') 
+                    : (formImg ? formImg.split(',').filter(Boolean).length : 0) > 0 
+                      ? `${t('captureMore') || 'Capture More'} (${formImg.split(',').filter(Boolean).length}/5)`
+                      : (t('capturePhoto') || 'Capture Photo')}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Upload Buttons Row */}
               <View style={styles.mediaButtonsRow}>
-                 <TouchableOpacity 
+                {/* Upload Image */}
+                <TouchableOpacity 
                   style={[
                     styles.mediaPickerBtn, 
                     formImg ? styles.mediaPickerBtnActive : null,
                     (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 ? { opacity: 0.5 } : null,
-                    { flex: 1 }
                   ]} 
-                  onPress={clickPhotoWithCamera}
-                  disabled={uploadingMedia}
+                  onPress={() => pickMedia('image')}
+                  disabled={uploadingMedia || (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5}
                 >
-                  <Feather name="camera" size={16} color={formImg ? COLORS.white : COLORS.textDark} />
+                  <Feather name="image" size={16} color={formImg ? COLORS.white : COLORS.textDark} />
                   <Text style={[styles.mediaPickerBtnText, formImg ? styles.mediaPickerBtnTextActive : null]}>
                     {(formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 
-                      ? 'Max 5 Images' 
-                      : (formImg ? formImg.split(',').filter(Boolean).length : 0) > 0 
-                        ? `Capture More (${formImg.split(',').filter(Boolean).length}/5)`
-                        : 'Capture Photo'}
+                      ? 'Max 5'
+                      : `Images (${formImg ? formImg.split(',').filter(Boolean).length : 0}/5)`}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Upload Video */}
+                <TouchableOpacity 
+                  style={[
+                    styles.mediaPickerBtn, 
+                    formVideo ? styles.mediaPickerBtnActive : null,
+                    (formVideo ? formVideo.split(',').filter(Boolean).length : 0) >= 2 ? { opacity: 0.5 } : null,
+                  ]} 
+                  onPress={() => pickMedia('video')}
+                  disabled={uploadingMedia || (formVideo ? formVideo.split(',').filter(Boolean).length : 0) >= 2}
+                >
+                  <Feather name="video" size={16} color={formVideo ? COLORS.white : COLORS.textDark} />
+                  <Text style={[styles.mediaPickerBtnText, formVideo ? styles.mediaPickerBtnTextActive : null]}>
+                    {(formVideo ? formVideo.split(',').filter(Boolean).length : 0) >= 2 
+                      ? 'Max 2'
+                      : `Videos (${formVideo ? formVideo.split(',').filter(Boolean).length : 0}/2)`}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -2116,24 +2350,29 @@ export default function ProjectProgressScreen() {
                   ) : null}
 
                   {formVideo ? (
-                    <View style={styles.mediaPreviewItem}>
-                      <View style={[styles.mediaPreviewThumb, { backgroundColor: COLORS.navy, justifyContent: 'center', alignItems: 'center' }]}>
-                        <Feather name="video" size={24} color={COLORS.white} />
+                    formVideo.split(',').filter(Boolean).map((vidUrl, vidIdx) => (
+                      <View key={vidIdx} style={[styles.mediaPreviewItem, { marginBottom: 8 }]}>
+                        <View style={[styles.mediaPreviewThumb, { backgroundColor: COLORS.navy, justifyContent: 'center', alignItems: 'center' }]}>
+                          <Feather name="video" size={24} color={COLORS.white} />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={styles.mediaPreviewLabel} numberOfLines={1}>Video attached ({vidIdx + 1})</Text>
+                          <TouchableOpacity onPress={() => {
+                            const newVids = formVideo.split(',').filter(Boolean).filter((_, idx) => idx !== vidIdx);
+                            setFormVideo(newVids.join(','));
+                          }}>
+                            <Text style={styles.mediaRemoveText}>{t('remove') || 'Remove'}</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={styles.mediaPreviewLabel} numberOfLines={1}>Video attached</Text>
-                        <TouchableOpacity onPress={() => setFormVideo('')}>
-                          <Text style={styles.mediaRemoveText}>Remove</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                    ))
                   ) : null}
                 </View>
               ) : null}
             </ScrollView>
 
             <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleAddUpdate} activeOpacity={0.85}>
-              <Text style={styles.modalSubmitBtnText}>Post Update</Text>
+              <Text style={styles.modalSubmitBtnText}>{t('postUpdate') || 'Post Update'}</Text>
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
@@ -2144,51 +2383,90 @@ export default function ProjectProgressScreen() {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowEditModal(false)}>
           <TouchableOpacity style={styles.modalCard} activeOpacity={1}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Update</Text>
+              <Text style={styles.modalTitle}>{t('editUpdate') || 'Edit Update'}</Text>
               <TouchableOpacity onPress={() => { setShowEditModal(false); setEditingUpdateId(null); }}>
                 <Feather name="x" size={22} color={COLORS.textDark} />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 400 }}>
-              <Text style={styles.modalLabel}>Title *</Text>
+              <Text style={styles.modalLabel}>{t('titleLabel') || 'Title *'}</Text>
               <TextInput
                 style={styles.modalInput}
-                placeholder="e.g. Plumbing Work Done"
+                placeholder={t('titlePlaceholder') || 'e.g. Plumbing Work Done'}
                 placeholderTextColor={COLORS.textLight}
                 value={formTitle}
                 onChangeText={setFormTitle}
               />
 
-              <Text style={styles.modalLabel}>Description</Text>
+              <Text style={styles.modalLabel}>{t('description') || 'Description'}</Text>
               <TextInput
                 style={[styles.modalInput, { height: 80, textAlignVertical: 'top' }]}
-                placeholder="Describe the progress..."
+                placeholder={t('descriptionPlaceholder') || 'Describe the progress...'}
                 placeholderTextColor={COLORS.textLight}
                 multiline
                 value={formDescription}
                 onChangeText={setFormDescription}
               />
 
-              <Text style={styles.modalLabel}>Media Attachments</Text>
+              <Text style={styles.modalLabel}>{t('mediaAttachments') || 'Media Attachments'}</Text>
+              
+              {/* Capture Photo Button (Full Width) */}
+              <TouchableOpacity 
+                style={[
+                  styles.mediaPickerBtn, 
+                  formImg ? styles.mediaPickerBtnActive : null,
+                  (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 ? { opacity: 0.5 } : null,
+                  { marginBottom: 8 }
+                ]} 
+                onPress={clickPhotoWithCamera}
+                disabled={uploadingMedia || (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5}
+              >
+                <Feather name="camera" size={16} color={formImg ? COLORS.white : COLORS.textDark} />
+                <Text style={[styles.mediaPickerBtnText, formImg ? styles.mediaPickerBtnTextActive : null]}>
+                  {(formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 
+                    ? (t('max5Images') || 'Max 5 Images') 
+                    : (formImg ? formImg.split(',').filter(Boolean).length : 0) > 0 
+                      ? `${t('captureMore') || 'Capture More'} (${formImg.split(',').filter(Boolean).length}/5)`
+                      : (t('capturePhoto') || 'Capture Photo')}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Upload Buttons Row */}
               <View style={styles.mediaButtonsRow}>
-                 <TouchableOpacity 
+                {/* Upload Image */}
+                <TouchableOpacity 
                   style={[
                     styles.mediaPickerBtn, 
                     formImg ? styles.mediaPickerBtnActive : null,
                     (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 ? { opacity: 0.5 } : null,
-                    { flex: 1 }
                   ]} 
-                  onPress={clickPhotoWithCamera}
-                  disabled={uploadingMedia}
+                  onPress={() => pickMedia('image')}
+                  disabled={uploadingMedia || (formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5}
                 >
-                  <Feather name="camera" size={16} color={formImg ? COLORS.white : COLORS.textDark} />
+                  <Feather name="image" size={16} color={formImg ? COLORS.white : COLORS.textDark} />
                   <Text style={[styles.mediaPickerBtnText, formImg ? styles.mediaPickerBtnTextActive : null]}>
                     {(formImg ? formImg.split(',').filter(Boolean).length : 0) >= 5 
-                      ? 'Max 5 Images' 
-                      : (formImg ? formImg.split(',').filter(Boolean).length : 0) > 0 
-                        ? `Capture More (${formImg.split(',').filter(Boolean).length}/5)`
-                        : 'Capture Photo'}
+                      ? 'Max 5'
+                      : `Images (${formImg ? formImg.split(',').filter(Boolean).length : 0}/5)`}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Upload Video */}
+                <TouchableOpacity 
+                  style={[
+                    styles.mediaPickerBtn, 
+                    formVideo ? styles.mediaPickerBtnActive : null,
+                    (formVideo ? formVideo.split(',').filter(Boolean).length : 0) >= 2 ? { opacity: 0.5 } : null,
+                  ]} 
+                  onPress={() => pickMedia('video')}
+                  disabled={uploadingMedia || (formVideo ? formVideo.split(',').filter(Boolean).length : 0) >= 2}
+                >
+                  <Feather name="video" size={16} color={formVideo ? COLORS.white : COLORS.textDark} />
+                  <Text style={[styles.mediaPickerBtnText, formVideo ? styles.mediaPickerBtnTextActive : null]}>
+                    {(formVideo ? formVideo.split(',').filter(Boolean).length : 0) >= 2 
+                      ? 'Max 2'
+                      : `Videos (${formVideo ? formVideo.split(',').filter(Boolean).length : 0}/2)`}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -2211,7 +2489,7 @@ export default function ProjectProgressScreen() {
                             const newImgs = formImg.split(',').filter(Boolean).filter((_, idx) => idx !== imgIdx);
                             setFormImg(newImgs.join(','));
                           }}>
-                            <Text style={styles.mediaRemoveText}>Remove</Text>
+                            <Text style={styles.mediaRemoveText}>{t('remove') || 'Remove'}</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -2219,24 +2497,29 @@ export default function ProjectProgressScreen() {
                   ) : null}
 
                   {formVideo ? (
-                    <View style={styles.mediaPreviewItem}>
-                      <View style={[styles.mediaPreviewThumb, { backgroundColor: COLORS.navy, justifyContent: 'center', alignItems: 'center' }]}>
-                        <Feather name="video" size={24} color={COLORS.white} />
+                    formVideo.split(',').filter(Boolean).map((vidUrl, vidIdx) => (
+                      <View key={vidIdx} style={[styles.mediaPreviewItem, { marginBottom: 8 }]}>
+                        <View style={[styles.mediaPreviewThumb, { backgroundColor: COLORS.navy, justifyContent: 'center', alignItems: 'center' }]}>
+                          <Feather name="video" size={24} color={COLORS.white} />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 10 }}>
+                          <Text style={styles.mediaPreviewLabel} numberOfLines={1}>Video attached ({vidIdx + 1})</Text>
+                          <TouchableOpacity onPress={() => {
+                            const newVids = formVideo.split(',').filter(Boolean).filter((_, idx) => idx !== vidIdx);
+                            setFormVideo(newVids.join(','));
+                          }}>
+                            <Text style={styles.mediaRemoveText}>{t('remove') || 'Remove'}</Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={styles.mediaPreviewLabel} numberOfLines={1}>Video attached</Text>
-                        <TouchableOpacity onPress={() => setFormVideo('')}>
-                          <Text style={styles.mediaRemoveText}>Remove</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                    ))
                   ) : null}
                 </View>
               ) : null}
             </ScrollView>
 
             <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleEditUpdate} activeOpacity={0.85}>
-              <Text style={styles.modalSubmitBtnText}>Save Changes</Text>
+              <Text style={styles.modalSubmitBtnText}>{t('saveChanges') || 'Save Changes'}</Text>
             </TouchableOpacity>
           </TouchableOpacity>
         </TouchableOpacity>
@@ -2247,20 +2530,20 @@ export default function ProjectProgressScreen() {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowReworkModal(false)}>
           <TouchableOpacity style={styles.modalCard} activeOpacity={1}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Request Changes</Text>
+              <Text style={styles.modalTitle}>{t('requestChanges') || 'Request Changes'}</Text>
               <TouchableOpacity onPress={() => setShowReworkModal(false)}>
                 <Feather name="x" size={22} color={COLORS.textDark} />
               </TouchableOpacity>
             </View>
             <View style={{ paddingVertical: 10 }}>
-              <Text style={[styles.modalLabel, { marginBottom: 10 }]}>Explain what changes or improvements are required (e.g., "Paint finish needs improvement"):</Text>
+              <Text style={[styles.modalLabel, { marginBottom: 10 }]}>{t('explainChangesRequired') || 'Explain what changes or improvements are required (e.g., "Paint finish needs improvement"):'}</Text>
               <TextInput
                 style={[styles.modalInput, { height: 100, textAlignVertical: 'top' }]}
                 multiline
                 numberOfLines={4}
                 value={reworkCommentText}
                 onChangeText={setReworkCommentText}
-                placeholder="Enter details of changes needed..."
+                placeholder={t('enterChangesDetailsPlaceholder') || 'Enter details of changes needed...'}
                 placeholderTextColor={COLORS.textLight}
               />
               <TouchableOpacity 
@@ -2268,7 +2551,7 @@ export default function ProjectProgressScreen() {
                 onPress={submitReworkRequest} 
                 activeOpacity={0.85}
               >
-                <Text style={styles.modalSubmitBtnText}>Submit Change Request</Text>
+                <Text style={styles.modalSubmitBtnText}>{t('submitChangeRequest') || 'Submit Change Request'}</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -2316,7 +2599,7 @@ export default function ProjectProgressScreen() {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowArchitectModal(false)}>
           <TouchableOpacity style={styles.modalCard} activeOpacity={1}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Assign Architect</Text>
+              <Text style={styles.modalTitle}>{t('assignArchitect') || 'Assign Architect'}</Text>
               <TouchableOpacity onPress={() => setShowArchitectModal(false)}>
                 <Feather name="x" size={22} color={COLORS.textDark} />
               </TouchableOpacity>
@@ -2345,7 +2628,7 @@ export default function ProjectProgressScreen() {
                   ))
                 ) : (
                   <View style={{ padding: 20, alignItems: 'center' }}>
-                    <Text style={{ color: COLORS.textMuted }}>No registered architects found.</Text>
+                    <Text style={{ color: COLORS.textMuted }}>{t('noArchitectsFound') || 'No registered architects found.'}</Text>
                   </View>
                 )}
               </ScrollView>
@@ -2359,7 +2642,7 @@ export default function ProjectProgressScreen() {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowContractorModal(false)}>
           <TouchableOpacity style={styles.modalCard} activeOpacity={1}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Assign Contractor</Text>
+              <Text style={styles.modalTitle}>{t('assignContractor') || 'Assign Contractor'}</Text>
               <TouchableOpacity onPress={() => setShowContractorModal(false)}>
                 <Feather name="x" size={22} color={COLORS.textDark} />
               </TouchableOpacity>
@@ -2388,7 +2671,7 @@ export default function ProjectProgressScreen() {
                   ))
                 ) : (
                   <View style={{ padding: 20, alignItems: 'center' }}>
-                    <Text style={{ color: COLORS.textMuted }}>No registered contractors found.</Text>
+                    <Text style={{ color: COLORS.textMuted }}>{t('noContractorsFound') || 'No registered contractors found.'}</Text>
                   </View>
                 )}
               </ScrollView>
@@ -2402,7 +2685,7 @@ export default function ProjectProgressScreen() {
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowLabourModal(false)}>
           <TouchableOpacity style={styles.modalCard} activeOpacity={1}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Labourer</Text>
+              <Text style={styles.modalTitle}>{t('addLabourer') || 'Add Labourer'}</Text>
               <TouchableOpacity onPress={() => setShowLabourModal(false)}>
                 <Feather name="x" size={22} color={COLORS.textDark} />
               </TouchableOpacity>
@@ -2431,7 +2714,7 @@ export default function ProjectProgressScreen() {
                   ))
                 ) : (
                   <View style={{ padding: 20, alignItems: 'center' }}>
-                    <Text style={{ color: COLORS.textMuted }}>No registered labourers found.</Text>
+                    <Text style={{ color: COLORS.textMuted }}>{t('noLabourersFound') || 'No registered labourers found.'}</Text>
                   </View>
                 )}
               </ScrollView>
@@ -2457,7 +2740,7 @@ export default function ProjectProgressScreen() {
             activeOpacity={1}
           >
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Rate & Review</Text>
+              <Text style={styles.modalTitle}>{t('rateAndReview') || 'Rate & Review'}</Text>
               <TouchableOpacity onPress={() => setShowRatingModal(false)}>
                 <Feather name="x" size={22} color={COLORS.textDark} />
               </TouchableOpacity>
@@ -2510,10 +2793,10 @@ export default function ProjectProgressScreen() {
                 </View>
 
                 {/* Review Text Comment */}
-                <Text style={styles.reviewInputLabel}>Review Comments</Text>
+                <Text style={styles.reviewInputLabel}>{t('reviewComments') || 'Review Comments'}</Text>
                 <TextInput
                   style={styles.reviewTextInput}
-                  placeholder="Share details of your experience with this person..."
+                  placeholder={t('reviewExperiencePlaceholder') || 'Share details of your experience with this person...'}
                   placeholderTextColor={COLORS.textLight}
                   multiline
                   numberOfLines={4}
@@ -2528,7 +2811,7 @@ export default function ProjectProgressScreen() {
                     onPress={() => setShowRatingModal(false)}
                     disabled={submittingRating}
                   >
-                    <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                    <Text style={styles.modalCancelBtnText}>{t('cancel') || 'Cancel'}</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity 
@@ -2539,7 +2822,7 @@ export default function ProjectProgressScreen() {
                     {submittingRating ? (
                       <ActivityIndicator size="small" color={COLORS.white} />
                     ) : (
-                      <Text style={[styles.modalSubmitBtnText, { fontSize: 13 }]}>Submit Review</Text>
+                      <Text style={[styles.modalSubmitBtnText, { fontSize: 13 }]}>{t('submitReview') || 'Submit Review'}</Text>
                     )}
                   </TouchableOpacity>
                 </View>

@@ -9,6 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 require('dotenv').config();
+let Jimp;
 console.log('--- Startup Environment ---');
 console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('HF_TOKEN Loaded:', process.env.HF_TOKEN ? 'YES (' + process.env.HF_TOKEN.substring(0, 5) + '...)' : 'NO');
@@ -213,6 +214,41 @@ io.on('connection', (socket) => {
   socket.on('message_read', ({ roomId, messageId, userId }) => {
     io.to(roomId).emit('message_read', { roomId, messageId, userId });
     console.log(`[Socket] Message ${messageId} marked read by user ${userId} in room ${roomId}`);
+  });
+
+  // In-app calling events
+  socket.on('initiate_call', ({ callerId, receiverId, callerName, callerAvatar }) => {
+    console.log(`[Call] Initiate call from ${callerId} (${callerName}) to ${receiverId}`);
+    io.to(receiverId.toString()).emit('incoming_call', {
+      callerId,
+      callerName,
+      callerAvatar,
+      socketId: socket.id
+    });
+  });
+
+  socket.on('answer_call', ({ callerId, receiverId }) => {
+    console.log(`[Call] Call answered by ${receiverId} to ${callerId}`);
+    io.to(callerId.toString()).emit('call_answered', { receiverId });
+  });
+
+  socket.on('reject_call', ({ callerId, receiverId }) => {
+    console.log(`[Call] Call rejected by ${receiverId}`);
+    io.to(callerId.toString()).emit('call_rejected', { receiverId });
+  });
+
+  socket.on('end_call', ({ targetId }) => {
+    console.log(`[Call] Call ended. Notifying ${targetId}`);
+    io.to(targetId.toString()).emit('call_ended');
+  });
+
+  socket.on('busy_call', ({ callerId }) => {
+    console.log(`[Call] Target is busy. Notifying ${callerId}`);
+    io.to(callerId.toString()).emit('call_busy');
+  });
+
+  socket.on('voice_chunk', ({ url, targetId }) => {
+    io.to(targetId.toString()).emit('receive_voice_chunk', { url });
   });
 
   socket.on('disconnect', () => {
@@ -1157,7 +1193,10 @@ app.post('/api/user/push-token', async (req, res) => {
 
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { $set: { expoPushToken: token } },
+      { 
+        $set: { expoPushToken: token },
+        $addToSet: { expoPushTokens: token }
+      },
       { new: true }
     );
 
@@ -1170,6 +1209,56 @@ app.post('/api/user/push-token', async (req, res) => {
   } catch (error) {
     console.error('[Push Token] Error saving token:', error);
     res.status(500).json({ message: 'Error saving push token: ' + error.message });
+  }
+});
+
+// Delete User Expo Push Token on Logout
+app.delete('/api/user/push-token', async (req, res) => {
+  try {
+    const { userId, token } = req.body;
+    if (!userId || !token) {
+      return res.status(400).json({ message: 'userId and token are required' });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $pull: { expoPushTokens: token } },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    console.log(`[Push Token] Removed for user ${updatedUser.fullName}: ${token}`);
+    res.status(200).json({ message: 'Push token removed successfully', user: updatedUser });
+  } catch (error) {
+    console.error('[Push Token] Error deleting token:', error);
+    res.status(500).json({ message: 'Error deleting push token: ' + error.message });
+  }
+});
+
+// Update User Notification Settings
+app.put('/api/user/:id/notification-settings', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const settings = req.body;
+
+    const updatedUser = await User.findByIdAndUpdate(
+      id,
+      { $set: { notificationSettings: settings } },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    console.log(`[Notification Settings] Updated for user ${updatedUser.fullName}`);
+    res.status(200).json({ message: 'Notification settings updated successfully', user: updatedUser });
+  } catch (error) {
+    console.error('[Notification Settings] Error updating:', error);
+    res.status(500).json({ message: 'Error updating settings: ' + error.message });
   }
 });
 
@@ -1800,9 +1889,81 @@ app.get('/api/featured-professionals/:userId', async (req, res) => {
 
 
 
-app.post('/api/upload', upload.single('image'), (req, res) => {
+app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'No file uploaded' });
+  }
+
+  // Programmatic Jimp resolver
+  if (!Jimp) {
+    try {
+      Jimp = require('jimp');
+    } catch (e) {
+      console.log('Jimp not found. Programmatically installing jimp...');
+      try {
+        const execSync = require('child_process').execSync;
+        execSync('npm install jimp', { stdio: 'inherit' });
+        Jimp = require('jimp');
+        console.log('Jimp successfully installed programmatically.');
+      } catch (err) {
+        console.error('Failed to install jimp programmatically:', err);
+      }
+    }
+  }
+
+  let bufferToUpload = req.file.buffer;
+
+  if (req.file.mimetype && req.file.mimetype.startsWith('image/')) {
+    try {
+      if (Jimp) {
+        const image = await Jimp.read(req.file.buffer);
+        
+        // Load fonts
+        const fontWhite = await Jimp.loadFont(Jimp.FONT_SANS_16_WHITE);
+        const fontBlack = await Jimp.loadFont(Jimp.FONT_SANS_16_BLACK);
+
+        // Get body params
+        const latitude = req.body.latitude || '';
+        const longitude = req.body.longitude || '';
+        const address = req.body.address || '';
+        
+        // Format Timestamp
+        const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST';
+
+        // Build Stamp text lines
+        const lines = [`Time: ${timestamp}`];
+        if (latitude && longitude) {
+          lines.push(`GPS: ${latitude}, ${longitude}`);
+        }
+        if (address) {
+          lines.push(`Loc: ${address}`);
+        }
+
+        // Draw shadow (black outline) then text (white) for high legibility
+        const startX = 20;
+        let startY = image.bitmap.height - (lines.length * 22) - 20;
+        if (startY < 10) startY = 10;
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const yPos = startY + (i * 22);
+          
+          // Print shadow outline
+          image.print(fontBlack, startX + 1, yPos + 1, line);
+          image.print(fontBlack, startX - 1, yPos - 1, line);
+          image.print(fontBlack, startX + 1, yPos - 1, line);
+          image.print(fontBlack, startX - 1, yPos + 1, line);
+          
+          // Print white text on top
+          image.print(fontWhite, startX, yPos, line);
+        }
+
+        bufferToUpload = await image.getBufferAsync(req.file.mimetype);
+      }
+    } catch (err) {
+      console.error('Error stamping image:', err);
+      // Fallback to original buffer if stamping fails
+    }
   }
 
   const isCloudinaryConfigured = 
@@ -1826,7 +1987,7 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
       return res.status(200).json({ url: result.secure_url });
     }
   );
-  uploadStream.end(req.file.buffer);
+  uploadStream.end(bufferToUpload);
 });
 
 // --- Contract Request and Project Workspace Endpoints ---
@@ -4632,11 +4793,11 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 
     // Standard Node.js HTTPS request helper to avoid built-in fetch bugs on Windows/Render
     const https = require('https');
-    const queryHuggingFace = (audioBuffer) => {
+    const queryHuggingFace = (audioBuffer, modelName) => {
       return new Promise((resolve, reject) => {
         const options = {
           hostname: 'router.huggingface.co',
-          path: '/hf-inference/models/openai/whisper-large-v3',
+          path: `/hf-inference/models/${modelName}`,
           method: 'POST',
           headers: {
             'Content-Type': 'audio/x-m4a',
@@ -4683,20 +4844,90 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
       });
     };
 
-    const hfResult = await queryHuggingFace(req.file.buffer);
-    console.log('[Transcribe] Hugging Face Response:', hfResult);
+    const models = [
+      'openai/whisper-large-v3-turbo',
+      'openai/whisper-large-v3',
+      'distil-whisper/distil-large-v3'
+    ];
 
-    if (hfResult.statusCode === 200) {
+    let hfResult = null;
+    let lastError = null;
+
+    for (const model of models) {
+      try {
+        console.log(`[Transcribe] Attempting transcription with Hugging Face model: ${model}`);
+        const result = await queryHuggingFace(req.file.buffer, model);
+        console.log(`[Transcribe] Model ${model} returned status: ${result.statusCode}`);
+        
+        if (result.statusCode === 200) {
+          hfResult = result;
+          break;
+        } else {
+          lastError = result.body || { error: `HTTP ${result.statusCode}` };
+        }
+      } catch (err) {
+        console.error(`[Transcribe] Failed with model ${model}:`, err.message);
+        lastError = { error: err.message };
+      }
+    }
+
+    if (hfResult && hfResult.statusCode === 200) {
+      let transcribedText = hfResult.body.text || '';
+      console.log(`[Transcribe] Original transcription text: "${transcribedText}"`);
+
+      // Check if the output contains Urdu/Arabic script (Unicode range for Arabic characters)
+      const urduRegex = /[\u0600-\u06FF\u0750-\u077F]/;
+      if (urduRegex.test(transcribedText)) {
+        console.log(`[Transcribe] Detected Urdu script in transcription: "${transcribedText}"`);
+        const userLanguage = req.body.language || 'en';
+        // Translate to Marathi if user language is Marathi, otherwise Hindi (Devanagari script)
+        const targetLang = userLanguage === 'mr' ? 'mr' : 'hi';
+        
+        try {
+          const translatedText = await new Promise((resolve) => {
+            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ur&tl=${targetLang}&dt=t&q=${encodeURIComponent(transcribedText)}`;
+            const https = require('https');
+            
+            https.get(url, (tRes) => {
+              let tData = '';
+              tRes.on('data', (chunk) => { tData += chunk; });
+              tRes.on('end', () => {
+                try {
+                  const parsed = JSON.parse(tData);
+                  if (parsed && parsed[0] && Array.isArray(parsed[0])) {
+                    const fullTranslation = parsed[0].map(item => item[0]).join('');
+                    resolve(fullTranslation);
+                  } else {
+                    resolve(transcribedText);
+                  }
+                } catch (e) {
+                  console.error('[Transcribe] Error parsing Urdu to Devanagari translation:', e);
+                  resolve(transcribedText);
+                }
+              });
+            }).on('error', (err) => {
+              console.error('[Transcribe] Google Translate request error:', err);
+              resolve(transcribedText);
+            });
+          });
+          
+          console.log(`[Transcribe] Translated Urdu to ${targetLang === 'mr' ? 'Marathi' : 'Hindi'}: "${translatedText}"`);
+          transcribedText = translatedText;
+        } catch (translateErr) {
+          console.error('[Transcribe] Transliteration/Translation failed:', translateErr);
+        }
+      }
+
       return res.status(200).json({
         success: true,
-        text: hfResult.body.text || ''
+        text: transcribedText
       });
     } else {
-      console.error('[Transcribe] Hugging Face API Error:', hfResult.body);
-      return res.status(hfResult.statusCode).json({
+      console.error('[Transcribe] All Hugging Face ASR models failed. Last Error:', lastError);
+      return res.status(503).json({
         success: false,
-        message: hfResult.body.error || 'Failed to transcribe audio. Whisper model may be loading, please try again.',
-        error: hfResult.body
+        message: 'Speech transcription service is temporarily overloaded or down. Please try again in a moment.',
+        error: lastError
       });
     }
   } catch (error) {

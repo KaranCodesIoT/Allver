@@ -72,6 +72,16 @@ const userSchema = new mongoose.Schema({
   }],
 
   expoPushToken: { type: String, default: '' },
+  expoPushTokens: { type: [String], default: [] },
+  notificationSettings: {
+    messages: { type: Boolean, default: true },
+    projectUpdates: { type: Boolean, default: true },
+    contracts: { type: Boolean, default: true },
+    payments: { type: Boolean, default: true },
+    attendance: { type: Boolean, default: true },
+    marketing: { type: Boolean, default: true },
+    systemAlerts: { type: Boolean, default: true }
+  },
   language: { type: String, default: 'en' },
   createdAt: { type: Date, default: Date.now }
 });
