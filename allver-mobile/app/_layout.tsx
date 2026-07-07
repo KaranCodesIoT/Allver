@@ -3,11 +3,12 @@ import { Stack, useSegments, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import * as SplashScreen from 'expo-splash-screen';
-import React, { useEffect, useState, useRef } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, Linking, ActivityIndicator, AppState, Platform, Alert } from 'react-native';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { View, StyleSheet, Text, TouchableOpacity, Linking, ActivityIndicator, AppState, Platform, Alert, Modal, Animated, Dimensions } from 'react-native';
 import { Image } from 'expo-image';
 import * as Location from 'expo-location';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
+import { Audio } from 'expo-av';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import * as Notifications from 'expo-notifications';
@@ -49,6 +50,17 @@ export default function RootLayout() {
   const [checkingLocation, setCheckingLocation] = useState(false);
   const segments = useSegments();
 
+  // Incoming video call state
+  const [incomingVideoCall, setIncomingVideoCall] = useState<{
+    callId: string;
+    callerId: string;
+    callerName: string;
+    callerAvatar: string;
+  } | null>(null);
+  const incomingCallTimeoutRef = useRef<any>(null);
+  const ringPulseAnim = useRef(new Animated.Value(1)).current;
+  const ringtoneSoundRef = useRef<Audio.Sound | null>(null);
+
   // Load user from local/global state on boot and route changes
   const getCurrentUser = () => {
     let user = (global as any).currentUser;
@@ -65,6 +77,70 @@ export default function RootLayout() {
     }
     return user;
   };
+
+  const stopRingtone = async () => {
+    try {
+      if (ringtoneSoundRef.current) {
+        await ringtoneSoundRef.current.stopAsync();
+        await ringtoneSoundRef.current.unloadAsync();
+        ringtoneSoundRef.current = null;
+      }
+    } catch (e) {}
+  };
+
+  const handleAcceptVideoCall = useCallback(() => {
+    if (!incomingVideoCall) return;
+    const callData = { ...incomingVideoCall };
+    
+    if (incomingCallTimeoutRef.current) clearTimeout(incomingCallTimeoutRef.current);
+    setIncomingVideoCall(null);
+    stopRingtone();
+
+    router.push({
+      pathname: '/video-call',
+      params: {
+        receiverId: callData.callerId,
+        receiverName: callData.callerName,
+        receiverAvatar: callData.callerAvatar,
+        callType: 'incoming',
+        callId: callData.callId,
+        callerId: callData.callerId,
+      },
+    });
+  }, [incomingVideoCall, router]);
+
+  const handleDeclineVideoCall = useCallback(() => {
+    if (!incomingVideoCall) return;
+    
+    if (incomingCallTimeoutRef.current) clearTimeout(incomingCallTimeoutRef.current);
+
+    import('@/utils/SocketService')
+      .then(({ default: SocketService }) => {
+        const user = getCurrentUser();
+        SocketService.emit('reject_video_call', {
+          callId: incomingVideoCall.callId,
+          callerId: incomingVideoCall.callerId,
+          receiverId: user?._id,
+        });
+      });
+
+    setIncomingVideoCall(null);
+    stopRingtone();
+  }, [incomingVideoCall]);
+
+  // Pulse animation for incoming call
+  useEffect(() => {
+    if (incomingVideoCall) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(ringPulseAnim, { toValue: 1.3, duration: 800, useNativeDriver: true }),
+          Animated.timing(ringPulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    }
+  }, [incomingVideoCall]);
 
   const checkLocationPermission = async (shouldRequest = false) => {
     try {
@@ -141,10 +217,45 @@ export default function RootLayout() {
       return;
     }
 
-    // Initialize/re-verify global socket connection
+    // Initialize/re-verify global socket connection + incoming video call listener
     import('@/utils/SocketService')
       .then(({ default: SocketService }) => {
         SocketService.initialize(user._id);
+
+        // Listen for incoming video calls globally
+        const handleIncomingVideoCall = (data: any) => {
+          console.log('[RootLayout] Incoming video call from:', data.callerName);
+          setIncomingVideoCall({
+            callId: data.callId,
+            callerId: data.callerId,
+            callerName: data.callerName,
+            callerAvatar: data.callerAvatar,
+          });
+
+          // Play ringtone
+          Audio.Sound.createAsync(
+            require('../assets/sounds/ringtone.mp3'),
+            { shouldPlay: true, isLooping: true }
+          ).then(({ sound }) => {
+            ringtoneSoundRef.current = sound;
+          }).catch(() => {
+            // Fallback: no ringtone asset, just vibrate
+          });
+
+          // Auto-timeout after 30 seconds (missed call)
+          if (incomingCallTimeoutRef.current) clearTimeout(incomingCallTimeoutRef.current);
+          incomingCallTimeoutRef.current = setTimeout(() => {
+            SocketService.emit('video_call_missed', {
+              callId: data.callId,
+              callerId: data.callerId,
+              receiverId: user._id,
+            });
+            setIncomingVideoCall(null);
+            stopRingtone();
+          }, 30000);
+        };
+
+        SocketService.on('incoming_video_call', handleIncomingVideoCall);
       })
       .catch(err => console.error('[RootLayout] SocketService import error:', err));
 
@@ -357,6 +468,7 @@ export default function RootLayout() {
             <Stack.Screen name="project-progress" options={{ headerShown: false }} />
             <Stack.Screen name="notifications" options={{ headerShown: false }} />
             <Stack.Screen name="jobs" options={{ headerShown: false, title: 'Opportunity' }} />
+            <Stack.Screen name="video-call" options={{ headerShown: false, animation: 'fade' }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
           <StatusBar style="auto" />
@@ -396,6 +508,64 @@ export default function RootLayout() {
               </View>
             </View>
           )}
+
+          {/* ===== INCOMING VIDEO CALL OVERLAY ===== */}
+          <Modal
+            visible={!!incomingVideoCall}
+            animationType="fade"
+            transparent={false}
+            onRequestClose={() => handleDeclineVideoCall()}
+          >
+            <View style={styles.incomingCallContainer}>
+              <View style={styles.incomingCallBg} />
+
+              {/* Encryption badge */}
+              <View style={styles.incomingCallEncrypted}>
+                <Feather name="shield" size={12} color="rgba(255,255,255,0.5)" />
+                <Text style={styles.incomingCallEncryptedText}>End-To-End Encrypted</Text>
+              </View>
+
+              {/* Caller info */}
+              <View style={styles.incomingCallProfile}>
+                <View style={styles.incomingCallAvatarContainer}>
+                  <Animated.View style={[styles.incomingCallPulse, { transform: [{ scale: ringPulseAnim }] }]} />
+                  <Animated.View style={[styles.incomingCallPulseOuter, { transform: [{ scale: ringPulseAnim }], opacity: 0.3 }]} />
+                  <Image
+                    source={{ uri: incomingVideoCall?.callerAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=200' }}
+                    style={styles.incomingCallAvatar}
+                  />
+                </View>
+                <Text style={styles.incomingCallName}>{incomingVideoCall?.callerName || 'Unknown'}</Text>
+                <Text style={styles.incomingCallLabel}>Incoming Video Call</Text>
+              </View>
+
+              {/* Action buttons */}
+              <View style={styles.incomingCallActions}>
+                <View style={styles.incomingCallBtnContainer}>
+                  <TouchableOpacity
+                    style={[styles.incomingCallBtnCircle, styles.incomingDeclineBtn]}
+                    onPress={() => handleDeclineVideoCall()}
+                    activeOpacity={0.8}
+                  >
+                    <Feather name="phone-off" size={28} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <Text style={styles.incomingCallBtnLabel}>Decline</Text>
+                </View>
+
+                <View style={styles.incomingCallBtnContainer}>
+                  <TouchableOpacity
+                    style={[styles.incomingCallBtnCircle, styles.incomingAcceptBtn]}
+                    onPress={() => handleAcceptVideoCall()}
+                    activeOpacity={0.8}
+                  >
+                    <Feather name="video" size={28} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <Text style={styles.incomingCallBtnLabel}>Accept</Text>
+                </View>
+              </View>
+            </View>
+          </Modal>
+
         </View>
       </ThemeProvider>
         </UnreadActivityProvider>
@@ -485,4 +655,111 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
+
+  // Incoming Video Call Overlay
+  incomingCallContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  incomingCallBg: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0F172A',
+  },
+  incomingCallEncrypted: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  incomingCallEncryptedText: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.5)',
+    fontWeight: '500',
+  },
+  incomingCallProfile: {
+    alignItems: 'center',
+  },
+  incomingCallAvatarContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 24,
+  },
+  incomingCallPulse: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    borderWidth: 3,
+    borderColor: '#22C55E',
+  },
+  incomingCallPulseOuter: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 2,
+    borderColor: '#22C55E',
+  },
+  incomingCallAvatar: {
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  incomingCallName: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  incomingCallLabel: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '500',
+  },
+  incomingCallActions: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 80 : 60,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 60,
+    width: '100%',
+  },
+  incomingCallBtnContainer: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  incomingCallBtnCircle: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+  },
+  incomingDeclineBtn: {
+    backgroundColor: '#EF4444',
+    shadowColor: '#EF4444',
+  },
+  incomingAcceptBtn: {
+    backgroundColor: '#22C55E',
+    shadowColor: '#22C55E',
+  },
+  incomingCallBtnLabel: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 4,
+  },
 });
+

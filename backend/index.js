@@ -47,6 +47,7 @@ const io = socketIo(server, {
 app.set('io', io);
 
 const onlineUsers = new Set();
+const activeCallUsers = new Map(); // userId -> { callId, peerId }
 
 io.on('connection', (socket) => {
   console.log('[Socket] Socket connected:', socket.id);
@@ -251,8 +252,114 @@ io.on('connection', (socket) => {
     io.to(targetId.toString()).emit('receive_voice_chunk', { url });
   });
 
+  // ========== VIDEO CALL EVENTS (WebRTC signaling) ==========
+  socket.on('initiate_video_call', async ({ callerId, receiverId, callerName, callerAvatar }) => {
+    console.log(`[VideoCall] Initiate video call from ${callerId} (${callerName}) to ${receiverId}`);
+    
+    // Check if receiver is online
+    if (!onlineUsers.has(receiverId)) {
+      console.log(`[VideoCall] Receiver ${receiverId} is offline`);
+      socket.emit('video_call_unavailable', { receiverId });
+      try {
+        const CallHistory = require('./models/CallHistory');
+        await CallHistory.create({ caller: callerId, receiver: receiverId, callType: 'video', status: 'unavailable', startedAt: new Date() });
+      } catch (e) { console.error('[VideoCall] Failed to save unavailable call:', e); }
+      return;
+    }
+
+    // Check if receiver is already in a call
+    if (activeCallUsers.has(receiverId)) {
+      console.log(`[VideoCall] Receiver ${receiverId} is busy`);
+      socket.emit('video_call_busy', { receiverId });
+      try {
+        const CallHistory = require('./models/CallHistory');
+        await CallHistory.create({ caller: callerId, receiver: receiverId, callType: 'video', status: 'busy', startedAt: new Date() });
+      } catch (e) { console.error('[VideoCall] Failed to save busy call:', e); }
+      return;
+    }
+
+    const callId = `vc_${callerId}_${receiverId}_${Date.now()}`;
+    activeCallUsers.set(callerId, { callId, peerId: receiverId });
+
+    io.to(receiverId.toString()).emit('incoming_video_call', {
+      callId, callerId, callerName, callerAvatar, socketId: socket.id
+    });
+    console.log(`[VideoCall] Sent incoming_video_call to ${receiverId}`);
+  });
+
+  socket.on('answer_video_call', ({ callId, callerId, receiverId }) => {
+    console.log(`[VideoCall] Call ${callId} answered by ${receiverId}`);
+    activeCallUsers.set(receiverId, { callId, peerId: callerId });
+    io.to(callerId.toString()).emit('video_call_answered', { callId, receiverId });
+  });
+
+  socket.on('reject_video_call', async ({ callId, callerId, receiverId }) => {
+    console.log(`[VideoCall] Call ${callId} rejected by ${receiverId}`);
+    activeCallUsers.delete(callerId);
+    io.to(callerId.toString()).emit('video_call_rejected', { callId, receiverId });
+    try {
+      const CallHistory = require('./models/CallHistory');
+      await CallHistory.create({ caller: callerId, receiver: receiverId, callType: 'video', status: 'declined', startedAt: new Date() });
+    } catch (e) { console.error('[VideoCall] Failed to save declined call:', e); }
+  });
+
+  socket.on('end_video_call', async ({ callId, targetId, duration }) => {
+    console.log(`[VideoCall] Call ${callId} ended. Notifying ${targetId}. Duration: ${duration}s`);
+    const userId = socket.userId;
+    activeCallUsers.delete(userId);
+    activeCallUsers.delete(targetId);
+    io.to(targetId.toString()).emit('video_call_ended', { callId });
+
+    if (duration && duration > 0) {
+      try {
+        const CallHistory = require('./models/CallHistory');
+        const parts = callId.split('_');
+        const caller = parts[1];
+        const receiver = parts[2];
+        await CallHistory.create({
+          caller, receiver, callType: 'video', status: 'completed',
+          startedAt: new Date(Date.now() - (duration * 1000)),
+          answeredAt: new Date(Date.now() - (duration * 1000)),
+          endedAt: new Date(), duration
+        });
+      } catch (e) { console.error('[VideoCall] Failed to save completed call:', e); }
+    }
+  });
+
+  socket.on('video_call_missed', async ({ callId, callerId, receiverId }) => {
+    console.log(`[VideoCall] Call ${callId} missed by ${receiverId}`);
+    activeCallUsers.delete(callerId);
+    try {
+      const CallHistory = require('./models/CallHistory');
+      await CallHistory.create({ caller: callerId, receiver: receiverId, callType: 'video', status: 'missed', startedAt: new Date() });
+    } catch (e) { console.error('[VideoCall] Failed to save missed call:', e); }
+  });
+
+  // WebRTC SDP + ICE signaling relay
+  socket.on('video_call_offer', ({ targetId, offer, callId }) => {
+    console.log(`[VideoCall] Relaying SDP offer to ${targetId}`);
+    io.to(targetId.toString()).emit('video_call_offer', { offer, callId, fromId: socket.userId });
+  });
+
+  socket.on('video_call_answer', ({ targetId, answer, callId }) => {
+    console.log(`[VideoCall] Relaying SDP answer to ${targetId}`);
+    io.to(targetId.toString()).emit('video_call_answer', { answer, callId, fromId: socket.userId });
+  });
+
+  socket.on('video_ice_candidate', ({ targetId, candidate, callId }) => {
+    io.to(targetId.toString()).emit('video_ice_candidate', { candidate, callId, fromId: socket.userId });
+  });
+
   socket.on('disconnect', () => {
     if (socket.userId) {
+      // If user was in an active video call, notify the other party
+      const activeCall = activeCallUsers.get(socket.userId);
+      if (activeCall) {
+        io.to(activeCall.peerId.toString()).emit('video_call_ended', { callId: activeCall.callId });
+        activeCallUsers.delete(socket.userId);
+        activeCallUsers.delete(activeCall.peerId);
+      }
+
       onlineUsers.delete(socket.userId);
       socket.broadcast.emit('user_offline', { userId: socket.userId });
       console.log(`[Socket] User ${socket.userId} went offline.`);
@@ -286,6 +393,7 @@ app.use('/uploads', express.static(uploadsDir));
 const User = require('./models/User');
 const Follow = require('./models/Follow');
 const Notification = require('./models/Notification');
+const CallHistory = require('./models/CallHistory');
 
 // Define Post model for social posts (media) and blueprint layouts (design)
 const postSchema = new mongoose.Schema({
@@ -5737,6 +5845,54 @@ app.get('/api/test-notifications', async (req, res) => {
     res.status(200).json({ success: true, message: 'Test notifications created successfully', created });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ========== CALL HISTORY API ==========
+app.get('/api/call-history/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = parseInt(req.query.skip) || 0;
+
+    const calls = await CallHistory.find({
+      $or: [{ caller: userId }, { receiver: userId }]
+    })
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .populate('caller', 'fullName avatarUrl role')
+    .populate('receiver', 'fullName avatarUrl role')
+    .lean();
+
+    res.json({ calls });
+  } catch (err) {
+    console.error('Error fetching call history:', err);
+    res.status(500).json({ message: 'Error fetching call history' });
+  }
+});
+
+app.get('/api/call-history/:userId/:otherUserId', async (req, res) => {
+  try {
+    const { userId, otherUserId } = req.params;
+    const limit = parseInt(req.query.limit) || 20;
+
+    const calls = await CallHistory.find({
+      $or: [
+        { caller: userId, receiver: otherUserId },
+        { caller: otherUserId, receiver: userId }
+      ]
+    })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .populate('caller', 'fullName avatarUrl role')
+    .populate('receiver', 'fullName avatarUrl role')
+    .lean();
+
+    res.json({ calls });
+  } catch (err) {
+    console.error('Error fetching call history:', err);
+    res.status(500).json({ message: 'Error fetching call history between users' });
   }
 });
 

@@ -1783,6 +1783,44 @@ export default function ChatRoomScreen() {
     }
   };
 
+  const handleVideoCall = async () => {
+    if (!currentUser || currentUser._id === 'default-user-id') {
+      Alert.alert('Call Not Available', 'Please log in to make calls.');
+      return;
+    }
+    
+    try {
+      // 1. Check follow status from backend
+      const followRes = await fetch(`${BACKEND_URL}/api/follow/status/${receiverId}?followerId=${currentUser._id}`);
+      if (!followRes.ok) {
+        throw new Error('Failed to verify follow status');
+      }
+      const followData = await followRes.json();
+      
+      if (!followData.isFollowing) {
+        Alert.alert(
+          'Cannot Call',
+          'You can only call users whom you are following. Please follow this user first from their profile page.'
+        );
+        return;
+      }
+      
+      // 2. Navigate directly to /video-call screen as caller (outgoing)
+      router.push({
+        pathname: '/video-call',
+        params: {
+          receiverId: receiverId,
+          receiverName: receiverName,
+          receiverAvatar: receiverAvatar,
+          callType: 'outgoing'
+        }
+      });
+    } catch (err) {
+      console.error('Video Call initialization error:', err);
+      Alert.alert('Error', 'An error occurred while trying to place the video call.');
+    }
+  };
+
   const handleAcceptCall = () => {
     if (!socket || !callerInfo) return;
     socket.emit('answer_call', {
@@ -1980,7 +2018,7 @@ export default function ChatRoomScreen() {
         <View style={styles.headerRight}>
           <TouchableOpacity 
             style={styles.headerIconBtn}
-            onPress={() => Alert.alert('Video Call', 'Video calling is not supported in this region yet.')}
+            onPress={handleVideoCall}
           >
             <Feather name="video" size={20} color={COLORS.textDark} />
           </TouchableOpacity>

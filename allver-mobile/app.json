@@ -23,7 +23,7 @@
       "package": "com.allver.app",
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.CAMERA"
       ]
     },
     "notification": {
@@ -55,7 +55,14 @@
           "cameraPermission": "The app accesses your camera to let you take photos for your profile."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Allver needs camera access for video calls",
+          "microphonePermission": "Allver needs microphone access for calls"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
