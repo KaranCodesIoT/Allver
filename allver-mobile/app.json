@@ -55,8 +55,7 @@
           "cameraPermission": "The app accesses your camera to let you take photos for your profile."
         }
       ],
-      "expo-secure-store",
-      "./plugins/withLocalGradle"
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
