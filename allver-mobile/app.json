@@ -56,13 +56,7 @@
         }
       ],
       "expo-secure-store",
-      [
-        "@config-plugins/react-native-webrtc",
-        {
-          "cameraPermission": "Allver needs camera access for video calls",
-          "microphonePermission": "Allver needs microphone access for calls"
-        }
-      ]
+      "./plugins/withLocalGradle"
     ],
     "experiments": {
       "typedRoutes": true,
