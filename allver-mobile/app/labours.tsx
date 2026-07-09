@@ -109,7 +109,7 @@ export default function LaboursScreen() {
         id: labour._id || labour.id || '',
         name: labour.fullName,
         role: labour.skillType || 'Labour',
-        avatar: resolveAvatarUrl(labour.avatarUrl) || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=200&auto=format&fit=crop',
+        avatar: resolveAvatarUrl(labour.avatarUrl, labour.updatedAt) || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=200&auto=format&fit=crop',
         experience: (labour.experience || '0') + ' Years Experience',
         location: labour.city || '',
         rating: (labour.rating || 0).toString(),

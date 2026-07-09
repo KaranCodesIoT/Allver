@@ -50,7 +50,18 @@ export const removeToken = async (): Promise<void> => {
 
 export const saveStoredUser = async (user: any): Promise<void> => {
   try {
-    const userStr = JSON.stringify(user);
+    if (!user) return;
+    const strippedUser = {
+      _id: user._id,
+      fullName: user.fullName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      role: user.role,
+      avatarUrl: user.avatarUrl,
+      city: user.city,
+      language: user.language
+    };
+    const userStr = JSON.stringify(strippedUser);
     if (Platform.OS === 'web') {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(USER_KEY, userStr);

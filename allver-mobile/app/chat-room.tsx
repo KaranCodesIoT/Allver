@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Dimensions, Alert, Modal, Linking, ScrollView, Animated, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, Dimensions, Alert, Modal, Linking, ScrollView, Animated, ActivityIndicator, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -116,8 +116,14 @@ export default function ChatRoomScreen() {
   const soundRef = useRef<Audio.Sound | null>(null);
 
   // In-app calling state
-  const [callState, setCallState] = useState<'idle' | 'calling' | 'incoming' | 'active'>('idle');
-  const [callerInfo, setCallerInfo] = useState<{ callerId: string; callerName: string; callerAvatar: string } | null>(null);
+  const [callState, setCallState] = useState<'idle' | 'calling' | 'incoming' | 'active'>(
+    params.autoAcceptCall === 'true' ? 'active' : 'idle'
+  );
+  const [callerInfo, setCallerInfo] = useState<{ callerId: string; callerName: string; callerAvatar: string } | null>(
+    params.autoAcceptCall === 'true'
+      ? { callerId: receiverId, callerName: receiverName, callerAvatar: receiverAvatar }
+      : null
+  );
   const [callTimer, setCallTimer] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(false);
@@ -336,8 +342,7 @@ export default function ChatRoomScreen() {
     };
 
     // Join room & mark read initially
-    s.emit('join_room', { roomId: conversationId, userId: currentUser._id });
-    s.emit('go_online', { userId: currentUser._id });
+    s.emit('join_room', { roomId: conversationId });
     markAsRead();
     
     // Query if the other user is online initially
@@ -428,7 +433,7 @@ export default function ChatRoomScreen() {
 
     const handleReconnect = () => {
       console.log('[ChatRoom] Socket reconnected. Re-joining room and syncing message history...');
-      s.emit('join_room', { roomId: conversationId, userId: currentUser._id });
+      s.emit('join_room', { roomId: conversationId });
       markAsRead();
 
       if (conversationId && !workspace) {
@@ -510,7 +515,6 @@ export default function ChatRoomScreen() {
     s.on('messages_read', handleMessagesRead);
     s.on('message_delivered', handleMessageDelivered);
     s.on('connect', handleReconnect);
-    s.on('incoming_call', handleIncomingCall);
     s.on('call_answered', handleCallAnswered);
     s.on('call_rejected', handleCallRejected);
     s.on('call_busy', handleCallBusy);
@@ -527,7 +531,6 @@ export default function ChatRoomScreen() {
       s.off('messages_read', handleMessagesRead);
       s.off('message_delivered', handleMessageDelivered);
       s.off('connect', handleReconnect);
-      s.off('incoming_call', handleIncomingCall);
       s.off('call_answered', handleCallAnswered);
       s.off('call_rejected', handleCallRejected);
       s.off('call_busy', handleCallBusy);
@@ -1145,6 +1148,7 @@ export default function ChatRoomScreen() {
 
   // ========== PICK IMAGE ==========
   const handlePickImage = async () => {
+    Keyboard.dismiss();
     setShowAttachMenu(false);
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -1165,6 +1169,7 @@ export default function ChatRoomScreen() {
 
   // ========== PICK DOCUMENT ==========
   const handlePickDocument = async () => {
+    Keyboard.dismiss();
     setShowAttachMenu(false);
     if (Platform.OS === 'web') {
       const input = document.createElement('input');
@@ -1185,6 +1190,7 @@ export default function ChatRoomScreen() {
 
   // ========== TAKE PHOTO ==========
   const handleTakePhoto = async () => {
+    Keyboard.dismiss();
     setShowAttachMenu(false);
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
@@ -1994,7 +2000,7 @@ export default function ChatRoomScreen() {
 
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         {/* ===== CHAT AREA ===== */}
@@ -2017,7 +2023,7 @@ export default function ChatRoomScreen() {
             data={messages}
             renderItem={renderMessageItem}
             keyExtractor={(item, index) => (item._id || item.tempId || `msg_${index}`) + `_${index}`}
-            contentContainerStyle={styles.chatListContent}
+            contentContainerStyle={[styles.chatListContent, { flexGrow: 1, justifyContent: messages.length < 10 ? 'flex-end' : 'flex-start' }]}
             onContentSizeChange={scrollToEnd}
             onLayout={scrollToEnd}
             showsVerticalScrollIndicator={false}
@@ -2444,7 +2450,7 @@ export default function ChatRoomScreen() {
           /* ===== NORMAL INPUT ===== */
           <View style={styles.inputContainer}>
             <View style={styles.inputRow}>
-              <TouchableOpacity style={styles.inputIconBtn} onPress={() => setShowAttachMenu(true)}>
+              <TouchableOpacity style={styles.inputIconBtn} onPress={() => { Keyboard.dismiss(); setShowAttachMenu(true); }}>
                 <Feather name="plus" size={24} color={COLORS.textMuted} />
               </TouchableOpacity>
 

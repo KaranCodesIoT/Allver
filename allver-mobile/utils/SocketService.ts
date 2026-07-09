@@ -25,7 +25,7 @@ class SocketService {
 
     if (this.socket && this.socket.connected) {
       console.log('[SocketService] Socket already connected. Re-joining room...');
-      this.socket.emit('go_online', { userId: this.userId });
+      this.socket.emit('go_online');
       return;
     }
 
@@ -52,17 +52,28 @@ class SocketService {
 
     this.socket.on('connect', () => {
       console.log('[SocketService] Connected successfully. Socket ID:', this.socket?.id);
-      if (this.userId) {
-        this.socket?.emit('go_online', { userId: this.userId });
-      }
+      this.socket?.emit('go_online');
     });
 
     this.socket.on('disconnect', (reason) => {
       console.log('[SocketService] Disconnected. Reason:', reason);
     });
 
-    this.socket.on('connect_error', (error) => {
+    this.socket.on('connect_error', async (error) => {
       console.error('[SocketService] Connect error:', error.message);
+      if (error.message && (error.message.includes('Unauthorized') || error.message.includes('Invalid token'))) {
+        console.log('[SocketService] Socket connection unauthorized. Clearing stale session tokens...');
+        this.disconnect();
+        const { removeToken, removeStoredUser } = require('../constants/Auth');
+        await removeToken();
+        await removeStoredUser();
+        try {
+          const { router } = require('expo-router');
+          router.replace('/login');
+        } catch (routerErr) {
+          console.warn('[SocketService] Failed to auto-redirect during socket auth error:', routerErr);
+        }
+      }
     });
 
     this.socket.on('reconnect_attempt', (attempt) => {

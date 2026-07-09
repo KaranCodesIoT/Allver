@@ -54,19 +54,24 @@ const getLocalBackendUrl = () => {
 export const BACKEND_URL = __DEV__ ? getLocalBackendUrl() : 'https://allver.onrender.com';
 console.log('[Config] Resolved BACKEND_URL:', BACKEND_URL);
 
-export const resolveAvatarUrl = (url?: string): string | undefined => {
+export const resolveAvatarUrl = (url?: string, updatedAt?: string | number | Date): string | undefined => {
   if (!url) return undefined;
   
   // Replace http://<ip-or-host>:5000/ with BACKEND_URL/ to dynamically handle dev machine IP changes
   const regex = /^http:\/\/[a-zA-Z0-9.-]+:5000/;
+  let resolved = url;
   if (regex.test(url)) {
-    return url.replace(regex, BACKEND_URL);
+    resolved = url.replace(regex, BACKEND_URL);
+  } else if (url.startsWith('/uploads')) {
+    resolved = `${BACKEND_URL}${url}`;
   }
   
-  if (url.startsWith('/uploads')) {
-    return `${BACKEND_URL}${url}`;
+  if (updatedAt) {
+    const ts = updatedAt instanceof Date ? updatedAt.getTime() : updatedAt;
+    const separator = resolved.includes('?') ? '&' : '?';
+    return `${resolved}${separator}v=${ts}`;
   }
-  return url;
+  return resolved;
 };
 
 

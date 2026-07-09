@@ -21,6 +21,7 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.allver.app",
+      "softwareKeyboardLayoutMode": "adjustResize",
       "permissions": [
         "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA"

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking, Modal, TextInput, Alert } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking, Modal, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Video, ResizeMode } from 'expo-av';
@@ -879,8 +879,8 @@ export default function ProfileScreen() {
           setUser({
             id: parsed._id || '',
             name: `${prefix}${parsed.fullName}`,
-            avatar: resolveAvatarUrl(parsed.avatarUrl) || '',
-            coverImage: resolveAvatarUrl(parsed.cover) || '',
+            avatar: resolveAvatarUrl(parsed.avatarUrl, parsed.updatedAt) || '',
+            coverImage: resolveAvatarUrl(parsed.cover, parsed.updatedAt) || '',
             rating: parsed.rating?.toString() || '0.0',
             reviews: parsed.reviews?.toString() || '0',
             location: [parsed.city, parsed.state].filter(Boolean).join(', ') || '',

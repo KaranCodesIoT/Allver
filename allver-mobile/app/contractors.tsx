@@ -209,8 +209,8 @@ export default function ContractorsScreen() {
       params: {
         id: contractor._id,
         name: contractor.fullName,
-        avatar: resolveAvatarUrl(contractor.avatarUrl) || 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=200&auto=format&fit=crop',
-        coverImage: resolveAvatarUrl(contractor.cover) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop',
+        avatar: resolveAvatarUrl(contractor.avatarUrl, contractor.updatedAt) || 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=200&auto=format&fit=crop',
+        coverImage: resolveAvatarUrl(contractor.cover, contractor.updatedAt) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop',
         rating: (contractor.rating || 4.5).toString(),
         reviews: (contractor.reviews || 0).toString(),
         location: contractor.city,

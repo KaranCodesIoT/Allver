@@ -9,6 +9,8 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 require('dotenv').config();
+const jwt = require('jsonwebtoken');
+const authenticateJWT = require('./middleware/auth');
 let Jimp;
 console.log('--- Startup Environment ---');
 console.log('NODE_ENV:', process.env.NODE_ENV);
@@ -47,26 +49,57 @@ const io = socketIo(server, {
 app.set('io', io);
 
 const onlineUsers = new Set();
-const activeCallUsers = new Map(); // userId -> { callId, peerId }
+const activeCallUsers = new Map();
+const socketRateLimitStore = new Map();
+
+io.use(async (socket, next) => {
+  // 1. Connection Rate Limiting: Max 20 connection attempts per minute
+  const ip = socket.handshake.address || socket.conn.remoteAddress;
+  const now = Date.now();
+  const limitData = socketRateLimitStore.get(ip) || { count: 0, startTime: now };
+
+  if (now - limitData.startTime > 60000) {
+    limitData.count = 1;
+    limitData.startTime = now;
+  } else {
+    limitData.count += 1;
+  }
+
+  socketRateLimitStore.set(ip, limitData);
+
+  if (limitData.count > 20) {
+    return next(new Error("Too many connection attempts. Please try again later."));
+  }
+
+  // 2. JWT Authentication
+  const token = socket.handshake.auth?.token;
+  if (!token) {
+    return next(new Error("Unauthorized: Token missing"));
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.userId = decoded.userId;
+    next();
+  } catch (err) {
+    next(new Error("Unauthorized: Invalid token"));
+  }
+});
 
 io.on('connection', (socket) => {
-  console.log('[Socket] Socket connected:', socket.id);
+  console.log('[Socket] Socket connected and authenticated. User ID:', socket.userId, 'Socket ID:', socket.id);
 
   // Join a specific room (project workspace or DM conversation) with participant validation
-  socket.on('join_room', async ({ roomId, userId }) => {
+  socket.on('join_room', async ({ roomId }) => {
     if (!roomId) {
       console.warn('[Socket] join_room failed: roomId is empty');
       return;
     }
 
-    const uId = userId || socket.userId;
+    const uId = socket.userId;
     if (!uId) {
-      console.warn('[Socket] join_room failed: userId is not set or passed.');
+      console.warn('[Socket] join_room failed: socket.userId is not set.');
       return;
     }
-
-    // Cache the userId on the socket instance
-    socket.userId = uId;
 
     // Validate ObjectId format
     const isValidId = /^[0-9a-fA-F]{24}$/.test(roomId);
@@ -175,20 +208,24 @@ io.on('connection', (socket) => {
   });
 
   // Typing indicator
-  socket.on('typing', ({ roomId, userId, userName }) => {
+  socket.on('typing', ({ roomId, userName }) => {
+    const userId = socket.userId;
+    if (!userId || !roomId) return;
     socket.to(roomId).emit('user_typing', { userId, userName });
     console.log(`[Socket] User ${userName} (${userId}) is typing in room ${roomId}`);
   });
 
-  socket.on('stop_typing', ({ roomId, userId }) => {
+  socket.on('stop_typing', ({ roomId }) => {
+    const userId = socket.userId;
+    if (!userId || !roomId) return;
     socket.to(roomId).emit('user_stop_typing', { userId });
     console.log(`[Socket] User (${userId}) stopped typing in room ${roomId}`);
   });
 
   // Track online status and join personal rooms
-  socket.on('go_online', ({ userId }) => {
+  socket.on('go_online', () => {
+    const userId = socket.userId;
     if (!userId) return;
-    socket.userId = userId;
     onlineUsers.add(userId);
 
     // Join personal rooms for notifications and DMs
@@ -218,22 +255,51 @@ io.on('connection', (socket) => {
   });
 
   // In-app calling events
-  socket.on('initiate_call', ({ callerId, receiverId, callerName, callerAvatar }) => {
-    console.log(`[Call] Initiate call from ${callerId} (${callerName}) to ${receiverId}`);
-    io.to(receiverId.toString()).emit('incoming_call', {
-      callerId,
-      callerName,
-      callerAvatar,
-      socketId: socket.id
-    });
+  socket.on('initiate_call', async ({ receiverId }) => {
+    const callerId = socket.userId;
+    if (!callerId || !receiverId) return;
+
+    try {
+      const callerUser = await User.findById(callerId);
+      if (!callerUser) {
+        console.warn(`[Call] Caller user not found in database: ${callerId}`);
+        return;
+      }
+
+      const callerName = callerUser.fullName;
+      const callerAvatar = callerUser.avatarUrl || '';
+
+      console.log(`[Call] Initiate call from ${callerId} (${callerName}) to ${receiverId}`);
+      io.to(receiverId.toString()).emit('incoming_call', {
+        callerId,
+        callerName,
+        callerAvatar,
+        socketId: socket.id
+      });
+
+      // Also send a push notification for the call so it alerts them if the app is in background/closed
+      const notification = new Notification({
+        recipientId: receiverId,
+        senderId: callerId,
+        text: `📞 Incoming voice call from ${callerName}`,
+        category: 'systemAlerts'
+      });
+      await notification.save();
+    } catch (err) {
+      console.error('[Call Push] Error creating notification for call:', err);
+    }
   });
 
-  socket.on('answer_call', ({ callerId, receiverId }) => {
+  socket.on('answer_call', ({ callerId }) => {
+    const receiverId = socket.userId;
+    if (!callerId || !receiverId) return;
     console.log(`[Call] Call answered by ${receiverId} to ${callerId}`);
     io.to(callerId.toString()).emit('call_answered', { receiverId });
   });
 
-  socket.on('reject_call', ({ callerId, receiverId }) => {
+  socket.on('reject_call', ({ callerId }) => {
+    const receiverId = socket.userId;
+    if (!callerId || !receiverId) return;
     console.log(`[Call] Call rejected by ${receiverId}`);
     io.to(callerId.toString()).emit('call_rejected', { receiverId });
   });
@@ -385,6 +451,42 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
+
+// Lightweight Memory-Based Rate Limiting Middleware
+const rateLimitStore = new Map();
+const createRateLimiter = ({ windowMs, max, message }) => {
+  return (req, res, next) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const now = Date.now();
+    const limitData = rateLimitStore.get(ip) || { count: 0, startTime: now };
+
+    if (now - limitData.startTime > windowMs) {
+      limitData.count = 1;
+      limitData.startTime = now;
+    } else {
+      limitData.count += 1;
+    }
+
+    rateLimitStore.set(ip, limitData);
+
+    if (limitData.count > max) {
+      return res.status(429).json({ message: message || 'Too many requests. Please try again later.' });
+    }
+    next();
+  };
+};
+
+const authLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: 'Too many login or OTP attempts from this IP. Please try again after 15 minutes.'
+});
+
+const tokenLimiter = createRateLimiter({
+  windowMs: 5 * 60 * 1000,
+  max: 50,
+  message: 'Too many token registration requests. Please try again later.'
+});
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -693,11 +795,12 @@ app.get('/api/stats', (req, res) => {
 });
 
 // Create a new post/design
-app.post('/api/posts', async (req, res) => {
+app.post('/api/posts', authenticateJWT, async (req, res) => {
   try {
-    const { title, description, type, mediaUrls, creatorId, quotation } = req.body;
-    if (!description || !type || !creatorId) {
-      return res.status(400).json({ message: 'Missing required fields: description, type, and creatorId are required.' });
+    const { title, description, type, mediaUrls, quotation } = req.body;
+    const creatorId = req.user.id;
+    if (!description || !type) {
+      return res.status(400).json({ message: 'Missing required fields: description and type are required.' });
     }
     
     // Validate creator exists
@@ -1205,9 +1308,9 @@ app.get('/api/user/check-firm-name', async (req, res) => {
 });
 
 // Update User Profile
-app.put('/api/user/profile/:id', async (req, res) => {
+app.put('/api/user/profile/:id', authenticateJWT, async (req, res) => {
   try {
-    const userId = req.params.id;
+    const userId = req.user.id;
     const profileData = req.body;
 
     const userObj = await User.findById(userId);
@@ -1264,6 +1367,8 @@ app.put('/api/user/profile/:id', async (req, res) => {
       profileData.phone = formatPhoneNumberToE164(profileData.phone);
     }
     
+    profileData.updatedAt = Date.now();
+    
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $set: profileData },
@@ -1274,17 +1379,21 @@ app.put('/api/user/profile/:id', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    const updatedUserObj = updatedUser.toObject();
+    updatedUserObj.coverImage = updatedUserObj.cover;
+    updatedUserObj.avatar = updatedUserObj.avatarUrl;
+
     // Emit profile_updated socket event
     const io = req.app.get('io');
     if (io) {
       io.emit('profile_updated', {
         userId,
-        user: updatedUser
+        user: updatedUserObj
       });
       console.log(`[Socket] Emitted profile_updated for user ${userId}`);
     }
     
-    res.status(200).json({ message: 'Profile updated successfully', user: updatedUser });
+    res.status(200).json({ message: 'Profile updated successfully', user: updatedUserObj });
   } catch (error) {
     console.error('Profile update error:', error);
     res.status(500).json({ message: 'Error updating profile: ' + (error.message || error) });
@@ -1292,9 +1401,10 @@ app.put('/api/user/profile/:id', async (req, res) => {
 });
 
 // Save or Update User Expo Push Token
-app.post('/api/user/push-token', async (req, res) => {
+app.post('/api/user/push-token', authenticateJWT, tokenLimiter, async (req, res) => {
   try {
-    const { userId, token } = req.body;
+    const { token } = req.body;
+    const userId = req.user.id;
     if (!userId || !token) {
       return res.status(400).json({ message: 'userId and token are required' });
     }
@@ -1321,9 +1431,10 @@ app.post('/api/user/push-token', async (req, res) => {
 });
 
 // Delete User Expo Push Token on Logout
-app.delete('/api/user/push-token', async (req, res) => {
+app.delete('/api/user/push-token', authenticateJWT, async (req, res) => {
   try {
-    const { userId, token } = req.body;
+    const { token } = req.body;
+    const userId = req.user.id;
     if (!userId || !token) {
       return res.status(400).json({ message: 'userId and token are required' });
     }
@@ -1420,6 +1531,8 @@ app.get('/api/user/:id', async (req, res) => {
     }
     const userObj = user.toObject();
     delete userObj.password;
+    userObj.coverImage = userObj.cover;
+    userObj.avatar = userObj.avatarUrl;
     res.status(200).json({ success: true, user: userObj });
   } catch (error) {
     console.error('Error getting user profile:', error);
@@ -1453,7 +1566,7 @@ app.delete('/api/user/:id', async (req, res) => {
 
 
 // User Login Route (Email + Password)
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     
@@ -1472,12 +1585,13 @@ app.post('/api/login', async (req, res) => {
     user.lastActive = new Date();
     await user.save();
     
-    // Successful login - return user object and token (which is user._id)
+    // Successful login - return user object and signed JWT token
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
     const userObj = user.toObject();
     delete userObj.password;
     res.status(200).json({ 
       message: 'Login successful', 
-      token: user._id,
+      token: token,
       user: userObj
     });
   } catch (error) {
@@ -1500,7 +1614,7 @@ if (twilioAccountSid && twilioAuthToken) {
 }
 
 // POST /auth/send-email-otp - Generate & Send OTP (reused for SMS OTP via Twilio Verify)
-app.post('/auth/send-email-otp', async (req, res) => {
+app.post('/auth/send-email-otp', authLimiter, async (req, res) => {
   try {
     const { email, phoneNumber } = req.body;
     if (!email && !phoneNumber) {
@@ -1551,7 +1665,7 @@ app.post('/auth/send-email-otp', async (req, res) => {
 });
 
 // POST /auth/verify-email-otp - Verify OTP and Login (reused for SMS OTP via Twilio Verify)
-app.post('/auth/verify-email-otp', async (req, res) => {
+app.post('/auth/verify-email-otp', authLimiter, async (req, res) => {
   try {
     const { email, phoneNumber, otp } = req.body;
     if ((!email && !phoneNumber) || !otp) {
@@ -1602,14 +1716,15 @@ app.post('/auth/verify-email-otp', async (req, res) => {
     user.lastActive = new Date();
     await user.save();
 
-    // Successful login - return user object and token (which is user._id)
+    // Successful login - return user object and signed JWT token
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
     const userObj = user.toObject();
     delete userObj.password;
 
     res.status(200).json({ 
       success: true,
       message: 'Login successful', 
-      token: user._id,
+      token: token,
       user: userObj
     });
   } catch (error) {
@@ -1651,7 +1766,13 @@ app.get('/api/professionals/:role', async (req, res) => {
       return res.status(400).json({ message: 'Invalid role specified' });
     }
     const professionals = await User.find({ role }, '-password').sort({ createdAt: -1 });
-    res.status(200).json({ professionals });
+    const mappedProfessionals = professionals.map(p => {
+      const obj = p.toObject();
+      obj.coverImage = obj.cover;
+      obj.avatar = obj.avatarUrl;
+      return obj;
+    });
+    res.status(200).json({ professionals: mappedProfessionals });
   } catch (error) {
     console.error('Error fetching professionals:', error);
     res.status(500).json({ message: 'Error fetching professionals' });
@@ -1665,7 +1786,10 @@ app.get('/api/professional/:id', async (req, res) => {
     if (!professional) {
       return res.status(404).json({ message: 'Professional not found' });
     }
-    res.status(200).json({ professional });
+    const profObj = professional.toObject();
+    profObj.coverImage = profObj.cover;
+    profObj.avatar = profObj.avatarUrl;
+    res.status(200).json({ professional: profObj });
   } catch (error) {
     console.error('Error fetching professional:', error);
     res.status(500).json({ message: 'Error fetching professional' });
@@ -1981,12 +2105,23 @@ app.get('/api/featured-professionals/:userId', async (req, res) => {
     const topArchitects = scoredArchitects.slice(0, 1);
 
     const featured = [...topContractors, ...topClients, ...topArchitects].slice(0, 10);
+    const mappedFeatured = featured.map(item => {
+      if (item.type === 'professional' || item.role) {
+        return {
+          ...item,
+          coverImage: item.cover,
+          avatar: item.avatarUrl
+        };
+      }
+      return item;
+    });
+
     const contractorCount = await User.countDocuments({ role: 'Contractor' });
     const architectCount = await User.countDocuments({ role: 'Architect' });
     const labourCount = await User.countDocuments({ role: 'Labour' });
 
     res.status(200).json({
-      featured,
+      featured: mappedFeatured,
       counts: { Contractor: contractorCount.toString(), Architect: architectCount.toString(), Labour: labourCount.toString() }
     });
   } catch (error) {
@@ -2105,9 +2240,10 @@ const ProjectWorkspace = require('./models/ProjectWorkspace');
 const ProjectBid = require('./models/ProjectBid');
 
 // 1. Submit a Contract Request
-app.post('/api/contract-requests', async (req, res) => {
+app.post('/api/contract-requests', authenticateJWT, async (req, res) => {
   try {
-    const { client, professional, title, projectType, location, budget, startDate, description, timeline, requirements, mediaUrls, attachmentUrl, attachmentName } = req.body;
+    const { professional, title, projectType, location, budget, startDate, description, timeline, requirements, mediaUrls, attachmentUrl, attachmentName } = req.body;
+    const client = req.user.id;
     
     if (!client || !title || !location || !budget) {
       return res.status(400).json({ message: 'Missing required project details' });
@@ -2139,7 +2275,7 @@ app.post('/api/contract-requests', async (req, res) => {
       if (professional) {
         // Direct invitation / application flow
         const professionalUser = await User.findById(professional);
-        const senderId = req.body.senderId || client; // default to client if not specified
+        const senderId = req.user.id;
         const isClientSender = senderId.toString() === client.toString();
 
         if (isClientSender) {
@@ -2744,9 +2880,9 @@ app.get('/api/project-bids/request/:requestId/count', async (req, res) => {
 });
 
 // 4. Get all workspaces for a user
-app.get('/api/project-workspaces/user/:userId', async (req, res) => {
+app.get('/api/project-workspaces/user/:userId', authenticateJWT, async (req, res) => {
   try {
-    const { userId } = req.params;
+    const userId = req.user.id;
     
     // Cast userId to ObjectId if valid to ensure mongoose matches correctly
     const userObjId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : null;
@@ -2906,12 +3042,12 @@ app.post('/api/project-workspaces/hire', async (req, res) => {
 });
 
 // 5. Get workspace details by ID (With membership check)
-app.get('/api/project-workspaces/:id', async (req, res) => {
+app.get('/api/project-workspaces/:id', authenticateJWT, async (req, res) => {
   try {
-    const { userId } = req.query;
-    if (!userId) {
-      return res.status(400).json({ message: 'User ID is required for access validation' });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid workspace ID format' });
     }
+    const userId = req.user.id;
 
     const workspace = await ProjectWorkspace.findById(req.params.id)
       .populate('client', 'fullName email phoneNumber role city avatarUrl')
@@ -2952,14 +3088,14 @@ app.get('/api/project-workspaces/:id', async (req, res) => {
 });
 
 // 6. Send message in a workspace (With membership check)
-app.post('/api/project-workspaces/:id/messages', async (req, res) => {
+app.post('/api/project-workspaces/:id/messages', authenticateJWT, async (req, res) => {
   try {
     const { id } = req.params;
-    const { sender, text, attachment } = req.body;
-
-    if (!sender) {
-      return res.status(400).json({ message: 'Sender ID is required' });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid workspace ID format' });
     }
+    const { text, attachment } = req.body;
+    const sender = req.user.id;
 
     const workspace = await ProjectWorkspace.findById(id);
     if (!workspace) {
@@ -5214,10 +5350,13 @@ app.get('/api/conversations/user/:userId', async (req, res) => {
 });
 
 // 3. Get messages for a conversation
-app.get('/api/conversations/:conversationId/messages', async (req, res) => {
+app.get('/api/conversations/:conversationId/messages', authenticateJWT, async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const { userId } = req.query;
+    if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+      return res.status(400).json({ message: 'Invalid conversation ID format' });
+    }
+    const userId = req.user.id;
 
     const conversation = await Conversation.findById(conversationId)
       .populate('messages.sender', 'fullName avatarUrl role')
@@ -5225,6 +5364,11 @@ app.get('/api/conversations/:conversationId/messages', async (req, res) => {
 
     if (!conversation) {
       return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    const isPart = conversation.participants && conversation.participants.some(p => p._id.toString() === userId.toString());
+    if (!isPart) {
+      return res.status(403).json({ message: 'Access denied: You are not a participant in this conversation.' });
     }
 
     // Mark messages as read for this user
@@ -5267,18 +5411,27 @@ app.get('/api/conversations/:conversationId/messages', async (req, res) => {
 });
 
 // 3. Send a message in a conversation (REST fallback + socket broadcast)
-app.post('/api/conversations/:conversationId/messages', async (req, res) => {
+app.post('/api/conversations/:conversationId/messages', authenticateJWT, async (req, res) => {
   try {
     const { conversationId } = req.params;
-    const { senderId, text, attachment } = req.body;
+    if (!mongoose.Types.ObjectId.isValid(conversationId)) {
+      return res.status(400).json({ message: 'Invalid conversation ID format' });
+    }
+    const { text, attachment } = req.body;
+    const senderId = req.user.id;
 
     if (!senderId || (!text && !attachment)) {
-      return res.status(400).json({ message: 'senderId and text (or attachment) are required' });
+      return res.status(400).json({ message: 'text (or attachment) is required' });
     }
 
     const conversation = await Conversation.findById(conversationId);
     if (!conversation) {
       return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    const isPart = conversation.participants && conversation.participants.some(p => p.toString() === senderId.toString());
+    if (!isPart) {
+      return res.status(403).json({ message: 'Access denied: You are not a participant in this conversation.' });
     }
 
     // Create the new message — only include attachment if it has a valid URL
@@ -5512,12 +5665,13 @@ app.post('/api/project-workspaces/:id/site-visits', async (req, res) => {
 });
 
 // Test trigger endpoint to trigger notifications immediately
-app.post('/api/notifications/test-trigger', async (req, res) => {
+app.post('/api/notifications/test-trigger', authenticateJWT, async (req, res) => {
   try {
-    const { type, recipientId, senderId, title, location, amount, documentName, visitDate } = req.body;
+    const { type, recipientId, title, location, amount, documentName, visitDate } = req.body;
+    const senderId = req.user.id;
     
     if (!recipientId || !senderId) {
-      return res.status(400).json({ message: 'recipientId and senderId are required' });
+      return res.status(400).json({ message: 'recipientId is required' });
     }
 
     const senderUser = await User.findById(senderId);

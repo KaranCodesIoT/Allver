@@ -17,12 +17,42 @@ import { I18nProvider } from '../utils/i18n';
 import { getStoredUser, getStoredLanguage, getToken, removeToken, removeStoredUser, saveStoredUser } from '@/constants/Auth';
 import { UnreadMessageProvider } from '../context/UnreadMessageContext';
 import { UnreadActivityProvider } from '../context/UnreadActivityContext';
+import { CallProvider } from '../context/CallContext';
 
 // Ignore specific warning logs in Expo Go / Development
 LogBox.ignoreLogs([
   'expo-notifications: Android Push notifications',
   'Notifications.removeNotificationSubscription',
 ]);
+
+// Intercept all HTTP requests to automatically append Authorization header if logged in
+const originalFetch = global.fetch;
+(global as any).fetch = async (input: any, init: any) => {
+  const url = typeof input === 'string' ? input : (input && input.url) ? input.url : '';
+  if (url.startsWith(BACKEND_URL)) {
+    const token = await getToken();
+    if (token) {
+      init = init || {};
+      init.headers = init.headers || {};
+      if (init.headers instanceof Headers) {
+        if (!init.headers.has('Authorization')) {
+          init.headers.set('Authorization', `Bearer ${token}`);
+        }
+      } else if (Array.isArray(init.headers)) {
+        const hasAuth = init.headers.some(([key]) => key.toLowerCase() === 'authorization');
+        if (!hasAuth) {
+          init.headers.push(['Authorization', `Bearer ${token}`]);
+        }
+      } else {
+        const hasAuth = Object.keys(init.headers).some(key => key.toLowerCase() === 'authorization');
+        if (!hasAuth) {
+          (init.headers as any)['Authorization'] = `Bearer ${token}`;
+        }
+      }
+    }
+  }
+  return originalFetch(input, init);
+};
 
 // Keep the splash screen visible until we hide it
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -171,7 +201,7 @@ export default function RootLayout() {
               await saveStoredUser(data.user);
               (global as any).currentUser = data.user;
             }
-          } else if (res.status === 404 || res.status === 401) {
+          } else if (res.status === 404 || res.status === 401 || res.status === 403) {
             console.log('[RootLayout] Session validation failed on background check. Logging out...');
             await removeToken();
             await removeStoredUser();
@@ -342,8 +372,9 @@ export default function RootLayout() {
     <I18nProvider>
       <UnreadMessageProvider>
         <UnreadActivityProvider>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <View style={{ flex: 1 }}>
+          <CallProvider>
+            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+              <View style={{ flex: 1 }}>
           <Stack>
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="choose-language" options={{ headerShown: false }} />
@@ -409,8 +440,9 @@ export default function RootLayout() {
 
 
 
-        </View>
-      </ThemeProvider>
+              </View>
+            </ThemeProvider>
+          </CallProvider>
         </UnreadActivityProvider>
       </UnreadMessageProvider>
     </I18nProvider>

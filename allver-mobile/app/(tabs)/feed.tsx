@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Alert, Modal, TextInput, RefreshControl } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Alert, Modal, TextInput, RefreshControl, KeyboardAvoidingView } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -83,6 +83,7 @@ const mapBackendPostToFeed = (bp: any, currentUserId?: string): PostData => {
 
 export default function DiscoverScreen() {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const [activeCategory, setActiveCategory] = useState('All');
   const [posts, setPosts] = useState<PostData[]>(INITIAL_POSTS);
   const [locationModalVisible, setLocationModalVisible] = useState(false);
@@ -1166,13 +1167,16 @@ export default function DiscoverScreen() {
           backgroundColor: 'rgba(0, 0, 0, 0.5)',
           justifyContent: 'flex-end'
         }}>
-          <View style={{
-            backgroundColor: COLORS.white,
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
-            height: '75%',
-            paddingBottom: Platform.OS === 'ios' ? 24 : 12
-          }}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{
+              backgroundColor: COLORS.white,
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              height: '75%',
+              width: '100%'
+            }}
+          >
             {/* Modal Header */}
             <View style={{
               flexDirection: 'row',
@@ -1229,7 +1233,8 @@ export default function DiscoverScreen() {
               flexDirection: 'row',
               alignItems: 'center',
               paddingHorizontal: 16,
-              paddingVertical: 12,
+              paddingTop: 12,
+              paddingBottom: Platform.OS === 'ios' ? (insets.bottom || 12) : 12,
               borderTopWidth: 1,
               borderTopColor: '#F3F4F6',
               backgroundColor: COLORS.white
@@ -1271,7 +1276,7 @@ export default function DiscoverScreen() {
                 />
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
     </SafeAreaView>

@@ -129,7 +129,7 @@ export default function LabourDetailScreen() {
   }, [id]);
 
   const displayName = professionalData?.fullName || name;
-  const displayAvatar = resolveAvatarUrl(professionalData?.avatarUrl) || avatar;
+  const displayAvatar = resolveAvatarUrl(professionalData?.avatarUrl || professionalData?.avatar, professionalData?.updatedAt) || avatar;
   const displayRating = professionalData?.rating?.toString() || rating;
   const displayReviews = professionalData?.reviews?.toString() || reviews;
   const displayLocation = professionalData?.city || location;

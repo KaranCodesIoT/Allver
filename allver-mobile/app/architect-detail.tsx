@@ -71,6 +71,9 @@ export default function ArchitectDetailScreen() {
   const [portfolioProjects, setPortfolioProjects] = useState<any[]>([]);
   const [userUploadedPosts, setUserUploadedPosts] = useState<any[]>([]);
 
+  const displayCoverImage = resolveAvatarUrl(professionalData?.cover || professionalData?.coverImage, professionalData?.updatedAt) || coverImage;
+  const displayAvatar = resolveAvatarUrl(professionalData?.avatarUrl || professionalData?.avatar, professionalData?.updatedAt) || avatar;
+
   // Listen for real-time profile updates
   useEffect(() => {
     if (!architectId) return;
@@ -515,9 +518,9 @@ export default function ArchitectDetailScreen() {
       <ScrollView bounces={true} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Cover & Profile Avatar Container */}
         <View style={styles.coverContainer}>
-          <Image source={{ uri: coverImage }} style={styles.coverImage} contentFit="cover" />
+          <Image source={{ uri: displayCoverImage }} style={styles.coverImage} contentFit="cover" />
           <View style={styles.avatarWrapper}>
-            <Image source={avatar ? { uri: avatar } : require('../assets/android-icon-foreground.png')} style={styles.avatarImage} contentFit={avatar ? "cover" : "contain"} />
+            <Image source={displayAvatar ? { uri: displayAvatar } : require('../assets/android-icon-foreground.png')} style={styles.avatarImage} contentFit={displayAvatar ? "cover" : "contain"} />
             <View style={styles.verifiedBadge}>
               <Feather name="check" size={12} color={COLORS.white} />
             </View>

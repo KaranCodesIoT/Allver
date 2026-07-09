@@ -97,7 +97,13 @@ notificationSchema.post('save', async function(doc) {
     }
 
     // Filter out invalid/empty tokens
-    targetTokens = targetTokens.filter(token => token && token.startsWith('ExponentPushToken'));
+    // Validate Expo Push Token in a future-proof manner
+    const isExpoPushToken = (token) => {
+      if (typeof token !== 'string') return false;
+      return /^[a-zA-Z0-9]+PushToken\[.+\]$/.test(token) || token.startsWith('ExpoPushToken') || token.startsWith('ExponentPushToken');
+    };
+
+    targetTokens = targetTokens.filter(isExpoPushToken);
     if (targetTokens.length === 0) {
       console.log(`[Push Notification] No valid push tokens found for ${recipient.fullName}.`);
       return;
@@ -127,6 +133,8 @@ notificationSchema.post('save', async function(doc) {
     const textLower = doc.text.toLowerCase();
     if (resolvedCategory === 'messages') {
       title = '💬 New Message';
+    } else if (textLower.includes('incoming voice call') || textLower.includes('📞')) {
+      title = '📞 Incoming Call';
     } else if (resolvedCategory === 'projectUpdates') {
       title = textLower.includes('applied') || textLower.includes('application') ? '👥 New Application' : '📩 Project Invitation';
     } else if (resolvedCategory === 'contracts') {

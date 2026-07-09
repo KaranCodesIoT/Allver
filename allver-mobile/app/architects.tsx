@@ -123,8 +123,8 @@ export default function ArchitectsScreen() {
       params: {
         id: architect._id,
         name: architect.fullName,
-        avatar: resolveAvatarUrl(architect.avatarUrl) || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
-        coverImage: resolveAvatarUrl(architect.cover) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
+        avatar: resolveAvatarUrl(architect.avatarUrl, architect.updatedAt) || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
+        coverImage: resolveAvatarUrl(architect.cover, architect.updatedAt) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
         rating: (architect.rating || 4.5).toString(),
         reviews: (architect.reviews || 0).toString(),
         location: architect.city,

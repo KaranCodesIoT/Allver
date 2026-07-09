@@ -83,7 +83,8 @@ const userSchema = new mongoose.Schema({
     systemAlerts: { type: Boolean, default: true }
   },
   language: { type: String, default: 'en' },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
 });
 
 module.exports = mongoose.model('User', userSchema);
