@@ -35,6 +35,22 @@ const COLORS = {
   starGold: '#FBBF24',
 };
 
+const isArrayEqual = (a: any[], b: any[], keyProps: string[] = ['_id', 'status', 'updatedAt']) => {
+  if (!a || !b) return false;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const itemA = a[i];
+    const itemB = b[i];
+    if (!itemA || !itemB) return false;
+    for (const key of keyProps) {
+      const valA = typeof itemA === 'object' ? itemA[key] : itemA;
+      const valB = typeof itemB === 'object' ? itemB[key] : itemB;
+      if (valA !== valB) return false;
+    }
+  }
+  return true;
+};
+
 // Custom data matching the mockup screenshot
 const PROJECTS_DATA = [
   {
@@ -375,7 +391,11 @@ export default function DashboardScreen() {
             if (!aFinished && bFinished) return -1;
             return 0;
           });
-          setClientRequests(sortedMerged);
+          
+          if (!isArrayEqual(clientRequests, sortedMerged, ['_id', 'status', 'updatedAt'])) {
+            setClientRequests(sortedMerged);
+          }
+          (global as any).cachedRequests = sortedMerged;
         }
       } else if (currentUser.role === 'Contractor' || currentUser.role === 'Architect' || currentUser.role === 'Labour') {
         // Fetch workspaces where this professional/labour is assigned
@@ -445,12 +465,26 @@ export default function DashboardScreen() {
           if (a.status !== 'Invitation' && b.status === 'Invitation') return 1;
           return 0;
         });
-        setClientRequests(sortedMapped);
+
+        if (!isArrayEqual(clientRequests, sortedMapped, ['_id', 'status'])) {
+          setClientRequests(sortedMapped);
+        }
+        (global as any).cachedRequests = sortedMapped;
       }
     } catch (err) {
       console.error('Error fetching projects/requests:', err);
     }
-  }, [currentUser?._id, currentUser?.role]);
+  }, [currentUser?._id, currentUser?.role, clientRequests]);
+
+  // Load cached requests/activities on mount
+  useEffect(() => {
+    if ((global as any).cachedRequests) {
+      setClientRequests((global as any).cachedRequests);
+    }
+    if ((global as any).cachedActivities) {
+      setRecentActivities((global as any).cachedActivities);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -578,19 +612,28 @@ export default function DashboardScreen() {
               isClickable: true
             };
           });
-          setRecentActivities(mapped);
+          if (!isArrayEqual(recentActivities, mapped, ['id', 'title', 'time'])) {
+            setRecentActivities(mapped);
+          }
+          (global as any).cachedActivities = mapped;
         } else {
-          setRecentActivities([]);
+          if (recentActivities.length > 0) {
+            setRecentActivities([]);
+          }
+          (global as any).cachedActivities = [];
         }
       } catch (err) {
         console.error('Error fetching dashboard activities:', err);
-        setRecentActivities([]);
+        if (recentActivities.length > 0) {
+          setRecentActivities([]);
+        }
+        (global as any).cachedActivities = [];
       } finally {
         setActivitiesLoading(false);
       }
     };
     run();
-  }, [currentUser?._id]);
+  }, [currentUser?._id, recentActivities]);
 
   useEffect(() => { fetchActivities(); }, [currentUser?._id]);
 
@@ -622,8 +665,10 @@ export default function DashboardScreen() {
         try { user = JSON.parse(stored); } catch (e) {}
       }
     }
-    if (user) setCurrentUser(user);
-  }, []);
+    if (user && (!currentUser || user._id !== currentUser._id || user.updatedAt !== currentUser.updatedAt)) {
+      setCurrentUser(user);
+    }
+  }, [currentUser]);
 
   useEffect(() => { loadCurrentUser(); }, []);
 

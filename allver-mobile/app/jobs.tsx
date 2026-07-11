@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator, FlatList, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -95,6 +95,7 @@ export default function JobsScreen() {
   useEffect(() => {
     const handleNewContractRequest = (newRequest: any) => {
       if (!newRequest || !newRequest._id) return;
+      if (newRequest.professional) return; // Skip direct requests
       console.log('[Jobs] Real-time job/contract request received:', newRequest);
       setJobs((prevJobs) => {
         if (prevJobs.some((j) => j._id === newRequest._id)) return prevJobs;
@@ -133,6 +134,11 @@ export default function JobsScreen() {
 
   // Filter logic
   const filteredJobs = jobs.filter((job) => {
+    // Exclude direct hire requests (where professional is assigned) from the Jobs page
+    if (job.professional) {
+      return false;
+    }
+
     // If logged-in user is a Client, only show their own posted contracts
     if (currentUser?.role === 'Client') {
       const isMyJob = job.client?._id === currentUser._id || job.client === currentUser._id;
@@ -204,130 +210,137 @@ export default function JobsScreen() {
           <ActivityIndicator size="small" color={COLORS.green} />
         </View>
       ) : (
-        <ScrollView 
+        <FlatList
+          data={filteredJobs}
+          keyExtractor={(item) => item._id}
           contentContainerStyle={styles.listContainer}
           showsVerticalScrollIndicator={false}
-        >
-          {filteredJobs.length === 0 ? (
+          renderItem={({ item }) => {
+            const clientName = item.client?.fullName || 'Client';
+            const budgetText = item.budget ? `₹ ${item.budget}` : 'TBD';
+            const projectType = item.projectType || 'General';
+
+            const isOwner = currentUser?._id && (item.client?._id === currentUser._id || item.client === currentUser._id);
+
+            return (
+              <View style={styles.jobCard}>
+                {/* Category and Location Row */}
+                <View style={styles.cardHeader}>
+                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{projectType}</Text>
+                    </View>
+                    {isOwner && (
+                      <View style={[styles.badge, { backgroundColor: '#F3E8FF' }]}>
+                        <Text style={[styles.badgeText, { color: '#7C3AED' }]}>Your Post</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {item.status === 'Accepted' && (
+                      <View style={[styles.badge, { backgroundColor: '#E0F2FE' }]}>
+                        <Text style={[styles.badgeText, { color: '#0284C7' }]}>In Progress</Text>
+                      </View>
+                    )}
+                    <View style={styles.locationRow}>
+                      <Feather name="map-pin" size={14} color={COLORS.textMuted} />
+                      <Text style={styles.locationText}>{item.location}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Title */}
+                <Text style={styles.jobTitle}>{item.title}</Text>
+
+                {/* Client Info */}
+                <Text style={styles.postedBy}>Posted by: <Text style={{ fontWeight: '600' }}>{clientName}</Text></Text>
+
+                {/* Details Block (Budget & Timeline) */}
+                <View style={styles.detailsBlock}>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>Estimated Budget</Text>
+                    <Text style={styles.detailValue}>{budgetText}</Text>
+                  </View>
+                  <View style={styles.detailItem}>
+                    <Text style={styles.detailLabel}>Timeline</Text>
+                    <Text style={styles.detailValue}>{item.timeline || 'Flexible'}</Text>
+                  </View>
+                </View>
+
+                {/* Requirements Chips */}
+                {item.requirements && item.requirements.length > 0 && (
+                  <View style={styles.requirementsRow}>
+                    {item.requirements.slice(0, 4).map((req: string, idx: number) => (
+                      <View key={idx} style={styles.reqChip}>
+                        <Text style={styles.reqChipText}>{req}</Text>
+                      </View>
+                    ))}
+                    {item.requirements.length > 4 && (
+                      <View style={styles.reqChipMore}>
+                        <Text style={styles.reqChipTextMore}>+{item.requirements.length - 4}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* Description */}
+                {item.description ? (
+                  <Text style={styles.description} numberOfLines={2}>
+                    {item.description}
+                  </Text>
+                ) : null}
+
+                {/* Action Button */}
+                <TouchableOpacity
+                  style={[styles.actionBtn, isOwner && { backgroundColor: '#7C3AED' }]}
+                  onPress={() => {
+                    if (isOwner) {
+                      router.push({
+                        pathname: '/project-applications',
+                        params: {
+                          requestId: item._id,
+                          title: item.title,
+                          location: item.location,
+                          budget: budgetText,
+                          timeline: item.timeline || 'Flexible',
+                          description: item.description || '',
+                          requirements: item.requirements ? item.requirements.join(',') : ''
+                        }
+                      });
+                    } else {
+                      router.push({
+                        pathname: '/project-detail',
+                        params: {
+                          clientId: item.client?._id || item.client,
+                          titleHint: item.title
+                        }
+                      });
+                    }
+                  }}
+                >
+                  <Text style={styles.actionBtnText}>
+                    {isOwner ? 'View Details / Bids' : 'View Details / Apply'}
+                  </Text>
+                  <Feather name="arrow-right" size={16} color={COLORS.white} />
+                </TouchableOpacity>
+              </View>
+            );
+          }}
+          ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Feather name="briefcase" size={48} color={COLORS.textMuted} />
               <Text style={styles.emptyTitle}>No Contracts Found</Text>
               <Text style={styles.emptySubtitle}>Try adjusting your filters or search query.</Text>
             </View>
-          ) : (
-            filteredJobs.map((item) => {
-              const clientName = item.client?.fullName || 'Client';
-              const budgetText = item.budget ? `₹ ${item.budget}` : 'TBD';
-              const projectType = item.projectType || 'General';
-
-              const isOwner = currentUser?._id && (item.client?._id === currentUser._id || item.client === currentUser._id);
-
-              return (
-                <View key={item._id} style={styles.jobCard}>
-                  {/* Category and Location Row */}
-                  <View style={styles.cardHeader}>
-                    <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{projectType}</Text>
-                      </View>
-                      {isOwner && (
-                        <View style={[styles.badge, { backgroundColor: '#F3E8FF' }]}>
-                          <Text style={[styles.badgeText, { color: '#7C3AED' }]}>Your Post</Text>
-                        </View>
-                      )}
-                    </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      {item.status === 'Accepted' && (
-                        <View style={[styles.badge, { backgroundColor: '#E0F2FE' }]}>
-                          <Text style={[styles.badgeText, { color: '#0284C7' }]}>In Progress</Text>
-                        </View>
-                      )}
-                      <View style={styles.locationRow}>
-                        <Feather name="map-pin" size={14} color={COLORS.textMuted} />
-                        <Text style={styles.locationText}>{item.location}</Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Title */}
-                  <Text style={styles.jobTitle}>{item.title}</Text>
-
-                  {/* Client Info */}
-                  <Text style={styles.postedBy}>Posted by: <Text style={{ fontWeight: '600' }}>{clientName}</Text></Text>
-
-                  {/* Details Block (Budget & Timeline) */}
-                  <View style={styles.detailsBlock}>
-                    <View style={styles.detailItem}>
-                      <Text style={styles.detailLabel}>Estimated Budget</Text>
-                      <Text style={styles.detailValue}>{budgetText}</Text>
-                    </View>
-                    <View style={styles.detailItem}>
-                      <Text style={styles.detailLabel}>Timeline</Text>
-                      <Text style={styles.detailValue}>{item.timeline || 'Flexible'}</Text>
-                    </View>
-                  </View>
-
-                  {/* Requirements Chips */}
-                  {item.requirements && item.requirements.length > 0 && (
-                    <View style={styles.requirementsRow}>
-                      {item.requirements.slice(0, 4).map((req: string, idx: number) => (
-                        <View key={idx} style={styles.reqChip}>
-                          <Text style={styles.reqChipText}>{req}</Text>
-                        </View>
-                      ))}
-                      {item.requirements.length > 4 && (
-                        <View style={styles.reqChipMore}>
-                          <Text style={styles.reqChipTextMore}>+{item.requirements.length - 4}</Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Description */}
-                  {item.description ? (
-                    <Text style={styles.description} numberOfLines={2}>
-                      {item.description}
-                    </Text>
-                  ) : null}
-
-                  {/* Action Button */}
-                  <TouchableOpacity
-                    style={[styles.actionBtn, isOwner && { backgroundColor: '#7C3AED' }]}
-                    onPress={() => {
-                      if (isOwner) {
-                        router.push({
-                          pathname: '/project-applications',
-                          params: {
-                            requestId: item._id,
-                            title: item.title,
-                            location: item.location,
-                            budget: budgetText,
-                            timeline: item.timeline || 'Flexible',
-                            description: item.description || '',
-                            requirements: item.requirements ? item.requirements.join(',') : ''
-                          }
-                        });
-                      } else {
-                        router.push({
-                          pathname: '/project-detail',
-                          params: {
-                            clientId: item.client?._id || item.client,
-                            titleHint: item.title
-                          }
-                        });
-                      }
-                    }}
-                  >
-                    <Text style={styles.actionBtnText}>
-                      {isOwner ? 'View Details / Bids' : 'View Details / Apply'}
-                    </Text>
-                    <Feather name="arrow-right" size={16} color={COLORS.white} />
-                  </TouchableOpacity>
-                </View>
-              );
-            })
-          )}
-        </ScrollView>
+          }
+          refreshControl={
+            <RefreshControl
+              refreshing={loading}
+              onRefresh={fetchJobs}
+              colors={[COLORS.green]}
+            />
+          }
+        />
       )}
     </SafeAreaView>
   );

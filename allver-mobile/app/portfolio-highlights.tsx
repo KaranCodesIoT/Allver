@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Modal, useWindowDimensions, Alert, TextInput } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Modal, useWindowDimensions, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -83,6 +83,135 @@ export default function PortfolioHighlightsScreen() {
   const [editTitle, setEditTitle] = useState('');
   const [editDesc, setEditDesc] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Comment & Like states
+  const [commentModalVisible, setCommentModalVisible] = useState(false);
+  const [activeHighlightId, setActiveHighlightId] = useState<string | null>(null);
+  const [commentText, setCommentText] = useState('');
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+
+  // Unified Media Viewer states
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerMediaList, setViewerMediaList] = useState<string[]>([]);
+  const [viewerActiveIndex, setViewerActiveIndex] = useState(0);
+  const [viewerTitle, setViewerTitle] = useState('');
+  const viewerScrollRef = React.useRef<ScrollView>(null);
+
+  const handleOpenViewer = (mediaUrls: string[], title: string, startIndex: number = 0) => {
+    setViewerMediaList(mediaUrls);
+    setViewerTitle(title);
+    setViewerActiveIndex(startIndex);
+    setViewerVisible(true);
+    setTimeout(() => {
+      viewerScrollRef.current?.scrollTo({ x: startIndex * width, animated: false });
+    }, 100);
+  };
+
+  const handleLikePress = async (highlightId: string) => {
+    if (!currentUser) {
+      Alert.alert('Login Required', 'Please log in to like this highlight.');
+      return;
+    }
+
+    const ownerId = userId || currentUser._id;
+    
+    // Optimistic UI update
+    setPortfolioProjects(prev => prev.map(item => {
+      if (item.id === highlightId) {
+        const likedBy = [...(item.likedBy || [])];
+        const idx = likedBy.indexOf(currentUser._id);
+        let nextLikes = item.likes || 0;
+        if (idx > -1) {
+          likedBy.splice(idx, 1);
+          nextLikes = Math.max(0, nextLikes - 1);
+        } else {
+          likedBy.push(currentUser._id);
+          nextLikes += 1;
+        }
+        return {
+          ...item,
+          likedBy,
+          likes: nextLikes
+        };
+      }
+      return item;
+    }));
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/professional/${ownerId}/portfolio-highlights/${highlightId}/like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: currentUser._id })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setPortfolioProjects(prev => prev.map(item => {
+          if (item.id === highlightId) {
+            return {
+              ...item,
+              likes: data.likes,
+              likedBy: data.likedBy
+            };
+          }
+          return item;
+        }));
+      }
+    } catch (err) {
+      console.error('Error liking portfolio highlight:', err);
+    }
+  };
+
+  const handleCommentPress = (highlightId: string) => {
+    if (!currentUser) {
+      Alert.alert('Login Required', 'Please log in to comment.');
+      return;
+    }
+    setActiveHighlightId(highlightId);
+    setCommentText('');
+    setCommentModalVisible(true);
+  };
+
+  const handleSendComment = async () => {
+    if (!commentText.trim() || !activeHighlightId || !currentUser) return;
+    
+    setIsSubmittingComment(true);
+    const ownerId = userId || currentUser._id;
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/professional/${ownerId}/portfolio-highlights/${activeHighlightId}/comment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser._id,
+          text: commentText.trim()
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setCommentText('');
+        setPortfolioProjects(prev => prev.map(item => {
+          if (item.id === activeHighlightId) {
+            return {
+              ...item,
+              comments: data.commentsCount,
+              commentsList: data.commentsList
+            };
+          }
+          return item;
+        }));
+      } else {
+        const err = await res.json();
+        Alert.alert('Error', err.message || 'Failed to post comment.');
+      }
+    } catch (err) {
+      console.error('Error posting comment:', err);
+      Alert.alert('Error', 'Failed to submit comment due to network error.');
+    } finally {
+      setIsSubmittingComment(false);
+    }
+  };
 
   const handleDeleteHighlight = (highlightId: string) => {
     if (!currentUser?._id) return;
@@ -201,6 +330,10 @@ export default function PortfolioHighlightsScreen() {
               requirements: item.requirements || [],
               image: (item.mediaUrls && item.mediaUrls.length > 0) ? item.mediaUrls[0] : (PROJECT_TYPE_IMAGES[item.projectType] || PROJECT_TYPE_IMAGES['General']),
               createdAt: item.createdAt,
+              likes: item.likes || 0,
+              comments: item.comments || 0,
+              likedBy: item.likedBy || [],
+              commentsList: item.commentsList || [],
             }));
             setPortfolioProjects(mapped);
           } else {
@@ -389,14 +522,15 @@ export default function PortfolioHighlightsScreen() {
     return (
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
         {portfolioProjects.map((item) => {
-          const mediaUrl = item.mediaUrls && item.mediaUrls.length > 0 ? item.mediaUrls[0] : item.image;
-          const isVideo = isVideoUrl(mediaUrl);
-          
+          const firstMedia = (item.mediaUrls && item.mediaUrls.length > 0) ? item.mediaUrls[0] : item.image;
+          const isVideo = isVideoUrl(firstMedia);
+          const totalMediaCount = item.mediaUrls?.length || 1;
+
           return (
             <TouchableOpacity
               key={item.id}
               style={{
-                width: (width - 44) / 2,
+                width: (width - 76) / 2,
                 backgroundColor: COLORS.white,
                 borderRadius: 12,
                 borderWidth: 1,
@@ -410,61 +544,52 @@ export default function PortfolioHighlightsScreen() {
                 elevation: 1,
               }}
               onPress={() => {
-                if (isVideo) {
-                  handleOpenVideo(mediaUrl, item.title);
-                } else {
-                  handleOpenPhoto(mediaUrl, item.title);
-                }
+                const urls = (item.mediaUrls && item.mediaUrls.length > 0) ? item.mediaUrls : [item.image];
+                handleOpenViewer(urls, item.title, 0);
               }}
               activeOpacity={0.9}
             >
-              {/* Media Thumbnail */}
-              <View style={{ width: '100%', height: (width - 44) / 2, backgroundColor: '#000000', position: 'relative' }}>
+              <View style={{ width: '100%', height: (width - 76) / 2, backgroundColor: '#111827', position: 'relative', justifyContent: 'center', alignItems: 'center' }}>
                 {isVideo ? (
-                  <Video
-                    source={{ uri: mediaUrl }}
-                    style={{ width: '100%', height: '100%' }}
-                    resizeMode={ResizeMode.COVER}
-                    shouldPlay={false}
-                    useNativeControls={false}
-                  />
+                  <View style={{ width: '100%', height: '100%', backgroundColor: '#1F2937', justifyContent: 'center', alignItems: 'center' }}>
+                    <Feather name="video" size={32} color="rgba(255, 255, 255, 0.4)" />
+                  </View>
                 ) : (
-                  <Image source={{ uri: mediaUrl }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                  <Image source={{ uri: firstMedia }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
                 )}
                 {isVideo && (
                   <View style={{
                     ...StyleSheet.absoluteFillObject,
-                    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.25)',
                     justifyContent: 'center',
                     alignItems: 'center',
                   }}>
-                    <Feather name="play-circle" size={36} color={COLORS.white} />
+                    <Feather name="play-circle" size={40} color={COLORS.white} />
                   </View>
                 )}
-
-                {/* Edit / Delete overlays if own profile */}
+                {totalMediaCount > 1 && (
+                  <View style={{
+                    position: 'absolute', bottom: 8, right: 8,
+                    backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 10,
+                    paddingHorizontal: 7, paddingVertical: 3,
+                    flexDirection: 'row', alignItems: 'center', gap: 3,
+                  }}>
+                    <Feather name="image" size={10} color={COLORS.white} />
+                    <Text style={{ fontSize: 10, color: COLORS.white, fontWeight: '700' }}>1/{totalMediaCount}</Text>
+                  </View>
+                )}
                 {(!userId || userId === currentUser?._id) && (
                   <View style={{
-                    position: 'absolute',
-                    top: 8,
-                    right: 8,
-                    flexDirection: 'row',
-                    gap: 6,
-                    zIndex: 20,
+                    position: 'absolute', top: 8, right: 8,
+                    flexDirection: 'row', gap: 6, zIndex: 20,
                   }}>
                     <TouchableOpacity
                       style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 14,
+                        width: 28, height: 28, borderRadius: 14,
                         backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 1 },
-                        shadowOpacity: 0.25,
-                        shadowRadius: 2,
-                        elevation: 3,
+                        justifyContent: 'center', alignItems: 'center',
+                        shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.25, shadowRadius: 2, elevation: 3,
                       }}
                       onPress={() => handleEditHighlight(item)}
                       activeOpacity={0.8}
@@ -473,17 +598,11 @@ export default function PortfolioHighlightsScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 14,
+                        width: 28, height: 28, borderRadius: 14,
                         backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 1 },
-                        shadowOpacity: 0.25,
-                        shadowRadius: 2,
-                        elevation: 3,
+                        justifyContent: 'center', alignItems: 'center',
+                        shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.25, shadowRadius: 2, elevation: 3,
                       }}
                       onPress={() => handleDeleteHighlight(item.id)}
                       activeOpacity={0.8}
@@ -493,8 +612,6 @@ export default function PortfolioHighlightsScreen() {
                   </View>
                 )}
               </View>
-
-              {/* Description Info */}
               <View style={{ padding: 10 }}>
                 <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textDark }} numberOfLines={1}>
                   {item.title}
@@ -504,6 +621,47 @@ export default function PortfolioHighlightsScreen() {
                     {item.description}
                   </Text>
                 ) : null}
+
+                {/* Like & Comment Bar */}
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginTop: 10,
+                  paddingTop: 8,
+                  borderTopWidth: 1,
+                  borderTopColor: COLORS.border,
+                }}>
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    onPress={() => handleLikePress(item.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={item.likedBy?.includes(currentUser?._id) ? "heart" : "heart-outline"}
+                      size={16}
+                      color={item.likedBy?.includes(currentUser?._id) ? "#EF4444" : COLORS.textMuted}
+                    />
+                    <Text style={{ fontSize: 11, color: COLORS.textDark, fontWeight: '600' }}>
+                      {item.likes || 0}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    onPress={() => handleCommentPress(item.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name="chatbubble-outline"
+                      size={15}
+                      color={COLORS.textMuted}
+                    />
+                    <Text style={{ fontSize: 11, color: COLORS.textDark, fontWeight: '600' }}>
+                      {item.comments || 0}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </TouchableOpacity>
           );
@@ -511,6 +669,9 @@ export default function PortfolioHighlightsScreen() {
       </View>
     );
   };
+
+  const activeHighlight = portfolioProjects.find(item => item.id === activeHighlightId);
+  const commentsList = activeHighlight?.commentsList || [];
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -539,54 +700,101 @@ export default function PortfolioHighlightsScreen() {
         </ScrollView>
       </View>
 
-      {/* ================= PORTFOLIO VIDEO MODAL ================= */}
+      {/* ================= UNIFIED MEDIA VIEWER MODAL ================= */}
       <Modal
-        visible={!!selectedVideoUrl}
+        visible={viewerVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={handleCloseVideo}
+        onRequestClose={() => setViewerVisible(false)}
       >
-        <View style={styles.videoFullScreenOverlay}>
-          <View style={styles.videoFullScreenHeader}>
-            <Text style={styles.videoFullScreenTitle} numberOfLines={1}>{selectedVideoTitle}</Text>
-            <TouchableOpacity onPress={handleCloseVideo} style={styles.videoFullScreenCloseBtn}>
-              <Feather name="x" size={24} color={COLORS.white} />
+        <View style={{ flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.95)' }}>
+          {/* Close Button & Header */}
+          <View style={{
+            height: 60,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 16,
+            position: 'absolute',
+            top: Platform.OS === 'ios' ? 44 : 10,
+            left: 0,
+            right: 0,
+            zIndex: 10,
+          }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.white, flex: 1, marginRight: 12 }} numberOfLines={1}>
+              {viewerTitle}
+            </Text>
+            <TouchableOpacity 
+              onPress={() => setViewerVisible(false)} 
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                backgroundColor: 'rgba(255,255,255,0.15)',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}
+            >
+              <Feather name="x" size={20} color={COLORS.white} />
             </TouchableOpacity>
           </View>
-          <View style={styles.videoFullScreenBody}>
-            {selectedVideoUrl && (
-              <Video
-                source={{ uri: selectedVideoUrl }}
-                rate={1.0}
-                volume={1.0}
-                isMuted={false}
-                resizeMode={ResizeMode.CONTAIN}
-                shouldPlay
-                useNativeControls
-                style={styles.videoFullScreenPlayer}
-              />
-            )}
-          </View>
-        </View>
-      </Modal>
 
-      {/* ================= PHOTO VIEWER MODAL ================= */}
-      <Modal
-        visible={!!selectedPhotoUrl}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={handleClosePhoto}
-      >
-        <View style={styles.photoModalOverlay}>
-          <View style={styles.photoModalHeader}>
-            <Text style={styles.photoModalTitle} numberOfLines={1}>{selectedPhotoTitle}</Text>
-            <TouchableOpacity onPress={handleClosePhoto} style={styles.photoCloseBtn}>
-              <Feather name="x" size={24} color={COLORS.white} />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.photoModalBody}>
-            {selectedPhotoUrl && (
-              <Image source={{ uri: selectedPhotoUrl }} style={styles.photoFullScreen} contentFit="contain" />
+          {/* Swipeable Media ScrollView */}
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ScrollView
+              ref={viewerScrollRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(e) => {
+                const idx = Math.round(e.nativeEvent.contentOffset.x / width);
+                setViewerActiveIndex(idx);
+              }}
+              style={{ flex: 1, width: width }}
+              contentContainerStyle={{ alignItems: 'center' }}
+            >
+              {viewerMediaList.map((url, idx) => {
+                const isVideo = isVideoUrl(url);
+                return (
+                  <View key={url + '-' + idx} style={{ width: width, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+                    {isVideo ? (
+                      <Video
+                        source={{ uri: url }}
+                        rate={1.0}
+                        volume={1.0}
+                        isMuted={false}
+                        resizeMode={ResizeMode.CONTAIN}
+                        shouldPlay={viewerVisible && idx === viewerActiveIndex}
+                        useNativeControls
+                        style={{ width: width, height: '80%' }}
+                      />
+                    ) : (
+                      <Image
+                        source={{ uri: url }}
+                        style={{ width: width, height: '80%' }}
+                        contentFit="contain"
+                      />
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            {/* Pagination/Scroll indicator */}
+            {viewerMediaList.length > 1 && (
+              <View style={{
+                position: 'absolute',
+                bottom: Platform.OS === 'ios' ? 50 : 30,
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 14,
+                alignItems: 'center'
+              }}>
+                <Text style={{ color: COLORS.white, fontSize: 13, fontWeight: '700' }}>
+                  {viewerActiveIndex + 1} / {viewerMediaList.length}
+                </Text>
+              </View>
             )}
           </View>
         </View>
@@ -698,6 +906,127 @@ export default function PortfolioHighlightsScreen() {
                 <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>
                   {isSavingEdit ? 'Saving...' : 'Save Changes'}
                 </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ================= COMMENTS MODAL ================= */}
+      <Modal
+        visible={commentModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setCommentModalVisible(false)}
+      >
+        <View style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          justifyContent: 'flex-end', // slide up from bottom
+        }}>
+          <View style={{
+            width: '100%',
+            height: '75%', // take up 75% of screen height
+            backgroundColor: '#FFFFFF',
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            padding: 20,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 12,
+            elevation: 5
+          }}>
+            {/* Modal Header */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.navy }} numberOfLines={1}>
+                Comments ({commentsList.length})
+              </Text>
+              <TouchableOpacity onPress={() => setCommentModalVisible(false)} style={{ padding: 4 }}>
+                <Feather name="x" size={20} color={COLORS.textDark} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Comments List */}
+            <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+              {commentsList.length > 0 ? (
+                commentsList.map((c: any, index: number) => (
+                  <View key={c._id || index} style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+                    <Image
+                      source={{ uri: c.userAvatar || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80' }}
+                      style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.bgLight }}
+                    />
+                    <View style={{ flex: 1, backgroundColor: COLORS.bgLight, borderRadius: 12, padding: 10 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.textDark }}>
+                          {c.userName || 'Anonymous'}
+                        </Text>
+                        <Text style={{ fontSize: 9, color: COLORS.textMuted }}>
+                          {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : 'Just now'}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 12, color: COLORS.textDark, lineHeight: 16 }}>
+                        {c.text}
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 40 }}>
+                  <Feather name="message-square" size={32} color={COLORS.textLight} style={{ marginBottom: 8 }} />
+                  <Text style={{ fontSize: 12, color: COLORS.textMuted, fontStyle: 'italic' }}>
+                    No comments yet. Be the first to comment!
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+
+            {/* Input Row at the bottom */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              paddingTop: 12,
+              borderTopWidth: 1,
+              borderTopColor: COLORS.border,
+              marginBottom: Platform.OS === 'ios' ? 24 : 0
+            }}>
+              <TextInput
+                value={commentText}
+                onChangeText={setCommentText}
+                placeholder="Write a comment..."
+                placeholderTextColor="#94A3B8"
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: COLORS.border,
+                  borderRadius: 20,
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  fontSize: 13,
+                  color: COLORS.textDark,
+                  backgroundColor: '#F8FAFC',
+                  maxHeight: 80
+                }}
+                multiline
+              />
+              <TouchableOpacity
+                onPress={handleSendComment}
+                disabled={isSubmittingComment || !commentText.trim()}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  backgroundColor: commentText.trim() ? COLORS.green : '#E2E8F0',
+                  justifyContent: 'center',
+                  alignItems: 'center'
+                }}
+              >
+                {isSubmittingComment ? (
+                  <ActivityIndicator size="small" color={COLORS.white} />
+                ) : (
+                  <Feather name="send" size={16} color={COLORS.white} />
+                )}
               </TouchableOpacity>
             </View>
           </View>

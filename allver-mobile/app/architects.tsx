@@ -48,19 +48,26 @@ export default function ArchitectsScreen() {
 
   useEffect(() => {
     const fetchArchitects = async () => {
+      const url = `${BACKEND_URL}/api/professionals/Architect`;
+      console.log(`[ArchitectsScreen] Fetching from endpoint: ${url}`);
       try {
         const cached = (global as any).cachedArchitects;
         if (!cached || cached.length === 0) {
           setIsLoading(true);
         }
-        const response = await fetch(`${BACKEND_URL}/api/professionals/Architect`);
+        const response = await fetch(url);
+        console.log(`[ArchitectsScreen] Response Status: ${response.status}`);
         const data = await response.json();
+        console.log(`[ArchitectsScreen] Raw JSON Response:`, JSON.stringify(data));
         if (response.ok && data.professionals) {
+          console.log(`[ArchitectsScreen] Setting architects state with:`, data.professionals.length, `items`);
           setArchitects(data.professionals);
           (global as any).cachedArchitects = data.professionals;
+        } else {
+          console.warn(`[ArchitectsScreen] API returned error or empty:`, data);
         }
       } catch (err) {
-        console.error('Error fetching architects:', err);
+        console.error('[ArchitectsScreen] Fetch error:', err);
       } finally {
         setIsLoading(false);
       }
@@ -109,8 +116,19 @@ export default function ArchitectsScreen() {
         skills.toLowerCase().includes(selectedSkill.toLowerCase())
       : true;
     
-    return matchesSearch && matchesLocation && matchesRating && matchesSkill;
+    const isMatched = matchesSearch && matchesLocation && matchesRating && matchesSkill;
+    
+    console.log(`[ArchitectsScreen] Checking Item: "${name}"
+      - matchesSearch: ${matchesSearch} (Query: "${searchQuery}")
+      - matchesLocation: ${matchesLocation} (Query: "${locationQuery}", Item City: "${location}")
+      - matchesRating: ${matchesRating} (Query: "${ratingQuery}", Item Rating: ${rating})
+      - matchesSkill: ${matchesSkill} (Selected: "${selectedSkill}", Item Specs: "${specs}", Skills: "${skills}")
+      - Overall Matched: ${isMatched}`);
+      
+    return isMatched;
   });
+
+  console.log(`[ArchitectsScreen] Render Path: Total state items = ${architects.length}, Rendered after filters = ${filteredArchitects.length}`);
 
 
 

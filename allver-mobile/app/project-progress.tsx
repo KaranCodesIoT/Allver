@@ -265,6 +265,7 @@ export default function ProjectProgressScreen() {
   const [formVideo, setFormVideo] = useState('');
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [fullscreenMedia, setFullscreenMedia] = useState<{ type: 'image' | 'video', url: string } | null>(null);
+  const [playingVideoUrl, setPlayingVideoUrl] = useState<string | null>(null);
 
   // Rework/Workflow states
   const [showReworkModal, setShowReworkModal] = useState(false);
@@ -300,7 +301,7 @@ export default function ProjectProgressScreen() {
     // 1. Get clean filename
     // 1. Get filename
     const filename = assetFileName || uri.split('/').pop() || (mediaType === 'image' ? 'photo.jpg' : 'video.mp4');
-    const cleanFilename = filename.split('?')[0].split('#')[0]; // strip query string or hashes if any
+    let cleanFilename = filename.split('?')[0].split('#')[0]; // strip query string or hashes if any
 
     // 2. Get clean mime type
     let type = assetMimeType;
@@ -312,6 +313,12 @@ export default function ProjectProgressScreen() {
       } else {
         type = ext === 'mov' || ext === 'quicktime' ? 'video/quicktime' : 'video/mp4';
       }
+    }
+
+    // Ensure filename has a proper extension (critical for Android content:// URIs)
+    if (!cleanFilename.includes('.')) {
+      const extFromMime = type.split('/').pop() || (mediaType === 'image' ? 'jpg' : 'mp4');
+      cleanFilename = cleanFilename + '.' + extFromMime;
     }
 
     // 3. Fix local file path prefix on Android
@@ -2095,33 +2102,51 @@ export default function ProjectProgressScreen() {
                   </ScrollView>
                 )}
 
-                {/* Videos */}
-                {update.videos && update.videos.length > 0 && (
-                  <View style={{ gap: 10, marginTop: 8 }}>
-                    {update.videos.map((vid, vidIdx) => (
-                      <View key={vidIdx} style={styles.timelineVideoWrap}>
-                        <Video
-                          source={{ uri: vid }}
-                          rate={1.0}
-                          volume={1.0}
-                          isMuted={false}
-                          resizeMode={ResizeMode.CONTAIN}
-                          shouldPlay={false}
-                          isLooping={false}
-                          useNativeControls
-                          style={styles.timelineVideo}
-                        />
-                        <TouchableOpacity 
-                          style={styles.videoFullscreenBtn}
-                          activeOpacity={0.8}
-                          onPress={() => setFullscreenMedia({ type: 'video', url: vid })}
-                        >
-                          <Feather name="maximize" size={16} color={COLORS.white} />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                  </View>
-                )}
+                 {/* Videos */}
+                 {update.videos && update.videos.length > 0 && (
+                   <View style={{ gap: 10, marginTop: 8 }}>
+                     {update.videos.map((vid, vidIdx) => (
+                       <View key={vidIdx} style={styles.timelineVideoWrap}>
+                         {playingVideoUrl === vid ? (
+                           <Video
+                             source={{ uri: vid }}
+                             rate={1.0}
+                             volume={1.0}
+                             isMuted={false}
+                             resizeMode={ResizeMode.CONTAIN}
+                             shouldPlay={true}
+                             isLooping={false}
+                             useNativeControls
+                             style={styles.timelineVideo}
+                           />
+                         ) : (
+                           <TouchableOpacity 
+                             style={[styles.timelineVideo, { backgroundColor: '#111827', justifyContent: 'center', alignItems: 'center' }]}
+                             activeOpacity={0.9}
+                             onPress={() => setPlayingVideoUrl(vid)}
+                           >
+                             <Feather name="video" size={32} color="rgba(255, 255, 255, 0.4)" />
+                             <View style={{
+                               ...StyleSheet.absoluteFillObject,
+                               backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                               justifyContent: 'center',
+                               alignItems: 'center',
+                             }}>
+                               <Feather name="play-circle" size={48} color={COLORS.white} />
+                             </View>
+                           </TouchableOpacity>
+                         )}
+                         <TouchableOpacity 
+                           style={styles.videoFullscreenBtn}
+                           activeOpacity={0.8}
+                           onPress={() => setFullscreenMedia({ type: 'video', url: vid })}
+                         >
+                           <Feather name="maximize" size={16} color={COLORS.white} />
+                         </TouchableOpacity>
+                       </View>
+                     ))}
+                   </View>
+                 )}
 
                 {/* Existing comments/replies */}
                 {update.comments && update.comments.length > 0 && (

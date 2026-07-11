@@ -140,14 +140,23 @@ export default function ArchitectProfileScreen() {
 
           const formData = new FormData();
           const uri = asset.uri;
+          
+          // Derive a proper filename - Android content:// URIs often lack extensions
           let name = asset.fileName || uri.split('/').pop() || 'upload.jpg';
           name = name.split('?')[0].split('#')[0];
 
+          // Derive mimeType from asset metadata first, then fallback to extension parsing
           let fileType = asset.mimeType;
           if (!fileType) {
             const match = /\.(\w+)$/.exec(name);
             const ext = match ? match[1].toLowerCase() : 'jpg';
             fileType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
+          }
+          
+          // Ensure filename has a proper extension (critical for Android content:// URIs)
+          if (!name.includes('.')) {
+            const extFromMime = fileType.split('/').pop() || 'jpg';
+            name = name + '.' + extFromMime;
           }
 
           formData.append('image', {
@@ -330,7 +339,13 @@ export default function ArchitectProfileScreen() {
       >
         {/* Top Header with Back Button and Title */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/login');
+            }
+          }} style={styles.backButton}>
             <Feather name="arrow-left" size={24} color={COLORS.textDark} />
           </TouchableOpacity>
           <View style={styles.headerTextCol}>

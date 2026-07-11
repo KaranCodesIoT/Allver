@@ -292,7 +292,13 @@ export default function ContractorProfileScreen() {
       >
         {/* Top Header Row */}
         <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/login');
+            }
+          }} style={styles.backButton}>
             <Feather name="arrow-left" size={24} color={COLORS.textDark} />
           </TouchableOpacity>
           <View style={styles.headerTextCol}>

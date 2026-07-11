@@ -100,4 +100,10 @@ const projectWorkspaceSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+projectWorkspaceSchema.index({ client: 1 });
+projectWorkspaceSchema.index({ professional: 1 });
+projectWorkspaceSchema.index({ contractor: 1 });
+projectWorkspaceSchema.index({ architect: 1 });
+projectWorkspaceSchema.index({ labourTeam: 1 });
+
 module.exports = mongoose.model('ProjectWorkspace', projectWorkspaceSchema);

@@ -284,6 +284,11 @@ export default function EditProfileScreen() {
       const ext = match ? match[1].toLowerCase() : 'jpg';
       const fileType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
 
+      // Ensure filename has a proper extension (critical for Android content:// URIs)
+      if (!filename.includes('.')) {
+        filename = filename + '.' + ext;
+      }
+
       // 3. Clean up the URI (decode percent-encoding for React Native fetch file resolution)
       const cleanUri = Platform.OS === 'ios' ? uri : decodeURIComponent(uri);
 

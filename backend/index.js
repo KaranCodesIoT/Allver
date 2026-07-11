@@ -71,18 +71,13 @@ io.use(async (socket, next) => {
     return next(new Error("Too many connection attempts. Please try again later."));
   }
 
-  // 2. JWT Authentication
+  // 2. Trust client-provided raw user ID as token for now (Stability revert)
   const token = socket.handshake.auth?.token;
   if (!token) {
     return next(new Error("Unauthorized: Token missing"));
   }
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    socket.userId = decoded.userId;
-    next();
-  } catch (err) {
-    next(new Error("Unauthorized: Invalid token"));
-  }
+  socket.userId = token;
+  next();
 });
 
 io.on('connection', (socket) => {
@@ -795,12 +790,11 @@ app.get('/api/stats', (req, res) => {
 });
 
 // Create a new post/design
-app.post('/api/posts', authenticateJWT, async (req, res) => {
+app.post('/api/posts', async (req, res) => {
   try {
-    const { title, description, type, mediaUrls, quotation } = req.body;
-    const creatorId = req.user.id;
-    if (!description || !type) {
-      return res.status(400).json({ message: 'Missing required fields: description and type are required.' });
+    const { title, description, type, mediaUrls, creatorId, quotation } = req.body;
+    if (!description || !type || !creatorId) {
+      return res.status(400).json({ message: 'Missing required fields: description, type, and creatorId are required.' });
     }
     
     // Validate creator exists
@@ -1308,9 +1302,9 @@ app.get('/api/user/check-firm-name', async (req, res) => {
 });
 
 // Update User Profile
-app.put('/api/user/profile/:id', authenticateJWT, async (req, res) => {
+app.put('/api/user/profile/:id', async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.params.id;
     const profileData = req.body;
 
     const userObj = await User.findById(userId);
@@ -1401,10 +1395,9 @@ app.put('/api/user/profile/:id', authenticateJWT, async (req, res) => {
 });
 
 // Save or Update User Expo Push Token
-app.post('/api/user/push-token', authenticateJWT, tokenLimiter, async (req, res) => {
+app.post('/api/user/push-token', tokenLimiter, async (req, res) => {
   try {
-    const { token } = req.body;
-    const userId = req.user.id;
+    const { userId, token } = req.body;
     if (!userId || !token) {
       return res.status(400).json({ message: 'userId and token are required' });
     }
@@ -1431,10 +1424,9 @@ app.post('/api/user/push-token', authenticateJWT, tokenLimiter, async (req, res)
 });
 
 // Delete User Expo Push Token on Logout
-app.delete('/api/user/push-token', authenticateJWT, async (req, res) => {
+app.delete('/api/user/push-token', async (req, res) => {
   try {
-    const { token } = req.body;
-    const userId = req.user.id;
+    const { userId, token } = req.body;
     if (!userId || !token) {
       return res.status(400).json({ message: 'userId and token are required' });
     }
@@ -1585,13 +1577,12 @@ app.post('/api/login', authLimiter, async (req, res) => {
     user.lastActive = new Date();
     await user.save();
     
-    // Successful login - return user object and signed JWT token
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    // Successful login - return user object and token (which is user._id)
     const userObj = user.toObject();
     delete userObj.password;
     res.status(200).json({ 
       message: 'Login successful', 
-      token: token,
+      token: user._id,
       user: userObj
     });
   } catch (error) {
@@ -1716,15 +1707,14 @@ app.post('/auth/verify-email-otp', authLimiter, async (req, res) => {
     user.lastActive = new Date();
     await user.save();
 
-    // Successful login - return user object and signed JWT token
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    // Successful login - return user object and token (which is user._id)
     const userObj = user.toObject();
     delete userObj.password;
 
     res.status(200).json({ 
       success: true,
       message: 'Login successful', 
-      token: token,
+      token: user._id,
       user: userObj
     });
   } catch (error) {
@@ -1905,6 +1895,163 @@ app.delete('/api/professional/:id/portfolio-highlights/:highlightId', async (req
   } catch (error) {
     console.error('Error deleting portfolio highlight:', error);
     res.status(500).json({ message: 'Error deleting portfolio highlight: ' + error.message });
+  }
+});
+
+// Like/Unlike a portfolio highlight
+app.post('/api/professional/:id/portfolio-highlights/:highlightId/like', async (req, res) => {
+  try {
+    const { id, highlightId } = req.params;
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ message: 'UserId is required' });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const highlight = user.portfolioHighlights.id(highlightId);
+    if (!highlight) {
+      return res.status(404).json({ message: 'Highlight not found' });
+    }
+
+    if (!highlight.likedBy) highlight.likedBy = [];
+    
+    const likedIndex = highlight.likedBy.findIndex(uid => uid.toString() === userId.toString());
+    let hasLiked = false;
+
+    if (likedIndex > -1) {
+      // Toggle off like
+      highlight.likedBy.splice(likedIndex, 1);
+    } else {
+      // Toggle on like
+      highlight.likedBy.push(userId);
+      hasLiked = true;
+    }
+
+    highlight.likes = highlight.likedBy.length;
+    await user.save();
+
+    // Send a notification if someone else likes it
+    if (hasLiked && userId.toString() !== id.toString()) {
+      const senderUser = await User.findById(userId, 'fullName avatarUrl role');
+      const senderName = senderUser ? senderUser.fullName : 'Someone';
+      
+      const notification = new Notification({
+        recipientId: id,
+        senderId: userId,
+        text: `❤️ ${senderName} liked your portfolio highlight "${highlight.title || 'Portfolio Work'}"`
+      });
+      await notification.save();
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(id.toString()).emit('new_notification', {
+          _id: notification._id,
+          recipientId: id,
+          senderId: {
+            _id: senderUser ? senderUser._id : userId,
+            fullName: senderName,
+            avatarUrl: senderUser ? senderUser.avatarUrl : '',
+            role: senderUser ? senderUser.role : ''
+          },
+          text: notification.text,
+          createdAt: notification.createdAt,
+          isRead: false
+        });
+      }
+    }
+
+    res.status(200).json({ 
+      message: 'Like status updated successfully', 
+      likes: highlight.likes, 
+      likedBy: highlight.likedBy 
+    });
+  } catch (error) {
+    console.error('Error liking portfolio highlight:', error);
+    res.status(500).json({ message: 'Error liking portfolio highlight: ' + error.message });
+  }
+});
+
+// Comment on a portfolio highlight
+app.post('/api/professional/:id/portfolio-highlights/:highlightId/comment', async (req, res) => {
+  try {
+    const { id, highlightId } = req.params;
+    const { userId, text } = req.body;
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ message: 'Comment text is required' });
+    }
+    if (!userId) {
+      return res.status(400).json({ message: 'UserId is required' });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const highlight = user.portfolioHighlights.id(highlightId);
+    if (!highlight) {
+      return res.status(404).json({ message: 'Highlight not found' });
+    }
+
+    if (!highlight.commentsList) highlight.commentsList = [];
+
+    const commenter = await User.findById(userId, 'fullName avatarUrl role');
+    const commenterName = commenter ? commenter.fullName : 'Anonymous';
+    const commenterAvatar = commenter ? commenter.avatarUrl : '';
+
+    const newComment = {
+      user: userId,
+      userName: commenterName,
+      userAvatar: commenterAvatar,
+      text: text.trim(),
+      createdAt: new Date()
+    };
+
+    highlight.commentsList.push(newComment);
+    highlight.comments = highlight.commentsList.length;
+    await user.save();
+
+    // Send a notification if someone else comments
+    if (userId.toString() !== id.toString()) {
+      const notification = new Notification({
+        recipientId: id,
+        senderId: userId,
+        text: `💬 ${commenterName} commented on your portfolio highlight "${highlight.title || 'Portfolio Work'}": "${text.trim()}"`
+      });
+      await notification.save();
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to(id.toString()).emit('new_notification', {
+          _id: notification._id,
+          recipientId: id,
+          senderId: {
+            _id: userId,
+            fullName: commenterName,
+            avatarUrl: commenterAvatar,
+            role: commenter ? commenter.role : ''
+          },
+          text: notification.text,
+          createdAt: notification.createdAt,
+          isRead: false
+        });
+      }
+    }
+
+    res.status(201).json({ 
+      message: 'Comment added successfully', 
+      comment: newComment,
+      commentsCount: highlight.comments,
+      commentsList: highlight.commentsList
+    });
+  } catch (error) {
+    console.error('Error commenting on portfolio highlight:', error);
+    res.status(500).json({ message: 'Error commenting on portfolio highlight: ' + error.message });
   }
 });
 
@@ -2240,10 +2387,9 @@ const ProjectWorkspace = require('./models/ProjectWorkspace');
 const ProjectBid = require('./models/ProjectBid');
 
 // 1. Submit a Contract Request
-app.post('/api/contract-requests', authenticateJWT, async (req, res) => {
+app.post('/api/contract-requests', async (req, res) => {
   try {
-    const { professional, title, projectType, location, budget, startDate, description, timeline, requirements, mediaUrls, attachmentUrl, attachmentName } = req.body;
-    const client = req.user.id;
+    const { client, professional, title, projectType, location, budget, startDate, description, timeline, requirements, mediaUrls, attachmentUrl, attachmentName } = req.body;
     
     if (!client || !title || !location || !budget) {
       return res.status(400).json({ message: 'Missing required project details' });
@@ -2371,11 +2517,13 @@ app.post('/api/contract-requests', authenticateJWT, async (req, res) => {
       .populate('client', 'fullName email avatarUrl role phoneNumber city')
       .populate('professional', 'fullName email avatarUrl role');
 
-    // Emit new_contract_request socket event
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('new_contract_request', populatedRequest);
-      console.log(`[Socket] Emitted new_contract_request for request ID ${newRequest._id}`);
+    // Emit new_contract_request socket event (for public requests only)
+    if (!professional) {
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('new_contract_request', populatedRequest);
+        console.log(`[Socket] Emitted new_contract_request for request ID ${newRequest._id}`);
+      }
     }
 
     res.status(201).json({ 
@@ -2396,9 +2544,9 @@ app.get('/api/contract-requests', async (req, res) => {
       .populate('professional', 'fullName email avatarUrl role')
       .sort({ createdAt: -1 });
 
-    // Filter to only include public requests (client role is 'Client' and status is not Cancelled)
+    // Filter to only include public requests (client role is 'Client', status is not Cancelled, and no professional is assigned)
     const publicRequestsOnly = requests.filter(
-      (item) => item.client && item.client.role === 'Client' && item.status !== 'Cancelled'
+      (item) => item.client && item.client.role === 'Client' && item.status !== 'Cancelled' && !item.professional
     );
 
     res.status(200).json({ success: true, requests: publicRequestsOnly });
@@ -2880,9 +3028,9 @@ app.get('/api/project-bids/request/:requestId/count', async (req, res) => {
 });
 
 // 4. Get all workspaces for a user
-app.get('/api/project-workspaces/user/:userId', authenticateJWT, async (req, res) => {
+app.get('/api/project-workspaces/user/:userId', async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.params.userId;
     
     // Cast userId to ObjectId if valid to ensure mongoose matches correctly
     const userObjId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : null;
@@ -3041,13 +3189,12 @@ app.post('/api/project-workspaces/hire', async (req, res) => {
   }
 });
 
-// 5. Get workspace details by ID (With membership check)
-app.get('/api/project-workspaces/:id', authenticateJWT, async (req, res) => {
+app.get('/api/project-workspaces/:id', async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ message: 'Invalid workspace ID format' });
     }
-    const userId = req.user.id;
+    const userId = req.query.userId;
 
     const workspace = await ProjectWorkspace.findById(req.params.id)
       .populate('client', 'fullName email phoneNumber role city avatarUrl')
@@ -3087,15 +3234,13 @@ app.get('/api/project-workspaces/:id', authenticateJWT, async (req, res) => {
   }
 });
 
-// 6. Send message in a workspace (With membership check)
-app.post('/api/project-workspaces/:id/messages', authenticateJWT, async (req, res) => {
+app.post('/api/project-workspaces/:id/messages', async (req, res) => {
   try {
     const { id } = req.params;
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: 'Invalid workspace ID format' });
     }
-    const { text, attachment } = req.body;
-    const sender = req.user.id;
+    const { text, attachment, sender } = req.body;
 
     const workspace = await ProjectWorkspace.findById(id);
     if (!workspace) {
@@ -4412,34 +4557,6 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
             });
           }
         }
-
-        // Notify client as well
-        if (workspace.client) {
-          const clientNotifText = `📍 Labour Checked In\nLabourer ${senderUser.fullName} has checked in with GPS location for date ${date}.\n\n[View Attendance]`;
-          const clientNotif = new Notification({
-            recipientId: workspace.client,
-            senderId: senderId,
-            text: clientNotifText,
-            workspaceId: id
-          });
-          await clientNotif.save();
-
-          if (io) {
-            io.to(workspace.client.toString()).emit('new_notification', {
-              _id: clientNotif._id,
-              recipientId: workspace.client,
-              senderId: {
-                _id: senderUser._id,
-                fullName: senderUser.fullName,
-                avatarUrl: senderUser.avatarUrl,
-                role: senderUser.role
-              },
-              text: clientNotif.text,
-              isRead: false,
-              createdAt: clientNotif.createdAt
-            });
-          }
-        }
       } else {
         // Update any matching "Labour Checked In" notifications for these labourers to isMarked: true
         try {
@@ -4456,32 +4573,6 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
           }
         } catch (updateNotifErr) {
           console.error('Error marking notifications as processed:', updateNotifErr);
-        }
-
-        // Contractor marked attendance -> Notify Client
-        const notificationText = `📋 Attendance Submitted\nLabour attendance for ${formattedDate} has been marked by Contractor ${senderUser.fullName}\n\n[View Attendance]`;
-        const notification = new Notification({
-          recipientId: workspace.client,
-          senderId: senderId,
-          text: notificationText,
-          workspaceId: id
-        });
-        await notification.save();
-
-        if (io && workspace.client) {
-          io.to(workspace.client.toString()).emit('new_notification', {
-            _id: notification._id,
-            recipientId: workspace.client,
-            senderId: {
-              _id: senderUser._id,
-              fullName: senderUser.fullName,
-              avatarUrl: senderUser.avatarUrl,
-              role: senderUser.role
-            },
-            text: notification.text,
-            isRead: false,
-            createdAt: notification.createdAt
-          });
         }
 
         // Notify each individual labourer
@@ -5349,14 +5440,13 @@ app.get('/api/conversations/user/:userId', async (req, res) => {
   }
 });
 
-// 3. Get messages for a conversation
-app.get('/api/conversations/:conversationId/messages', authenticateJWT, async (req, res) => {
+app.get('/api/conversations/:conversationId/messages', async (req, res) => {
   try {
     const { conversationId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(conversationId)) {
       return res.status(400).json({ message: 'Invalid conversation ID format' });
     }
-    const userId = req.user.id;
+    const userId = req.query.userId;
 
     const conversation = await Conversation.findById(conversationId)
       .populate('messages.sender', 'fullName avatarUrl role')
@@ -5410,15 +5500,13 @@ app.get('/api/conversations/:conversationId/messages', authenticateJWT, async (r
   }
 });
 
-// 3. Send a message in a conversation (REST fallback + socket broadcast)
-app.post('/api/conversations/:conversationId/messages', authenticateJWT, async (req, res) => {
+app.post('/api/conversations/:conversationId/messages', async (req, res) => {
   try {
     const { conversationId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(conversationId)) {
       return res.status(400).json({ message: 'Invalid conversation ID format' });
     }
-    const { text, attachment } = req.body;
-    const senderId = req.user.id;
+    const { text, attachment, senderId } = req.body;
 
     if (!senderId || (!text && !attachment)) {
       return res.status(400).json({ message: 'text (or attachment) is required' });
@@ -5664,11 +5752,9 @@ app.post('/api/project-workspaces/:id/site-visits', async (req, res) => {
   }
 });
 
-// Test trigger endpoint to trigger notifications immediately
-app.post('/api/notifications/test-trigger', authenticateJWT, async (req, res) => {
+app.post('/api/notifications/test-trigger', async (req, res) => {
   try {
-    const { type, recipientId, title, location, amount, documentName, visitDate } = req.body;
-    const senderId = req.user.id;
+    const { type, recipientId, senderId, title, location, amount, documentName, visitDate } = req.body;
     
     if (!recipientId || !senderId) {
       return res.status(400).json({ message: 'recipientId is required' });

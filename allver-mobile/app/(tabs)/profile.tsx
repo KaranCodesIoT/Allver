@@ -180,15 +180,28 @@ export default function ProfileScreen() {
     return /\.(mp4|mov|m4v|3gp|avi|webm|mkv)/i.test(url) || url.includes('/video/') || url.includes('video') || url.includes('mp4');
   };
 
-  const uploadMediaFile = async (localUri: string, type: 'image' | 'video'): Promise<string | null> => {
+  const uploadMediaFile = async (localUri: string, type: 'image' | 'video', mimeType?: string, fileName?: string): Promise<string | null> => {
     const formData = new FormData();
-    const uriParts = localUri.split('.');
-    const fileType = uriParts[uriParts.length - 1];
+    
+    let extension = 'jpg';
+    if (localUri.includes('.')) {
+      const parts = localUri.split('.');
+      extension = parts[parts.length - 1].split('?')[0].toLowerCase();
+    } else if (mimeType) {
+      const parts = mimeType.split('/');
+      extension = parts[parts.length - 1];
+    }
+    
+    const finalMime = mimeType || (type === 'image' ? `image/${extension}` : `video/${extension}`);
+    let finalName = fileName || (type === 'image' ? `photo.${extension}` : `video.${extension}`);
+    if (!finalName.includes('.')) {
+      finalName = finalName + `.${extension}`;
+    }
     
     formData.append('image', {
       uri: localUri,
-      name: type === 'image' ? `photo.${fileType}` : `video.${fileType}`,
-      type: type === 'image' ? `image/${fileType}` : `video/${fileType}`,
+      name: finalName,
+      type: finalMime,
     } as any);
 
     const res = await fetch(`${BACKEND_URL}/api/upload`, {
@@ -237,7 +250,7 @@ export default function ProfileScreen() {
         try {
           const uploadedUrls: string[] = [];
           for (const asset of toUpload) {
-            const uploadedUrl = await uploadMediaFile(asset.uri, 'image');
+            const uploadedUrl = await uploadMediaFile(asset.uri, 'image', asset.mimeType, asset.fileName);
             if (uploadedUrl) {
               uploadedUrls.push(uploadedUrl);
             }
@@ -256,7 +269,7 @@ export default function ProfileScreen() {
       } else {
         setUploadingMedia(true);
         try {
-          const uploadedUrl = await uploadMediaFile(result.assets[0].uri, 'video');
+          const uploadedUrl = await uploadMediaFile(result.assets[0].uri, 'video', result.assets[0].mimeType, result.assets[0].fileName);
           if (uploadedUrl) {
             setFormMediaUrls([uploadedUrl]);
             setFormMediaType('video');
@@ -1798,12 +1811,15 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
                     const mediaUrl = (item.mediaUrls && item.mediaUrls.length > 0) ? item.mediaUrls[0] : '';
                     const isVideo = isVideoUrl(mediaUrl);
                     const image = mediaUrl || (PROJECT_TYPE_IMAGES[item.projectType] || PROJECT_TYPE_IMAGES['General']);
+                    const mediaCount = (item.mediaUrls && item.mediaUrls.length) || 0;
                     return (
                       <View key={item._id || index} style={styles.highlightItemContainer}>
                         <TouchableOpacity 
                           style={styles.storyHighlightSquare}
                           onPress={() => {
-                            if (isVideo) {
+                            if (mediaCount > 1) {
+                              router.push('/portfolio-highlights');
+                            } else if (isVideo) {
                               handleOpenVideo(mediaUrl, item.title);
                             } else {
                               handleOpenPhoto(image, item.title);
@@ -1825,6 +1841,17 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
                           {isVideo && (
                             <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.15)', justifyContent: 'center', alignItems: 'center', borderRadius: 10 }}>
                               <Feather name="play" size={14} color={COLORS.white} />
+                            </View>
+                          )}
+                          {mediaCount > 1 && (
+                            <View style={{
+                              position: 'absolute', bottom: 3, right: 3,
+                              backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 8,
+                              paddingHorizontal: 5, paddingVertical: 2,
+                              flexDirection: 'row', alignItems: 'center', gap: 2,
+                            }}>
+                              <Feather name="image" size={8} color={COLORS.white} />
+                              <Text style={{ fontSize: 8, color: COLORS.white, fontWeight: '700' }}>{mediaCount}</Text>
                             </View>
                           )}
                         </TouchableOpacity>

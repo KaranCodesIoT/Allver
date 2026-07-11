@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Platform, ActivityIndicator, RefreshControl } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Platform, ActivityIndicator, RefreshControl, SectionList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
@@ -371,148 +371,11 @@ export default function NotificationsScreen() {
 
   const { today, yesterday, earlier } = getGroupedNotifications();
 
-  const renderNotificationSection = (key: string, items: NotificationItem[]) => {
-    if (items.length === 0) return null;
-    return (
-      <View key={key} style={styles.sectionContainer}>
-        <Text style={styles.sectionHeader}>{t(key)}</Text>
-        {items.map((item) => {
-          const sender = item.senderId || { fullName: 'Someone', role: 'User' };
-          const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(sender.fullName)}&background=1BC47D&color=fff`;
-          const parsed = parseNotificationText(item.text);
-          
-          return (
-            <TouchableOpacity
-              key={item._id}
-              style={[styles.notificationCard, !item.isRead && styles.unreadCard]}
-              onPress={() => handleNotificationPress(item)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.avatarContainer}>
-                <Image
-                  source={{ uri: resolveAvatarUrl(sender.avatarUrl) || fallbackAvatar }}
-                  style={styles.avatar}
-                  contentFit="cover"
-                />
-                {!item.isRead && <View style={styles.unreadPulse} />}
-              </View>
-              
-              <View style={styles.contentContainer}>
-                {/* Title and Time row */}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <Text style={styles.notificationTitle}>{parsed.title}</Text>
-                  <Text style={styles.timeText}>{formatTime(item.createdAt)}</Text>
-                </View>
-
-                {/* Body Text */}
-                <Text style={styles.text}>
-                  {parsed.body}
-                </Text>
-
-                {/* Metadata Row (Role tags, etc.) */}
-                <View style={styles.metaRow}>
-                  <Text style={styles.roleTag}>{sender.role}</Text>
-                </View>
-
-                {/* Styled inline action buttons (if any) */}
-                {parsed.actionType !== 'none' && !item.text.includes('Labour Checked In') && (
-                  <View style={{ flexDirection: 'row', marginTop: 8 }}>
-                    <View style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      backgroundColor: COLORS.greenLight,
-                      paddingVertical: 5,
-                      paddingHorizontal: 10,
-                      borderRadius: 6,
-                      borderWidth: 1,
-                      borderColor: '#A7F3D0'
-                    }}>
-                      <Text style={{ color: COLORS.green, fontSize: 11, fontWeight: '700', marginRight: 4 }}>
-                        {parsed.actionType === 'attendance' ? 'View Attendance' : parsed.actionType === 'invitation' ? 'View Invitation' : 'View Progress'}
-                      </Text>
-                      <Feather name="arrow-right" size={11} color={COLORS.green} />
-                    </View>
-                  </View>
-                )}
-
-                {/* Contractor approval action buttons */}
-                {(currentUser?.role === 'Contractor' || currentUser?.role === 'Architect' || currentUser?.role === 'Professional') && item.text.includes('Labour Checked In') && (
-                  <TouchableOpacity
-                    style={{
-                      backgroundColor: item.isMarked ? '#94A3B8' : '#10B981',
-                      paddingVertical: 6,
-                      paddingHorizontal: 12,
-                      borderRadius: 6,
-                      alignItems: 'center',
-                      marginTop: 8,
-                      alignSelf: 'flex-start'
-                    }}
-                    disabled={!!item.isMarked}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      const dateMatch = item.text.match(/for date\s+(\d{4}-\d{2}-\d{2})/i);
-                      const checkInDate = dateMatch ? dateMatch[1] : '';
-                      router.push({
-                        pathname: '/labour-detail',
-                        params: {
-                          id: sender._id,
-                          name: sender.fullName,
-                          role: sender.role,
-                          avatar: resolveAvatarUrl(sender.avatarUrl),
-                          targetDate: checkInDate,
-                          autoOpen: 'true'
-                        }
-                      });
-                    }}
-                  >
-                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
-                      {item.isMarked ? '✓ Marked' : 'Mark Attendance'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* Direct Invitation Actions */}
-                {(() => {
-                  const req = getMatchingRequest(item.text);
-                  if (!req) return null;
-                  return (
-                    <View style={styles.invitationActionsRow}>
-                      <TouchableOpacity
-                        style={[styles.actionBtn, styles.acceptBtn]}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          handleInvitationResponse(req._id, 'Accepted');
-                        }}
-                      >
-                        <Feather name="check" size={12} color="#FFF" style={{ marginRight: 4 }} />
-                        <Text style={styles.actionBtnText}>Accept</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.actionBtn, styles.rejectBtn]}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          handleInvitationResponse(req._id, 'Rejected');
-                        }}
-                      >
-                        <Feather name="x" size={12} color="#FFF" style={{ marginRight: 4 }} />
-                        <Text style={styles.actionBtnText}>Reject</Text>
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })()}
-              </View>
-
-              {!item.isRead && (
-                <View style={{ justifyContent: 'center', paddingLeft: 8 }}>
-                  <View style={styles.unreadDot} />
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    );
-  };
+  const sections = [
+    { title: t('today'), data: today },
+    { title: t('yesterday'), data: yesterday },
+    { title: t('earlier'), data: earlier }
+  ].filter(section => section.data.length > 0);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -551,15 +414,155 @@ export default function NotificationsScreen() {
           </Text>
         </ScrollView>
       ) : (
-        <ScrollView
-          style={styles.feed}
-          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} colors={[COLORS.green]} />}
+        <SectionList
+          sections={sections}
+          keyExtractor={(item) => item._id}
+          renderItem={({ item }) => {
+            const sender = item.senderId || { fullName: 'Someone', role: 'User' };
+            const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(sender.fullName)}&background=1BC47D&color=fff`;
+            const parsed = parseNotificationText(item.text);
+            
+            return (
+              <TouchableOpacity
+                style={[styles.notificationCard, !item.isRead && styles.unreadCard]}
+                onPress={() => handleNotificationPress(item)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.avatarContainer}>
+                  <Image
+                    source={{ uri: resolveAvatarUrl(sender.avatarUrl) || fallbackAvatar }}
+                    style={styles.avatar}
+                    contentFit="cover"
+                  />
+                  {!item.isRead && <View style={styles.unreadPulse} />}
+                </View>
+                
+                <View style={styles.contentContainer}>
+                  {/* Title and Time row */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <Text style={styles.notificationTitle}>{parsed.title}</Text>
+                    <Text style={styles.timeText}>{formatTime(item.createdAt)}</Text>
+                  </View>
+
+                  {/* Body Text */}
+                  <Text style={styles.text}>
+                    {parsed.body}
+                  </Text>
+
+                  {/* Metadata Row (Role tags, etc.) */}
+                  <View style={styles.metaRow}>
+                    <Text style={styles.roleTag}>{sender.role}</Text>
+                  </View>
+
+                  {/* Styled inline action buttons (if any) */}
+                  {parsed.actionType !== 'none' && !item.text.includes('Labour Checked In') && (
+                    <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                      <View style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: COLORS.greenLight,
+                        paddingVertical: 5,
+                        paddingHorizontal: 10,
+                        borderRadius: 6,
+                        borderWidth: 1,
+                        borderColor: '#A7F3D0'
+                      }}>
+                        <Text style={{ color: COLORS.green, fontSize: 11, fontWeight: '700', marginRight: 4 }}>
+                          {parsed.actionType === 'attendance' ? 'View Attendance' : parsed.actionType === 'invitation' ? 'View Invitation' : 'View Progress'}
+                        </Text>
+                        <Feather name="arrow-right" size={11} color={COLORS.green} />
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Contractor approval action buttons */}
+                  {(currentUser?.role === 'Contractor' || currentUser?.role === 'Architect' || currentUser?.role === 'Professional') && item.text.includes('Labour Checked In') && (
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: item.isMarked ? '#94A3B8' : '#10B981',
+                        paddingVertical: 6,
+                        paddingHorizontal: 12,
+                        borderRadius: 6,
+                        alignItems: 'center',
+                        marginTop: 8,
+                        alignSelf: 'flex-start'
+                      }}
+                      disabled={!!item.isMarked}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        const dateMatch = item.text.match(/for date\s+(\d{4}-\d{2}-\d{2})/i);
+                        const checkInDate = dateMatch ? dateMatch[1] : '';
+                        router.push({
+                          pathname: '/labour-detail',
+                          params: {
+                            id: sender._id,
+                            name: sender.fullName,
+                            role: sender.role,
+                            avatar: resolveAvatarUrl(sender.avatarUrl),
+                            targetDate: checkInDate,
+                            autoOpen: 'true'
+                          }
+                        });
+                      }}
+                    >
+                      <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
+                        {item.isMarked ? '✓ Marked' : 'Mark Attendance'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Direct Invitation Actions */}
+                  {(() => {
+                    const req = getMatchingRequest(item.text);
+                    if (!req) return null;
+                    return (
+                      <View style={styles.invitationActionsRow}>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.acceptBtn]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleInvitationResponse(req._id, 'Accepted');
+                          }}
+                        >
+                          <Feather name="check" size={12} color="#FFF" style={{ marginRight: 4 }} />
+                          <Text style={styles.actionBtnText}>Accept</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, styles.rejectBtn]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            handleInvitationResponse(req._id, 'Rejected');
+                          }}
+                        >
+                          <Feather name="x" size={12} color="#FFF" style={{ marginRight: 4 }} />
+                          <Text style={styles.actionBtnText}>Reject</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })()}
+                </View>
+
+                {!item.isRead && (
+                  <View style={{ justifyContent: 'center', paddingLeft: 8 }}>
+                    <View style={styles.unreadDot} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          }}
+          renderSectionHeader={({ section: { title } }) => (
+            <Text style={styles.sectionHeader}>{title}</Text>
+          )}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              colors={[COLORS.green]}
+            />
+          }
           showsVerticalScrollIndicator={false}
-        >
-          {renderNotificationSection('today', today)}
-          {renderNotificationSection('yesterday', yesterday)}
-          {renderNotificationSection('earlier', earlier)}
-        </ScrollView>
+          style={styles.feed}
+        />
       )}
     </SafeAreaView>
   );

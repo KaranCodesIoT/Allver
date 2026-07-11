@@ -137,6 +137,11 @@ export default function ProjectDetailScreen() {
             const ext = match ? match[1].toLowerCase() : 'jpg';
             fileType = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
           }
+          // Ensure filename has a proper extension (critical for Android content:// URIs)
+          if (!name.includes('.')) {
+            const extFromMime = fileType.split('/').pop() || 'jpg';
+            name = name + '.' + extFromMime;
+          }
 
           formData.append('image', { uri: uri, name, type: fileType } as any);
 

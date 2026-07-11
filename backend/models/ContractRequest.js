@@ -26,4 +26,7 @@ const contractRequestSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
+contractRequestSchema.index({ client: 1 });
+contractRequestSchema.index({ professional: 1 });
+
 module.exports = mongoose.model('ContractRequest', contractRequestSchema);

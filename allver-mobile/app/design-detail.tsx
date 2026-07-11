@@ -1294,23 +1294,9 @@ export default function DesignDetailScreen() {
                 </TouchableOpacity>
               ))
             ) : (
-              [
-                { title: 'Minimal 2BHK Apartment', loc: 'Pune, Maharashtra', rating: '4.6', image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=250&q=80' },
-                { title: 'Modern Living Room', loc: 'Mumbai, Maharashtra', rating: '4.7', image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=250&q=80' },
-                { title: 'Modular Kitchen Design', loc: 'Bengaluru, Karnataka', rating: '4.5', image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=250&q=80' },
-              ].map((item, idx) => (
-                <View key={idx} style={styles.carouselCard}>
-                  <Image source={{ uri: item.image }} style={styles.carouselImg} contentFit="cover" />
-                  <View style={styles.carouselCardBody}>
-                    <Text style={styles.carouselCardTitle} numberOfLines={1}>{item.title}</Text>
-                    <Text style={styles.carouselCardLoc}>{item.loc}</Text>
-                    <View style={styles.carouselRatingRow}>
-                      <Feather name="star" size={10} color={COLORS.gold} style={{ fill: COLORS.gold }} />
-                      <Text style={styles.carouselRatingText}>{item.rating}</Text>
-                    </View>
-                  </View>
-                </View>
-              ))
+              <View style={styles.noDesignContainer}>
+                <Text style={styles.noDesignText}>No design available yet</Text>
+              </View>
             )}
           </ScrollView>
         </View>
@@ -2273,5 +2259,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.white,
+  },
+  noDesignContainer: {
+    width: width - 40,
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.bgLight,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+  },
+  noDesignText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.textMuted,
   },
 });

@@ -54,6 +54,8 @@ const notificationSchema = new mongoose.Schema({
   }
 });
 
+notificationSchema.index({ recipientId: 1, createdAt: -1 });
+
 notificationSchema.post('save', async function(doc) {
   try {
     const User = mongoose.model('User');

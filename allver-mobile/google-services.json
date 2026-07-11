@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "218434531138",
+    "project_id": "allver-f9cbf",
+    "storage_bucket": "allver-f9cbf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:218434531138:android:29d4f8a91a822d48ad22db",
+        "android_client_info": {
+          "package_name": "com.allver.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCGYTbKMrm04MqY4NDQEq1RhU7Bvj8gJZ0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

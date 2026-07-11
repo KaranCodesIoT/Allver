@@ -25,34 +25,7 @@ LogBox.ignoreLogs([
   'Notifications.removeNotificationSubscription',
 ]);
 
-// Intercept all HTTP requests to automatically append Authorization header if logged in
-const originalFetch = global.fetch;
-(global as any).fetch = async (input: any, init: any) => {
-  const url = typeof input === 'string' ? input : (input && input.url) ? input.url : '';
-  if (url.startsWith(BACKEND_URL)) {
-    const token = await getToken();
-    if (token) {
-      init = init || {};
-      init.headers = init.headers || {};
-      if (init.headers instanceof Headers) {
-        if (!init.headers.has('Authorization')) {
-          init.headers.set('Authorization', `Bearer ${token}`);
-        }
-      } else if (Array.isArray(init.headers)) {
-        const hasAuth = init.headers.some(([key]) => key.toLowerCase() === 'authorization');
-        if (!hasAuth) {
-          init.headers.push(['Authorization', `Bearer ${token}`]);
-        }
-      } else {
-        const hasAuth = Object.keys(init.headers).some(key => key.toLowerCase() === 'authorization');
-        if (!hasAuth) {
-          (init.headers as any)['Authorization'] = `Bearer ${token}`;
-        }
-      }
-    }
-  }
-  return originalFetch(input, init);
-};
+
 
 // Keep the splash screen visible until we hide it
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -191,8 +164,7 @@ export default function RootLayout() {
           const res = await fetch(`${BACKEND_URL}/api/user/${user._id}`, {
             method: 'GET',
             headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
+              'Content-Type': 'application/json'
             }
           });
           if (res.ok) {
@@ -201,7 +173,7 @@ export default function RootLayout() {
               await saveStoredUser(data.user);
               (global as any).currentUser = data.user;
             }
-          } else if (res.status === 404 || res.status === 401 || res.status === 403) {
+          } else if (res.status === 404 || res.status === 401) {
             console.log('[RootLayout] Session validation failed on background check. Logging out...');
             await removeToken();
             await removeStoredUser();

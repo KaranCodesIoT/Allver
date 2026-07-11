@@ -59,7 +59,16 @@ export const saveStoredUser = async (user: any): Promise<void> => {
       role: user.role,
       avatarUrl: user.avatarUrl,
       city: user.city,
-      language: user.language
+      language: user.language,
+      // Profile completion validation fields:
+      experience: user.experience,
+      firmName: user.firmName,
+      specialization: user.specialization,
+      portfolioImages: user.portfolioImages,
+      contractorType: user.contractorType,
+      teamSize: user.teamSize,
+      workCategory: user.workCategory,
+      serviceLocation: user.serviceLocation
     };
     const userStr = JSON.stringify(strippedUser);
     if (Platform.OS === 'web') {

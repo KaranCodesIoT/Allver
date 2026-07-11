@@ -13,27 +13,32 @@ export default function Index() {
   useEffect(() => {
     const checkAuthAndRouting = async () => {
       try {
-        const token = await getToken();
-        const storedUserStr = await getStoredUser();
+        // 1. Check synchronous memory cache first for instant routing
+        let userObj = (global as any).currentUser;
+        let token = userObj ? 'cached_token_placeholder' : null;
 
-        if (token && storedUserStr) {
-          let userObj;
-          try {
-            userObj = JSON.parse(storedUserStr);
-          } catch (e) {
-            console.error('[StartupGuard] Stored user parsing failed:', e);
-            await removeToken();
-            await removeStoredUser();
-            (global as any).currentUser = null;
-            router.replace('/login');
-            return;
+        if (!userObj) {
+          // Fallback to async storage lookup if not in memory yet
+          token = await getToken();
+          const storedUserStr = await getStoredUser();
+          if (token && storedUserStr) {
+            try {
+              userObj = JSON.parse(storedUserStr);
+              (global as any).currentUser = userObj;
+            } catch (e) {
+              console.error('[StartupGuard] Stored user parsing failed:', e);
+              await removeToken();
+              await removeStoredUser();
+              (global as any).currentUser = null;
+              router.replace('/login');
+              return;
+            }
           }
+        }
 
-          // Set global current user immediately from storage
-          (global as any).currentUser = userObj;
-
-          // Apply saved language if any
-          const userLang = userObj.language || (await getStoredLanguage()) || 'en';
+        if (userObj) {
+          // Apply saved language
+          const userLang = userObj.language || (global as any).localLanguage || (await getStoredLanguage()) || 'en';
           i18n.changeLanguage(userLang);
 
           // Role-based Navigation logic
