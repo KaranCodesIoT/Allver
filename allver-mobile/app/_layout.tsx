@@ -139,23 +139,29 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (stage !== 'ready') return;
+    console.log('[RootLayout] [Checkpoint J] stage is ready. Starting post-ready initializations.');
 
     const user = getCurrentUser();
     if (!user || !user._id) {
+      console.log('[RootLayout] [Checkpoint K] No logged in user session. Ensuring socket is disconnected.');
       import('@/utils/SocketService')
         .then(({ default: SocketService }) => {
           SocketService.disconnect();
+          console.log('[RootLayout] [Checkpoint L] Socket disconnected successfully.');
         })
-        .catch(err => console.log('[RootLayout] Socket disconnect error:', err));
+        .catch(err => console.log('[RootLayout] [Checkpoint Error] Socket disconnect error:', err));
       return;
     }
 
     // Initialize/re-verify global socket connection
+    console.log('[RootLayout] [Checkpoint K] Found active user session. Loading SocketService...');
     import('@/utils/SocketService')
       .then(({ default: SocketService }) => {
+        console.log('[RootLayout] [Checkpoint L] SocketService imported. Initializing...');
         SocketService.initialize(user._id);
+        console.log('[RootLayout] [Checkpoint M] SocketService initialization command sent.');
       })
-      .catch(err => console.error('[RootLayout] SocketService import error:', err));
+      .catch(err => console.error('[RootLayout] [Checkpoint Error] SocketService import error:', err));
 
     // Background validation of session (non-blocking)
     const validateSession = async () => {
@@ -191,23 +197,27 @@ export default function RootLayout() {
 
     // 1. Setup Push Notifications
     const setupPush = async () => {
+      console.log('[RootLayout] [Checkpoint N] setupPush executing.');
       try {
         let token;
         if (Platform.OS === 'android') {
+          console.log('[RootLayout] [Checkpoint O] Configuring default notification channel...');
           await Notifications.setNotificationChannelAsync('default', {
             name: 'default',
             importance: Notifications.AndroidImportance.MAX,
             vibrationPattern: [0, 250, 250, 250],
             lightColor: '#FF231F7C',
           });
+          console.log('[RootLayout] [Checkpoint P] Default notification channel configured.');
         }
 
         if (Constants.executionEnvironment === 'storeClient') {
-          console.log('[Push Notification] Skipping push token setup inside Expo Go (not supported in SDK 53)');
+          console.log('[RootLayout] [Checkpoint Q] Skipping push token setup inside Expo Go (not supported in SDK 53)');
           return;
         }
 
         if (Device.isDevice) {
+          console.log('[RootLayout] [Checkpoint R] Physical device detected. Requesting/checking permissions...');
           const { status: existingStatus } = await Notifications.getPermissionsAsync();
           let finalStatus = existingStatus;
           if (existingStatus !== 'granted') {
@@ -215,15 +225,18 @@ export default function RootLayout() {
             finalStatus = status;
           }
           if (finalStatus !== 'granted') {
-            console.log('[Push Notification] Failed to get permission for push notifications');
+            console.log('[RootLayout] [Checkpoint S] Failed to get permission for push notifications');
             return;
           }
+          console.log('[RootLayout] [Checkpoint S] Push notification permissions granted.');
 
           const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+          console.log('[RootLayout] [Checkpoint T] Requesting Expo Push Token with ProjectId:', projectId);
           token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-          console.log('[Push Notification] Retrieved Expo Push Token:', token);
+          console.log('[RootLayout] [Checkpoint U] Retrieved Expo Push Token:', token);
 
           // Send token securely to the backend
+          console.log('[RootLayout] [Checkpoint V] Sending push token to backend...');
           const response = await fetch(`${BACKEND_URL}/api/user/push-token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -231,16 +244,16 @@ export default function RootLayout() {
           });
 
           if (response.ok) {
-            console.log('[Push Notification] Registered push token with backend successfully.');
+            console.log('[RootLayout] [Checkpoint W] Registered push token with backend successfully.');
             (global as any).currentPushToken = token;
           } else {
-            console.warn('[Push Notification] Backend push token registration failed:', await response.text());
+            console.warn('[RootLayout] [Checkpoint W-Warning] Backend push token registration failed:', await response.text());
           }
         } else {
-          console.log('[Push Notification] Must use a physical device for push notifications');
+          console.log('[RootLayout] [Checkpoint R] Must use a physical device for push notifications (Simulator/Emulator detected).');
         }
       } catch (err) {
-        console.error('[Push Notification] Error setting up notifications:', err);
+        console.error('[RootLayout] [Checkpoint Error] Error setting up notifications:', err);
       }
     };
 
@@ -305,29 +318,40 @@ export default function RootLayout() {
   }, [stage]);
 
   useEffect(() => {
+    console.log('[RootLayout] [Checkpoint A] prepare Effect triggered.');
     const prepare = async () => {
+      console.log('[RootLayout] [Checkpoint B] prepare execution started.');
       try {
         // Load stored language asynchronously before hiding splash screen
+        console.log('[RootLayout] [Checkpoint C] Querying stored language...');
         const storedLanguage = await getStoredLanguage();
         if (storedLanguage) {
           (global as any).localLanguage = storedLanguage;
-          console.log('[RootLayout] Loaded stored language:', storedLanguage);
+          console.log('[RootLayout] [Checkpoint D] Loaded stored language:', storedLanguage);
+        } else {
+          console.log('[RootLayout] [Checkpoint D] No stored language found.');
         }
 
         // Load stored user asynchronously before hiding splash screen
+        console.log('[RootLayout] [Checkpoint E] Querying stored user session...');
         const storedUserStr = await getStoredUser();
         if (storedUserStr) {
           (global as any).currentUser = JSON.parse(storedUserStr);
-          console.log('[RootLayout] Loaded stored user session:', (global as any).currentUser?.fullName);
+          console.log('[RootLayout] [Checkpoint F] Loaded stored user session:', (global as any).currentUser?.fullName);
+        } else {
+          console.log('[RootLayout] [Checkpoint F] No stored user session found.');
         }
       } catch (error) {
-        console.error('[RootLayout] Failed to load stored user session or language:', error);
+        console.error('[RootLayout] [Checkpoint Error] Failed to load stored user session or language:', error);
       } finally {
         try {
+          console.log('[RootLayout] [Checkpoint G] Hiding native splash screen...');
           await SplashScreen.hideAsync();
+          console.log('[RootLayout] [Checkpoint H] Native splash screen hidden successfully.');
         } catch (e) {
-          console.warn(e);
+          console.warn('[RootLayout] [Checkpoint Warning] SplashScreen.hideAsync failed:', e);
         }
+        console.log('[RootLayout] [Checkpoint I] Transitioning stage to ready.');
         setStage('ready');
       }
     };

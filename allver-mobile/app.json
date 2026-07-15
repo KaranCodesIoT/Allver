@@ -7,7 +7,7 @@
     "icon": "./assets/android-icon-foreground.png",
     "scheme": "allvermobile",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true
     },
@@ -22,13 +22,15 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.allver.app",
       "googleServicesFile": "./google-services.json",
-      "softwareKeyboardLayoutMode": "adjustResize",
+"softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "notification": {
@@ -58,6 +60,13 @@
         {
           "photosPermission": "The app accesses your photos to let you share them with your friends.",
           "cameraPermission": "The app accesses your camera to let you take photos for your profile."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysPermission": "Allow Allver to access your location always to match you with nearby jobs.",
+          "locationWhenInUsePermission": "Allow Allver to access your location to match you with nearby jobs."
         }
       ],
       "expo-secure-store"
