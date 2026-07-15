@@ -122,7 +122,7 @@ export default function ChooseLanguageScreen() {
         {/* Title Section */}
         <View style={styles.titleContainer}>
           <Text style={styles.title}>Choose Your Language</Text>
-          <Text style={styles.subtitle}>अपनी पसंदीदा भाषा चुनें | ದಯವಿಟ್ಟು ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ</Text>
+          <Text style={styles.subtitle}>अपनी पसंदीदा भाषा चुनें | आपली आवडती भाषा निवडा</Text>
         </View>
 
         {/* Language Grid/List */}

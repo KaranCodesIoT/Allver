@@ -70,6 +70,7 @@ const projectWorkspaceSchema = new mongoose.Schema({
         labourId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         status: { type: String, enum: ['Present', 'Half Day', 'Absent', 'Overtime'] },
         hours: { type: Number, default: 0 },
+        remarks: { type: String, default: '' },
         latitude: { type: Number },
         longitude: { type: Number },
         checkInTime: { type: String },

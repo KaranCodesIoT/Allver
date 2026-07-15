@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Alert, Modal, TextInput, RefreshControl, KeyboardAvoidingView } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Alert, Modal, TextInput, RefreshControl, KeyboardAvoidingView, FlatList } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -100,7 +100,14 @@ export default function DiscoverScreen() {
   const [editingPost, setEditingPost] = useState<PostData | null>(null);
   const [editDescription, setEditDescription] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [fullscreenMedia, setFullscreenMedia] = useState<{ type: 'image' | 'video', url: string } | null>(null);
+  const [fullscreenMedia, setFullscreenMedia] = useState<{ mediaList: string[]; initialIndex: number } | null>(null);
+  const [activeFullscreenIndex, setActiveFullscreenIndex] = useState(0);
+
+  useEffect(() => {
+    if (fullscreenMedia) {
+      setActiveFullscreenIndex(fullscreenMedia.initialIndex);
+    }
+  }, [fullscreenMedia]);
 
   // Comment states
   const [commentModalVisible, setCommentModalVisible] = useState(false);
@@ -309,7 +316,7 @@ export default function DiscoverScreen() {
               creator: {
                 ...post.creator,
                 name: data.user.fullName || post.creator.name,
-                avatar: resolveAvatarUrl(data.user.avatarUrl) || post.creator.avatar,
+                avatar: resolveAvatarUrl(data.user.avatarUrl, data.user.updatedAt) || post.creator.avatar,
                 location: data.user.city || post.creator.location,
                 role: data.user.role || post.creator.role,
                 isVerified: data.user.isVerified !== undefined ? data.user.isVerified : post.creator.isVerified,
@@ -601,10 +608,10 @@ export default function DiscoverScreen() {
     return /\.(mp4|mov|m4v|3gp|avi|webm|mkv)/i.test(url) || url.includes('/video/') || url.includes('video') || url.includes('mp4');
   };
 
-  const renderMediaItem = (uri: string, style: any, postId?: string) => {
+  const renderMediaItem = (uri: string, style: any, postId?: string, index: number = 0, mediaList: string[] = [uri]) => {
     const isVideo = isVideoUrl(uri);
     if (isVideo) {
-      const shouldPlay = isFocused && postId && activeVideoPostId === postId;
+      const shouldPlay = isFocused;
       return (
         <View style={[style, { overflow: 'hidden', position: 'relative' }]}>
           <Video
@@ -613,10 +620,6 @@ export default function DiscoverScreen() {
             resizeMode={ResizeMode.COVER}
             shouldPlay={shouldPlay}
             isMuted={true}
-            status={{
-              shouldPlay: shouldPlay,
-              positionMillis: 100
-            }}
             useNativeControls={false}
             isLooping={true}
           />
@@ -628,7 +631,7 @@ export default function DiscoverScreen() {
               alignItems: 'center' 
             }}
             activeOpacity={0.8}
-            onPress={() => setFullscreenMedia({ type: 'video', url: uri })}
+            onPress={() => setFullscreenMedia({ mediaList, initialIndex: index })}
           >
             {!shouldPlay && <Feather name="play" size={24} color={COLORS.white} />}
           </TouchableOpacity>
@@ -639,7 +642,7 @@ export default function DiscoverScreen() {
       <TouchableOpacity 
         style={style} 
         activeOpacity={0.9} 
-        onPress={() => setFullscreenMedia({ type: 'image', url: uri })}
+        onPress={() => setFullscreenMedia({ mediaList, initialIndex: index })}
       >
         <Image source={{ uri }} style={StyleSheet.absoluteFillObject} contentFit="cover" />
       </TouchableOpacity>
@@ -661,7 +664,7 @@ export default function DiscoverScreen() {
         >
           {images.map((img, index) => (
             <React.Fragment key={index}>
-              {renderMediaItem(img, styles.scrollImageItem, postId)}
+              {renderMediaItem(img, styles.scrollImageItem, postId, index, images)}
             </React.Fragment>
           ))}
         </ScrollView>
@@ -671,7 +674,7 @@ export default function DiscoverScreen() {
     if (images.length === 1) {
       return (
         <View style={styles.imageGrid}>
-          {renderMediaItem(images[0], styles.singleImage, postId)}
+          {renderMediaItem(images[0], styles.singleImage, postId, 0, images)}
         </View>
       );
     }
@@ -679,8 +682,8 @@ export default function DiscoverScreen() {
     if (images.length === 2) {
       return (
         <View style={styles.imageGrid}>
-          {renderMediaItem(images[0], styles.doubleImage, postId)}
-          {renderMediaItem(images[1], styles.doubleImage, postId)}
+          {renderMediaItem(images[0], styles.doubleImage, postId, 0, images)}
+          {renderMediaItem(images[1], styles.doubleImage, postId, 1, images)}
         </View>
       );
     }
@@ -688,13 +691,13 @@ export default function DiscoverScreen() {
     // Horizontal layout for 3 or more images, with a +more overlay on the second image
     return (
       <View style={styles.imageGrid}>
-        {renderMediaItem(images[0], styles.doubleImage, postId)}
+        {renderMediaItem(images[0], styles.doubleImage, postId, 0, images)}
         <TouchableOpacity 
           style={styles.moreImageContainer}
           activeOpacity={0.8}
           onPress={() => handleExpandPost(postId)}
         >
-          {renderMediaItem(images[1], StyleSheet.absoluteFillObject, postId)}
+          {renderMediaItem(images[1], StyleSheet.absoluteFillObject, postId, 1, images)}
           <View style={styles.moreOverlay}>
             <Text style={styles.moreText}>+{images.length - 2} more</Text>
           </View>
@@ -1019,29 +1022,86 @@ export default function DiscoverScreen() {
             <Feather name="x" size={24} color={COLORS.white} />
           </TouchableOpacity>
 
-          {fullscreenMedia?.type === 'video' ? (
-            <Video
-              source={{ uri: fullscreenMedia.url }}
-              style={{
-                width: width,
-                height: width * 1.3, // 3:4 aspect ratio standard
-                maxHeight: '80%'
+          {fullscreenMedia && (
+            <FlatList
+              data={fullscreenMedia.mediaList}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item, index) => index.toString()}
+              initialScrollIndex={fullscreenMedia.initialIndex}
+              getItemLayout={(data, index) => ({
+                length: width,
+                offset: width * index,
+                index,
+              })}
+              onMomentumScrollEnd={(e) => {
+                const newIndex = Math.round(e.nativeEvent.contentOffset.x / width);
+                setActiveFullscreenIndex(newIndex);
               }}
-              resizeMode={ResizeMode.CONTAIN}
-              shouldPlay={true}
-              useNativeControls={true}
-              isLooping={true}
-            />
-          ) : (
-            <Image
-              source={{ uri: fullscreenMedia?.url }}
-              style={{
-                width: width,
-                height: width * 1.3,
-                maxHeight: '80%'
+              renderItem={({ item: uri, index }) => {
+                const isVideo = isVideoUrl(uri);
+                const isCurrentActive = index === activeFullscreenIndex;
+                return (
+                  <View style={{
+                    width: width,
+                    height: '100%',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}>
+                    {isVideo ? (
+                      <Video
+                        source={{ uri }}
+                        style={{
+                          width: width,
+                          height: width * 1.3, // 3:4 aspect ratio standard
+                          maxHeight: '80%'
+                        }}
+                        resizeMode={ResizeMode.CONTAIN}
+                        shouldPlay={isCurrentActive}
+                        useNativeControls={true}
+                        isLooping={true}
+                      />
+                    ) : (
+                      <Image
+                        source={{ uri }}
+                        style={{
+                          width: width,
+                          height: width * 1.3,
+                          maxHeight: '80%'
+                        }}
+                        contentFit="contain"
+                      />
+                    )}
+                  </View>
+                );
               }}
-              contentFit="contain"
             />
+          )}
+
+          {/* Dots Indicator */}
+          {fullscreenMedia && fullscreenMedia.mediaList.length > 1 && (
+            <View style={{
+              position: 'absolute',
+              bottom: Platform.OS === 'ios' ? 60 : 40,
+              flexDirection: 'row',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+              gap: 8
+            }}>
+              {fullscreenMedia.mediaList.map((_, i) => (
+                <View 
+                  key={i}
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: i === activeFullscreenIndex ? COLORS.white : 'rgba(255, 255, 255, 0.4)'
+                  }}
+                />
+              ))}
+            </View>
           )}
         </View>
       </Modal>

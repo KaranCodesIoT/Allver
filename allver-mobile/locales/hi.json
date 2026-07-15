@@ -324,7 +324,9 @@
   "landscapedesign": "लैंडस्केप डिजाइन",
   "residential": "आवासीय",
   "urbanplanning": "शहरी नियोजन",
-  "projectTeam": "प्रोजेक्ट टीम"
+  "projectTeam": "प्रोजेक्ट टीम",
+  "noActiveProjects": "कोई सक्रिय परियोजना नहीं",
+  "noActiveProjectsDesc": "इस समय आपकी कोई चल रही परियोजना नहीं है।"
 }
 
 

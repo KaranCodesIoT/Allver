@@ -309,8 +309,10 @@ io.on('connection', (socket) => {
     io.to(callerId.toString()).emit('call_busy');
   });
 
-  socket.on('voice_chunk', ({ url, targetId }) => {
-    io.to(targetId.toString()).emit('receive_voice_chunk', { url });
+  socket.on('voice_chunk', (data) => {
+    if (data && data.targetId) {
+      io.to(data.targetId.toString()).emit('receive_voice_chunk', data);
+    }
   });
 
   // ========== VIDEO CALL EVENTS (WebRTC signaling) ==========
@@ -599,86 +601,49 @@ mongoose.connect(process.env.MONGODB_URI)
     }
     
 
-    // Seed mock recent activity notifications for all users if they have none
+    // Seed mock welcome notification for all users if they have none
     try {
       const User = require('./models/User');
-      const allUsers = await User.find({});
       
+      // Cleanup legacy mock notifications from DB
+      const deleteResult = await Notification.deleteMany({
+        $or: [
+          { text: /Invitation to bid received/ },
+          { text: /Milestone 1 payment/ },
+          { text: /Attendance marked successfully/ },
+          { text: /Daily wage/ },
+          { text: /Quotation updated/ },
+          { text: /Contract agreement signed/ },
+          { text: /Your portfolio was viewed/ },
+          { text: /New project request/ },
+          { text: /Payment of/ },
+          { text: /Labour team attendance/ },
+          { text: /Attendance marked present/ },
+          { text: /New work opportunity/ },
+          { text: /architects matched/ }
+        ]
+      });
+      if (deleteResult.deletedCount > 0) {
+        console.log(`Cleaned up ${deleteResult.deletedCount} legacy mock notifications from DB`);
+      }
+
+      const allUsers = await User.find({});
       for (const u of allUsers) {
         const count = await Notification.countDocuments({ recipientId: u._id });
-        if (count < 2) {
-          const notifs = [];
-          
-          if (u.role === 'Architect' || u.role === 'Contractor') {
-            notifs.push({
-              recipientId: u._id,
-              senderId: u._id,
-              text: `Invitation to bid received for project "Modern Residential Villa"`,
-              isRead: false,
-              createdAt: new Date(Date.now() - 1000 * 60 * 30) // 30 mins ago
-            });
-            notifs.push({
-              recipientId: u._id,
-              senderId: u._id,
-              text: `Milestone 1 payment of ₹25,000 released successfully`,
-              isRead: false,
-              createdAt: new Date(Date.now() - 1000 * 60 * 60 * 4) // 4 hours ago
-            });
-            notifs.push({
-              recipientId: u._id,
-              senderId: u._id,
-              text: `Attendance marked successfully for today's shifts`,
-              isRead: true,
-              createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24) // 1 day ago
-            });
-          } else if (u.role === 'Labour') {
-            notifs.push({
-              recipientId: u._id,
-              senderId: u._id,
-              text: `Attendance marked present by Contractor Suraj Sharma`,
-              isRead: false,
-              createdAt: new Date(Date.now() - 1000 * 60 * 45) // 45 mins ago
-            });
-            notifs.push({
-              recipientId: u._id,
-              senderId: u._id,
-              text: `Daily wage payment of ₹800 credited to wallet`,
-              isRead: false,
-              createdAt: new Date(Date.now() - 1000 * 60 * 60 * 6) // 6 hours ago
-            });
-          } else {
-            // Client / default
-            notifs.push({
-              recipientId: u._id,
-              senderId: u._id,
-              text: `Quotation updated by Ar. Rohit Chaudhari for project "Duplex Renovation"`,
-              isRead: false,
-              createdAt: new Date(Date.now() - 1000 * 60 * 15) // 15 mins ago
-            });
-            notifs.push({
-              recipientId: u._id,
-              senderId: u._id,
-              text: `Contract agreement signed and finalized successfully`,
-              isRead: true,
-              createdAt: new Date(Date.now() - 1000 * 60 * 60 * 12) // 12 hours ago
-            });
-          }
-
-          // Welcome notification
-          notifs.push({
+        if (count === 0) {
+          const notifs = [{
             recipientId: u._id,
             senderId: u._id,
             text: `Welcome to Allver! Start building, connecting, and growing.`,
             isRead: true,
             createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48) // 2 days ago
-          });
-
+          }];
           await Notification.insertMany(notifs);
         }
       }
-      console.log('Successfully checked and seeded mock notification activities for all users!');
+      console.log('Successfully checked and seeded welcome notifications for users!');
     } catch (seedErr) {
-      console.error('Error seeding mock notifications:', seedErr);
+      console.error('Error seeding welcome notifications:', seedErr);
     }
 
     // Clean up existing legacy chat notifications from database
@@ -2101,6 +2066,34 @@ app.post('/api/professional/:id/team', async (req, res) => {
     user.team.push(memberId);
     await user.save();
 
+    // Create Team Workspace if member is a Labour
+    if (member.role === 'Labour') {
+      try {
+        const wsExists = await ProjectWorkspace.findOne({
+          contractor: id,
+          labourTeam: memberId,
+          projectType: 'Team'
+        });
+        if (!wsExists) {
+          const dummyId = id;
+          const newWorkspace = new ProjectWorkspace({
+            contractRequest: dummyId,
+            client: dummyId,
+            professional: dummyId,
+            contractor: id,
+            labourTeam: [memberId],
+            title: `${user.fullName}'s Team`,
+            projectType: 'Team',
+            status: 'Active'
+          });
+          await newWorkspace.save();
+          console.log(`Created Team Workspace for contractor ${user.fullName} and labour ${member.fullName}`);
+        }
+      } catch (err) {
+        console.error('Error creating team workspace in team add endpoint:', err);
+      }
+    }
+
     // Trigger notification immediately for Team Invitation
     try {
       const roleLabel = user.role || 'Contractor';
@@ -3031,6 +3024,38 @@ app.get('/api/project-bids/request/:requestId/count', async (req, res) => {
 app.get('/api/project-workspaces/user/:userId', async (req, res) => {
   try {
     const userId = req.params.userId;
+
+    // Self-healing: if user is a Labour, make sure they have a Team Workspace for every professional whose team they are in
+    try {
+      const labourUser = await User.findById(userId);
+      if (labourUser && labourUser.role === 'Labour') {
+        const professionals = await User.find({ team: userId });
+        for (const prof of professionals) {
+          const wsExists = await ProjectWorkspace.findOne({
+            contractor: prof._id,
+            labourTeam: userId,
+            projectType: 'Team'
+          });
+          if (!wsExists) {
+            const dummyId = prof._id;
+            const newWorkspace = new ProjectWorkspace({
+              contractRequest: dummyId,
+              client: dummyId,
+              professional: dummyId,
+              contractor: prof._id,
+              labourTeam: [userId],
+              title: `${prof.fullName}'s Team`,
+              projectType: 'Team',
+              status: 'Active'
+            });
+            await newWorkspace.save();
+            console.log(`Self-healed: Created Team Workspace for professional ${prof.fullName} and labour ${labourUser.fullName}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error in workspace user self-healing:', err);
+    }
     
     // Cast userId to ObjectId if valid to ensure mongoose matches correctly
     const userObjId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : null;
@@ -4349,45 +4374,49 @@ app.get('/api/labour/today-status/:userId', async (req, res) => {
       return res.status(200).json({ hasActiveProject: false });
     }
 
-    // Use the first active workspace
-    const ws = activeWorkspaces[0];
-    const location = ws.contractRequest?.location || '';
-
-    // Check today's attendance
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
-    let checkedIn = false;
-    let checkInTime = null;
-    let isApproved = false;
+    const workspaces = activeWorkspaces.map(ws => {
+      const location = ws.contractRequest?.location || '';
+      let checkedIn = false;
+      let checkInTime = null;
+      let isApproved = false;
 
-    const attendance = ws.labourManagement?.attendance || [];
-    const todayEntry = attendance.find(a => a.date === todayStr);
+      const attendance = ws.labourManagement?.attendance || [];
+      const todayEntry = attendance.find(a => a.date === todayStr);
 
-    if (todayEntry) {
-      const labourRecord = todayEntry.records?.find(r => {
-        const rId = r.labourId?._id || r.labourId;
-        return rId?.toString() === userId;
-      });
+      if (todayEntry) {
+        const labourRecord = todayEntry.records?.find(r => {
+          const rId = r.labourId?._id || r.labourId;
+          return rId?.toString() === userId;
+        });
 
-      if (labourRecord) {
-        checkedIn = true;
-        isApproved = labourRecord.isMarked === true;
-        checkInTime = labourRecord.checkInTime || todayEntry.createdAt || today.toISOString();
+        if (labourRecord) {
+          checkedIn = true;
+          isApproved = labourRecord.isMarked === true;
+          checkInTime = labourRecord.checkInTime || todayEntry.createdAt || today.toISOString();
+        }
       }
-    }
 
-    res.status(200).json({
-      hasActiveProject: true,
-      workspace: {
+      return {
         _id: ws._id,
         title: ws.title,
         location: location,
-        contractor: ws.contractor?.fullName || ws.professional?.fullName || ''
-      },
-      checkedIn,
-      checkInTime,
-      isApproved
+        contractor: ws.contractor?.fullName || ws.professional?.fullName || '',
+        checkedIn,
+        checkInTime,
+        isApproved
+      };
+    });
+
+    res.status(200).json({
+      hasActiveProject: true,
+      workspaces,
+      workspace: workspaces[0],
+      checkedIn: workspaces[0].checkedIn,
+      checkInTime: workspaces[0].checkInTime,
+      isApproved: workspaces[0].isApproved
     });
   } catch (error) {
     console.error('Error fetching labour today status:', error);
@@ -4502,7 +4531,8 @@ app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
               checkOutTime: mr.checkOutTime !== undefined && mr.checkOutTime !== null ? mr.checkOutTime : existing.checkOutTime,
               address: mr.address !== undefined && mr.address !== null ? mr.address : existing.address,
               distanceFromSite: mr.distanceFromSite !== undefined && mr.distanceFromSite !== null ? mr.distanceFromSite : existing.distanceFromSite,
-              googleMapsLink: mr.googleMapsLink !== undefined && mr.googleMapsLink !== null ? mr.googleMapsLink : existing.googleMapsLink
+              googleMapsLink: mr.googleMapsLink !== undefined && mr.googleMapsLink !== null ? mr.googleMapsLink : existing.googleMapsLink,
+              remarks: mr.remarks !== undefined && mr.remarks !== null ? mr.remarks : (existing.remarks || '')
             };
           } else {
             existingRecords.push(mr);
@@ -4990,27 +5020,12 @@ app.get('/api/notifications/:userId', async (req, res) => {
       const User = require('./models/User');
       const u = await User.findById(userId);
       if (u) {
-        const notifs = [];
-        const now = Date.now();
-        if (u.role === 'Architect') {
-          notifs.push({ recipientId: u._id, text: `🏗 Invitation to bid received for project "Modern Residential Villa"`, isRead: false, createdAt: new Date(now - 1000 * 60 * 30) });
-          notifs.push({ recipientId: u._id, text: `💰 Milestone 1 payment of ₹25,000 released successfully`, isRead: false, createdAt: new Date(now - 1000 * 60 * 60 * 4) });
-          notifs.push({ recipientId: u._id, text: `✅ Your portfolio was viewed by 3 clients today`, isRead: true, createdAt: new Date(now - 1000 * 60 * 60 * 24) });
-        } else if (u.role === 'Contractor') {
-          notifs.push({ recipientId: u._id, text: `📩 New project request for "Commercial Building Renovation" near Mumbai`, isRead: false, createdAt: new Date(now - 1000 * 60 * 20) });
-          notifs.push({ recipientId: u._id, text: `💰 Payment of ₹50,000 received from client Suresh Mehta`, isRead: false, createdAt: new Date(now - 1000 * 60 * 60 * 3) });
-          notifs.push({ recipientId: u._id, text: `👥 Labour team attendance marked for today`, isRead: true, createdAt: new Date(now - 1000 * 60 * 60 * 8) });
-        } else if (u.role === 'Labour') {
-          notifs.push({ recipientId: u._id, text: `✅ Attendance marked present by Contractor Suraj Sharma`, isRead: false, createdAt: new Date(now - 1000 * 60 * 45) });
-          notifs.push({ recipientId: u._id, text: `💵 Daily wage of ₹800 credited to your wallet`, isRead: false, createdAt: new Date(now - 1000 * 60 * 60 * 6) });
-          notifs.push({ recipientId: u._id, text: `🔔 New work opportunity available near ${u.city || 'your area'}`, isRead: true, createdAt: new Date(now - 1000 * 60 * 60 * 12) });
-        } else {
-          // Client
-          notifs.push({ recipientId: u._id, text: `📋 Quotation updated by Contractor for your project "Duplex Renovation"`, isRead: false, createdAt: new Date(now - 1000 * 60 * 15) });
-          notifs.push({ recipientId: u._id, text: `✍️ Contract agreement signed and finalized successfully`, isRead: false, createdAt: new Date(now - 1000 * 60 * 60 * 5) });
-          notifs.push({ recipientId: u._id, text: `🏠 3 architects matched for your project in ${u.city || 'your area'}`, isRead: true, createdAt: new Date(now - 1000 * 60 * 60 * 24) });
-        }
-        notifs.push({ recipientId: u._id, text: `🎉 Welcome to Allver! Start building, connecting, and growing.`, isRead: true, createdAt: new Date(now - 1000 * 60 * 60 * 48) });
+        const notifs = [{
+          recipientId: u._id,
+          text: `Welcome to Allver! Start building, connecting, and growing.`,
+          isRead: true,
+          createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48) // 2 days ago
+        }];
         await Notification.insertMany(notifs);
         notifications = await Notification.find({
           recipientId: userId,

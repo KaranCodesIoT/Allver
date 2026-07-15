@@ -324,7 +324,9 @@
   "landscapedesign": "Landscape Design",
   "residential": "Residential",
   "urbanplanning": "Urban Planning",
-  "projectTeam": "Project Team"
+  "projectTeam": "Project Team",
+  "noActiveProjects": "No Active Projects",
+  "noActiveProjectsDesc": "You don't have any ongoing projects at the moment."
 }
 
 

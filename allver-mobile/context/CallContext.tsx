@@ -169,9 +169,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       SocketService.off('incoming_call', handleIncomingCall);
       SocketService.off('call_ended', handleCallEndedGlobal);
-      cleanupCall();
     };
-  }, [currentUserId, callerInfo]);
+  }, [currentUserId]);
 
   return (
     <CallContext.Provider value={{ callState, callerInfo, acceptIncomingCall: handleAcceptCall, declineIncomingCall: handleDeclineCall }}>

@@ -127,14 +127,42 @@ export default function ContractorDetailScreen() {
       }
     };
 
+    const handleWorkspaceUpdated = (data: any) => {
+      if (data && data.workspaceId) {
+        setRealProjects((prevList) => {
+          return prevList.map((w: any) => {
+            if (w._id === data.workspaceId) {
+              return {
+                ...w,
+                ...data.workspace
+              };
+            }
+            return w;
+          });
+        });
+      }
+    };
+
     SocketService.on('profile_updated', handleProfileUpdated);
     SocketService.on('user_stats_updated', handleUserStatsUpdated);
+    SocketService.on('workspace_updated', handleWorkspaceUpdated);
 
     return () => {
       SocketService.off('profile_updated', handleProfileUpdated);
       SocketService.off('user_stats_updated', handleUserStatsUpdated);
+      SocketService.off('workspace_updated', handleWorkspaceUpdated);
     };
   }, [id]);
+
+  useEffect(() => {
+    if (realProjects && realProjects.length > 0) {
+      realProjects.forEach((w: any) => {
+        if (w._id) {
+          SocketService.emit('join_room', { roomId: w._id });
+        }
+      });
+    }
+  }, [realProjects]);
 
   useEffect(() => {
     if (id) {
@@ -156,7 +184,7 @@ export default function ContractorDetailScreen() {
         .then(res => res.json())
         .then(data => {
           if (data.workspaces) {
-            setRealProjects(data.workspaces);
+            setRealProjects(data.workspaces.filter((w: any) => w.projectType !== 'Team'));
           }
           setIsLoadingProjects(false);
         })

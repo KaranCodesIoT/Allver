@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking, Modal, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import { Feather, FontAwesome5, MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Video, ResizeMode } from 'expo-av';
 import { Image } from 'expo-image';
@@ -103,19 +104,51 @@ export default function ProfileScreen() {
   // Listen for real-time profile updates
   useEffect(() => {
     const handleProfileUpdated = (data: any) => {
-      if (data && currentUser && data.userId === currentUser._id) {
+      const loggedInUserId = (global as any).currentUser?._id;
+      if (data && loggedInUserId && data.userId === loggedInUserId && data.user) {
         console.log('[Profile] Current user profile updated via socket:', data.user);
-        setCurrentUser(data.user);
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          localStorage.setItem('currentUser', JSON.stringify(data.user));
+        }
         (global as any).currentUser = data.user;
+        setCurrentUser(data.user);
         loadUserData();
       }
     };
 
+    const handleWorkspaceUpdated = (data: any) => {
+      if (data && data.workspaceId) {
+        setAllWorkspaces((prevList) => {
+          return prevList.map((w: any) => {
+            if (w._id === data.workspaceId) {
+              return {
+                ...w,
+                ...data.workspace
+              };
+            }
+            return w;
+          });
+        });
+      }
+    };
+
     SocketService.on('profile_updated', handleProfileUpdated);
+    SocketService.on('workspace_updated', handleWorkspaceUpdated);
     return () => {
       SocketService.off('profile_updated', handleProfileUpdated);
+      SocketService.off('workspace_updated', handleWorkspaceUpdated);
     };
   }, [currentUser?._id]);
+
+  useEffect(() => {
+    if (allWorkspaces && allWorkspaces.length > 0) {
+      allWorkspaces.forEach((w: any) => {
+        if (w._id) {
+          SocketService.emit('join_room', { roomId: w._id });
+        }
+      });
+    }
+  }, [allWorkspaces]);
 
   // Add Portfolio Highlight states
   const [showAddHighlightModal, setShowAddHighlightModal] = useState(false);
@@ -348,7 +381,7 @@ export default function ProfileScreen() {
       setAllWorkspaces(workspaces);
 
       if (role === 'Contractor' || role === 'Architect' || role === 'Labour') {
-        const mapped = workspaces.map((w: any) => {
+        const mapped = workspaces.filter((w: any) => w.projectType !== 'Team').map((w: any) => {
           return {
             id: w._id,
             title: w.title,
@@ -1023,6 +1056,78 @@ export default function ProfileScreen() {
     return unsubscribe;
   }, [navigation]);
 
+  const formatDateString = (y: number, m: number, d: number) => {
+    const monthStr = m + 1;
+    return `${y}-${monthStr < 10 ? '0' + monthStr : monthStr}-${d < 10 ? '0' + d : d}`;
+  };
+
+  const mergeAttendanceData = (calendarDays: any[], workspacesList: any[], y: number, m: number, userId: string) => {
+    return calendarDays.map(dObj => {
+      if (!dObj.isCurrentMonth) return dObj;
+      
+      const dateStr = formatDateString(y, m, dObj.day);
+      let foundStatus: any;
+      let foundHours: number | undefined;
+      let foundLatitude: number | undefined;
+      let foundLongitude: number | undefined;
+      let foundCheckInTime: string | undefined;
+      let foundCheckOutTime: string | undefined;
+      let foundAddress: string | undefined;
+      let foundDistanceFromSite: string | undefined;
+      let foundGoogleMapsLink: string | undefined;
+      let foundAdvance = 0;
+      let foundRemarks = '-';
+
+      workspacesList.forEach((w: any) => {
+        const attRecord = w.labourManagement?.attendance?.find((a: any) => a.date === dateStr);
+        if (attRecord) {
+          const matchingRecord = attRecord.records?.find(
+            (r: any) => (r.labourId?._id || r.labourId)?.toString() === userId.toString()
+          );
+          if (matchingRecord) {
+            foundStatus = matchingRecord.status;
+            foundHours = matchingRecord.hours;
+            foundLatitude = matchingRecord.latitude;
+            foundLongitude = matchingRecord.longitude;
+            foundCheckInTime = matchingRecord.checkInTime;
+            foundCheckOutTime = matchingRecord.checkOutTime;
+            foundAddress = matchingRecord.address;
+            foundDistanceFromSite = matchingRecord.distanceFromSite;
+            foundGoogleMapsLink = matchingRecord.googleMapsLink;
+            foundRemarks = matchingRecord.remarks || '-';
+          }
+        }
+
+        w.labourManagement?.payments?.forEach((p: any) => {
+          const pDate = new Date(p.date);
+          const pYear = pDate.getFullYear();
+          const pMonth = pDate.getMonth();
+          const pDay = pDate.getDate();
+          if (pYear === y && pMonth === m && pDay === dObj.day && (p.labourId?._id || p.labourId)?.toString() === userId.toString()) {
+            if (p.type === 'Advance') {
+              foundAdvance += p.amount || 0;
+            }
+          }
+        });
+      });
+
+      return {
+        ...dObj,
+        status: foundStatus || dObj.status,
+        hours: foundHours !== undefined ? foundHours : dObj.hours,
+        advance: foundAdvance || dObj.advance,
+        remarks: foundRemarks,
+        latitude: foundLatitude,
+        longitude: foundLongitude,
+        checkInTime: foundCheckInTime,
+        checkOutTime: foundCheckOutTime,
+        address: foundAddress,
+        distanceFromSite: foundDistanceFromSite,
+        googleMapsLink: foundGoogleMapsLink
+      };
+    });
+  };
+
   // Purge ALL legacy attendance cache keys on mount/focus and whenever month/year changes
   // This ensures new users never see stale mock/dummy data
   useEffect(() => {
@@ -1047,78 +1152,6 @@ export default function ProfileScreen() {
         delete globalObj[k];
       }
     });
-
-    const formatDateString = (y: number, m: number, d: number) => {
-      const monthStr = m + 1;
-      return `${y}-${monthStr < 10 ? '0' + monthStr : monthStr}-${d < 10 ? '0' + d : d}`;
-    };
-
-    const mergeAttendanceData = (calendarDays: any[], workspacesList: any[], y: number, m: number, userId: string) => {
-      return calendarDays.map(dObj => {
-        if (!dObj.isCurrentMonth) return dObj;
-        
-        const dateStr = formatDateString(y, m, dObj.day);
-        let foundStatus: any;
-        let foundHours: number | undefined;
-        let foundLatitude: number | undefined;
-        let foundLongitude: number | undefined;
-        let foundCheckInTime: string | undefined;
-        let foundCheckOutTime: string | undefined;
-        let foundAddress: string | undefined;
-        let foundDistanceFromSite: string | undefined;
-        let foundGoogleMapsLink: string | undefined;
-        let foundAdvance = 0;
-        let foundRemarks = '-';
-
-        workspacesList.forEach((w: any) => {
-          const attRecord = w.labourManagement?.attendance?.find((a: any) => a.date === dateStr);
-          if (attRecord) {
-            const matchingRecord = attRecord.records?.find(
-              (r: any) => (r.labourId?._id || r.labourId)?.toString() === userId.toString()
-            );
-            if (matchingRecord) {
-              foundStatus = matchingRecord.status;
-              foundHours = matchingRecord.hours;
-              foundLatitude = matchingRecord.latitude;
-              foundLongitude = matchingRecord.longitude;
-              foundCheckInTime = matchingRecord.checkInTime;
-              foundCheckOutTime = matchingRecord.checkOutTime;
-              foundAddress = matchingRecord.address;
-              foundDistanceFromSite = matchingRecord.distanceFromSite;
-              foundGoogleMapsLink = matchingRecord.googleMapsLink;
-              foundRemarks = matchingRecord.remarks || '-';
-            }
-          }
-
-          w.labourManagement?.payments?.forEach((p: any) => {
-            const pDate = new Date(p.date);
-            const pYear = pDate.getFullYear();
-            const pMonth = pDate.getMonth();
-            const pDay = pDate.getDate();
-            if (pYear === y && pMonth === m && pDay === dObj.day && (p.labourId?._id || p.labourId)?.toString() === userId.toString()) {
-              if (p.type === 'Advance') {
-                foundAdvance += p.amount || 0;
-              }
-            }
-          });
-        });
-
-        return {
-          ...dObj,
-          status: foundStatus || dObj.status,
-          hours: foundHours !== undefined ? foundHours : dObj.hours,
-          advance: foundAdvance || dObj.advance,
-          remarks: foundRemarks,
-          latitude: foundLatitude,
-          longitude: foundLongitude,
-          checkInTime: foundCheckInTime,
-          checkOutTime: foundCheckOutTime,
-          address: foundAddress,
-          distanceFromSite: foundDistanceFromSite,
-          googleMapsLink: foundGoogleMapsLink
-        };
-      });
-    };
 
     // Always start fresh — blank calendar with no status on any day
     const initialDays = generateCalendar(currentYear, currentMonth);
@@ -1880,134 +1913,182 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
             <View style={styles.attendanceSection}>
               <Text style={styles.sectionHeaderTitle}>My Attendance Board</Text>
               
-              <View style={styles.calendarCard}>
-                
-                {/* Calendar Left Section */}
-                <View style={styles.calendarLeft}>
-                  {/* Header Month Selector */}
-                  <View style={styles.calendarHeader}>
-                    <TouchableOpacity style={styles.monthSelector} onPress={handleOpenMonthPicker} activeOpacity={0.7}>
-                      <Feather name="calendar" size={16} color={COLORS.textDark} style={{ marginRight: 6 }} />
-                      <Text style={styles.monthText}>{`${getMonthName(currentMonth)} ${currentYear}`}</Text>
-                      <Feather name="chevron-down" size={14} color={COLORS.textDark} style={{ marginLeft: 4 }} />
-                    </TouchableOpacity>
-                    <View style={styles.arrowControls}>
-                      <TouchableOpacity style={styles.arrowBtn} onPress={handlePrevMonth}>
-                        <Feather name="chevron-left" size={16} color={COLORS.textDark} />
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.arrowBtn} onPress={handleNextMonth}>
-                        <Feather name="chevron-right" size={16} color={COLORS.textDark} />
-                      </TouchableOpacity>
+              {(() => {
+                const visibleWorkspaces = allWorkspaces.filter((w: any) => {
+                  return w.status !== 'Completed' && w.status !== 'Cancelled';
+                });
+
+                if (visibleWorkspaces.length === 0) {
+                  return (
+                    <View style={{ paddingVertical: 30, alignItems: 'center' }}>
+                      <Feather name="calendar" size={32} color={COLORS.textMuted} />
+                      <Text style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 8 }}>No active team membership or attendance records found.</Text>
                     </View>
-                  </View>
+                  );
+                }
 
-                  {/* Days of Week Row */}
-                  <View style={styles.weekdaysRow}>
-                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => (
-                      <Text key={w} style={styles.weekdayText}>{w}</Text>
-                    ))}
-                  </View>
+                return visibleWorkspaces.map((ws: any, wsIdx: number) => {
+                  const wsDays = mergeAttendanceData(generateCalendar(currentYear, currentMonth), [ws], currentYear, currentMonth, currentUser._id);
+                  const wsPresent = wsDays.filter(d => d.isCurrentMonth && d.status === 'Present').length;
+                  const wsHalf = wsDays.filter(d => d.isCurrentMonth && d.status === 'Half Day').length;
+                  const wsAbsent = wsDays.filter(d => d.isCurrentMonth && d.status === 'Absent').length;
+                  const wsOvertime = wsDays.filter(d => d.isCurrentMonth && d.status === 'Overtime').length;
 
-                  {/* Days Grid */}
-                  <View style={styles.daysGrid}>
-                    {days.map((d, idx) => {
-                      const todayDate = new Date();
-                      const isToday = todayDate.getFullYear() === currentYear && 
-                                      todayDate.getMonth() === currentMonth && 
-                                      d.day === todayDate.getDate() && 
-                                      d.isCurrentMonth;
-                      
-                      const cellDate = new Date(currentYear, currentMonth, d.day);
-                      cellDate.setHours(0, 0, 0, 0);
-                      const compToday = new Date();
-                      compToday.setHours(0, 0, 0, 0);
-                      const isFuture = d.isCurrentMonth && cellDate > compToday;
+                  const wsContractorName = ws.contractor?.fullName || ws.contractorName || 'BuildWell Contractors';
 
-                      return (
-                        <TouchableOpacity 
-                          key={idx} 
-                          style={[
-                            styles.dayCell, 
-                            d.isCurrentMonth && isToday && styles.dayCellEditable,
-                            d.isCurrentMonth && !isToday && !isFuture && styles.dayCellLocked,
-                            isFuture && styles.dayCellFuture
-                          ]}
-                          onPress={() => handleDayPress(d)}
-                          disabled={!d.isCurrentMonth || isFuture}
-                          activeOpacity={0.6}
-                        >
-                          <Text style={[
-                            styles.dayText, 
-                            !d.isCurrentMonth && styles.dayTextPrevNext,
-                            isToday && styles.todayText
-                          ]}>
-                            {d.day < 10 ? `0${d.day}` : d.day}
-                          </Text>
+                  return (
+                    <View key={ws._id || wsIdx} style={{ marginBottom: 20 }}>
+                      {/* Contractor Header Card */}
+                      <View style={{
+                        backgroundColor: '#F0FDF4',
+                        borderWidth: 1,
+                        borderColor: '#BBF7D0',
+                        borderRadius: 12,
+                        padding: 12,
+                        marginBottom: 10,
+                      }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                          <Feather name="user" size={12} color="#059669" style={{ marginRight: 6 }} />
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: '#047857' }}>Contractor: {wsContractorName}</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                          <Feather name="clock" size={12} color="#059669" style={{ marginRight: 6 }} />
+                          <Text style={{ fontSize: 11, fontWeight: '500', color: '#059669' }}>Timeline: Ongoing</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.calendarCard}>
+                        
+                        {/* Calendar Left Section */}
+                        <View style={styles.calendarLeft}>
+                          {/* Header Month Selector */}
+                          <View style={styles.calendarHeader}>
+                            <TouchableOpacity style={styles.monthSelector} onPress={handleOpenMonthPicker} activeOpacity={0.7}>
+                              <Feather name="calendar" size={16} color={COLORS.textDark} style={{ marginRight: 6 }} />
+                              <Text style={styles.monthText}>{`${getMonthName(currentMonth)} ${currentYear}`}</Text>
+                              <Feather name="chevron-down" size={14} color={COLORS.textDark} style={{ marginLeft: 4 }} />
+                            </TouchableOpacity>
+                            <View style={styles.arrowControls}>
+                              <TouchableOpacity style={styles.arrowBtn} onPress={handlePrevMonth}>
+                                <Feather name="chevron-left" size={16} color={COLORS.textDark} />
+                              </TouchableOpacity>
+                              <TouchableOpacity style={styles.arrowBtn} onPress={handleNextMonth}>
+                                <Feather name="chevron-right" size={16} color={COLORS.textDark} />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+
+                          {/* Days of Week Row */}
+                          <View style={styles.weekdaysRow}>
+                            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => (
+                              <Text key={w} style={styles.weekdayText}>{w}</Text>
+                            ))}
+                          </View>
+
+                          {/* Days Grid */}
+                          <View style={styles.daysGrid}>
+                            {wsDays.map((d, idx) => {
+                              const todayDate = new Date();
+                              const isToday = todayDate.getFullYear() === currentYear && 
+                                              todayDate.getMonth() === currentMonth && 
+                                              d.day === todayDate.getDate() && 
+                                              d.isCurrentMonth;
+                              
+                              const cellDate = new Date(currentYear, currentMonth, d.day);
+                              cellDate.setHours(0, 0, 0, 0);
+                              const compToday = new Date();
+                              compToday.setHours(0, 0, 0, 0);
+                              const isFuture = d.isCurrentMonth && cellDate > compToday;
+
+                              return (
+                                <TouchableOpacity 
+                                  key={idx} 
+                                  style={[
+                                    styles.dayCell, 
+                                    d.isCurrentMonth && isToday && styles.dayCellEditable,
+                                    d.isCurrentMonth && !isToday && !isFuture && styles.dayCellLocked,
+                                    isFuture && styles.dayCellFuture
+                                  ]}
+                                  onPress={() => handleDayPress(d)}
+                                  disabled={!d.isCurrentMonth || isFuture}
+                                  activeOpacity={0.6}
+                                >
+                                  <Text style={[
+                                    styles.dayText, 
+                                    !d.isCurrentMonth && styles.dayTextPrevNext,
+                                    isToday && styles.todayText
+                                  ]}>
+                                    {d.day < 10 ? `0${d.day}` : d.day}
+                                  </Text>
+                                  
+                                  {/* Dot indicator */}
+                                  {d.isCurrentMonth && d.status && (
+                                    <View style={[
+                                      styles.statusDot, 
+                                      d.status === 'Present' ? styles.dotPresent : d.status === 'Half Day' ? styles.dotHalf : d.status === 'Overtime' ? styles.dotOvertime : styles.dotAbsent
+                                    ]} />
+                                  )}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+
+                          {/* Legend Row */}
+                          <View style={styles.legendRow}>
+                            <View style={styles.legendItem}>
+                              <View style={[styles.statusDot, styles.dotPresent, { position: 'relative', marginRight: 5 }]} />
+                              <Text style={styles.legendText}>Present</Text>
+                            </View>
+                            <View style={styles.legendItem}>
+                              <View style={[styles.statusDot, styles.dotHalf, { position: 'relative', marginRight: 5 }]} />
+                              <Text style={styles.legendText}>Half Day</Text>
+                            </View>
+                            <View style={styles.legendItem}>
+                              <View style={[styles.statusDot, styles.dotOvertime, { position: 'relative', marginRight: 5 }]} />
+                              <Text style={styles.legendText}>Overtime</Text>
+                            </View>
+                            <View style={styles.legendItem}>
+                              <View style={[styles.statusDot, styles.dotAbsent, { position: 'relative', marginRight: 5 }]} />
+                              <Text style={styles.legendText}>Absent</Text>
+                            </View>
+                          </View>
+
+                        </View>
+
+                        {/* Summary Sidebar Right Section */}
+                        <View style={styles.summarySidebar}>
+                          <View style={styles.sidebarIconBox}>
+                            <MaterialCommunityIcons name="finance" size={18} color="#059669" />
+                          </View>
                           
-                          {/* Dot indicator */}
-                          {d.isCurrentMonth && d.status && (
-                            <View style={[
-                              styles.statusDot, 
-                              d.status === 'Present' ? styles.dotPresent : d.status === 'Half Day' ? styles.dotHalf : d.status === 'Overtime' ? styles.dotOvertime : styles.dotAbsent
-                            ]} />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+                          <Text style={styles.sidebarSectionTitle}>Attendance Summary</Text>
+                          
+                          <View style={styles.summaryStatItem}>
+                            <Text style={styles.summaryStatLabel}>Present Days</Text>
+                            <Text style={[styles.summaryStatValue, { color: '#059669' }]}>{wsPresent}</Text>
+                          </View>
 
-                  {/* Legend Row */}
-                  <View style={styles.legendRow}>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.statusDot, styles.dotPresent, { position: 'relative', marginRight: 5 }]} />
-                      <Text style={styles.legendText}>Present</Text>
+                          <View style={styles.summaryStatItem}>
+                            <Text style={styles.summaryStatLabel}>Half Days</Text>
+                            <Text style={[styles.summaryStatValue, { color: COLORS.primary }]}>{wsHalf}</Text>
+                          </View>
+
+                          <View style={styles.summaryStatItem}>
+                            <Text style={styles.summaryStatLabel}>Overtime Days</Text>
+                            <Text style={[styles.summaryStatValue, { color: COLORS.blue }]}>{wsOvertime}</Text>
+                          </View>
+
+                          <View style={styles.summaryStatItem}>
+                            <Text style={styles.summaryStatLabel}>Absent Days</Text>
+                            <Text style={[styles.summaryStatValue, { color: COLORS.red }]}>{wsAbsent}</Text>
+                          </View>
+                        </View>
+
+                      </View>
                     </View>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.statusDot, styles.dotHalf, { position: 'relative', marginRight: 5 }]} />
-                      <Text style={styles.legendText}>Half Day</Text>
-                    </View>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.statusDot, styles.dotOvertime, { position: 'relative', marginRight: 5 }]} />
-                      <Text style={styles.legendText}>Overtime</Text>
-                    </View>
-                    <View style={styles.legendItem}>
-                      <View style={[styles.statusDot, styles.dotAbsent, { position: 'relative', marginRight: 5 }]} />
-                      <Text style={styles.legendText}>Absent</Text>
-                    </View>
-                  </View>
-
-                </View>
-
-                {/* Summary Sidebar Right Section */}
-                <View style={styles.summarySidebar}>
-                  <View style={styles.sidebarIconBox}>
-                    <MaterialCommunityIcons name="finance" size={18} color="#059669" />
-                  </View>
-                  
-                  <Text style={styles.sidebarSectionTitle}>Attendance Summary</Text>
-                  
-                  <View style={styles.summaryStatItem}>
-                    <Text style={styles.summaryStatLabel}>Present Days</Text>
-                    <Text style={[styles.summaryStatValue, { color: '#059669' }]}>{presentCount}</Text>
-                  </View>
-
-                  <View style={styles.summaryStatItem}>
-                    <Text style={styles.summaryStatLabel}>Half Days</Text>
-                    <Text style={[styles.summaryStatValue, { color: COLORS.primary }]}>{halfCount}</Text>
-                  </View>
-
-                  <View style={styles.summaryStatItem}>
-                    <Text style={styles.summaryStatLabel}>Overtime Days</Text>
-                    <Text style={[styles.summaryStatValue, { color: COLORS.blue }]}>{overtimeCount}</Text>
-                  </View>
-
-                  <View style={styles.summaryStatItem}>
-                    <Text style={styles.summaryStatLabel}>Absent Days</Text>
-                    <Text style={[styles.summaryStatValue, { color: COLORS.red }]}>{absentCount}</Text>
-                  </View>
-                </View>
-
-              </View>
+                  );
+                });
+              })()}
 
               {/* ================= RECENT ACTIVITY TIMELINE ================= */}
               <View style={styles.activityCard}>

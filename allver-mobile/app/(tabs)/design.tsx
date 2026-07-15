@@ -452,15 +452,7 @@ export default function DesignScreen() {
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <>
-            {/* Banner Block */}
-            <View style={styles.bannerContainer}>
-              <View style={styles.bannerIconBox}>
-                <Feather name="info" size={18} color={COLORS.green} />
-              </View>
-              <Text style={styles.bannerText}>
-                {t('designBanner')}
-              </Text>
-            </View>
+
 
             {/* Filter Dropdowns / Search */}
             <View style={styles.filtersContainer}>

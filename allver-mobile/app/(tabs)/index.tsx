@@ -174,6 +174,14 @@ export default function DashboardScreen() {
   const [directInvitations, setDirectInvitations] = useState<any[]>([]);
   const [todayWork, setTodayWork] = useState<any>(null);
   const [checkingIn, setCheckingIn] = useState(false);
+  const [selectedWorkspaceIndex, setSelectedWorkspaceIndex] = useState<number>(0);
+
+  // Computed todayWork fields based on selection
+  const workspacesList = todayWork?.workspaces || (todayWork?.workspace ? [todayWork.workspace] : []);
+  const activeWorkspace = workspacesList[selectedWorkspaceIndex] || todayWork?.workspace || null;
+  const isCheckedIn = activeWorkspace?.checkedIn ?? todayWork?.checkedIn ?? false;
+  const checkInTimeValue = activeWorkspace?.checkInTime ?? todayWork?.checkInTime ?? null;
+  const isApprovedValue = activeWorkspace?.isApproved ?? todayWork?.isApproved ?? false;
 
   // Fetch labour's today work status
   const fetchTodayWork = useCallback(async () => {
@@ -189,7 +197,7 @@ export default function DashboardScreen() {
 
   // Handle CHECK IN
   const handleCheckIn = async () => {
-    if (!currentUser?._id || !todayWork?.workspace?._id) return;
+    if (!currentUser?._id || !activeWorkspace?._id) return;
     setCheckingIn(true);
 
     try {
@@ -229,9 +237,9 @@ export default function DashboardScreen() {
 
       // Calculate distance from site
       let distanceFromSite = 'Unknown';
-      if (todayWork.workspace?.location) {
+      if (activeWorkspace.location) {
         try {
-          const geocoded = await Location.geocodeAsync(todayWork.workspace.location);
+          const geocoded = await Location.geocodeAsync(activeWorkspace.location);
           if (geocoded && geocoded.length > 0) {
             const projectLat = geocoded[0].latitude;
             const projectLng = geocoded[0].longitude;
@@ -260,7 +268,7 @@ export default function DashboardScreen() {
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
       // Post attendance using existing API
-      const res = await fetch(`${BACKEND_URL}/api/project-workspaces/${todayWork.workspace._id}/labour/attendance`, {
+      const res = await fetch(`${BACKEND_URL}/api/project-workspaces/${activeWorkspace._id}/labour/attendance`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -282,12 +290,34 @@ export default function DashboardScreen() {
 
       if (res.ok) {
         // Update local state immediately
-        setTodayWork((prev: any) => ({
-          ...prev,
-          checkedIn: true,
-          checkInTime: now.toISOString(),
-          isApproved: false
-        }));
+        setTodayWork((prev: any) => {
+          if (!prev) return prev;
+          if (prev.workspaces) {
+            const updated = [...prev.workspaces];
+            const targetIndex = updated.findIndex((w: any) => w._id === activeWorkspace._id);
+            if (targetIndex !== -1) {
+              updated[targetIndex] = {
+                ...updated[targetIndex],
+                checkedIn: true,
+                checkInTime: now.toISOString(),
+                isApproved: false
+              };
+            }
+            return {
+              ...prev,
+              workspaces: updated,
+              checkedIn: targetIndex === 0 ? true : prev.checkedIn,
+              checkInTime: targetIndex === 0 ? now.toISOString() : prev.checkInTime,
+              isApproved: targetIndex === 0 ? false : prev.isApproved
+            };
+          }
+          return {
+            ...prev,
+            checkedIn: true,
+            checkInTime: now.toISOString(),
+            isApproved: false
+          };
+        });
         Alert.alert('✅ Checked In!', 'Your GPS location and reverse geocoded address have been recorded. Waiting for contractor approval.');
       } else {
         const err = await res.json();
@@ -401,7 +431,7 @@ export default function DashboardScreen() {
         // Fetch workspaces where this professional/labour is assigned
         const wsRes = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${currentUser._id}`);
         const wsData = await wsRes.json();
-        const workspaces = wsData.workspaces || [];
+        const workspaces = (wsData.workspaces || []).filter((w: any) => w.projectType !== 'Team');
 
         const mapped = workspaces.map((w: any) => {
           return {
@@ -513,6 +543,7 @@ export default function DashboardScreen() {
     const handleWorkspaceUpdate = (data: any) => {
       console.log('[Home] Real-time workspace update received:', data);
       fetchRequests();
+      fetchTodayWork();
     };
 
     const handleProfileUpdated = (data: any) => {
@@ -540,7 +571,33 @@ export default function DashboardScreen() {
       SocketService.off('profile_updated', handleProfileUpdated);
       SocketService.off('connect', handleReconnect);
     };
-  }, [currentUser?._id, fetchUnreadJobsCount, fetchRequests]);
+  }, [currentUser?._id, fetchUnreadJobsCount, fetchRequests, fetchTodayWork]);
+
+  useEffect(() => {
+    const idsToJoin = new Set<string>();
+
+    if (workspacesList && workspacesList.length > 0) {
+      workspacesList.forEach((w: any) => {
+        if (w._id) idsToJoin.add(w._id);
+      });
+    }
+
+    if (clientRequests && clientRequests.length > 0) {
+      clientRequests.forEach((req: any) => {
+        if (req.workspaceId) idsToJoin.add(req.workspaceId);
+      });
+    }
+
+    if (labourProjects && labourProjects.length > 0) {
+      labourProjects.forEach((proj: any) => {
+        if (proj.workspaceId) idsToJoin.add(proj.workspaceId);
+      });
+    }
+
+    idsToJoin.forEach(id => {
+      SocketService.emit('join_room', { roomId: id });
+    });
+  }, [workspacesList, clientRequests, labourProjects]);
 
   // Fetch recent activities - also refresh on screen focus
   const fetchActivities = useCallback(async () => {
@@ -931,7 +988,7 @@ export default function DashboardScreen() {
               >
                 {currentUser?.avatarUrl ? (
                   <Image 
-                    source={{ uri: resolveAvatarUrl(currentUser.avatarUrl) }} 
+                    source={{ uri: resolveAvatarUrl(currentUser.avatarUrl, currentUser.updatedAt) }} 
                     style={styles.headerAvatarImg} 
                   />
                 ) : (
@@ -1037,16 +1094,64 @@ export default function DashboardScreen() {
         {/* ================= TODAY'S WORK (Labour Only) ================= */}
         {currentUser?.role === 'Labour' && todayWork?.hasActiveProject && (
           <View style={styles.todayWorkContainer}>
-            {todayWork.checkedIn ? (
+            {workspacesList.length > 1 && (
+              <View style={{ marginBottom: 12, backgroundColor: '#FFFFFF', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.textMuted, marginBottom: 8 }}>
+                  SELECT CONTRACTOR TEAM FOR ATTENDANCE:
+                </Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {workspacesList.map((wsItem: any, idx: number) => {
+                      const isSelected = idx === selectedWorkspaceIndex;
+                      const hasCheckedIn = wsItem.checkedIn;
+                      return (
+                        <TouchableOpacity
+                          key={wsItem._id || idx}
+                          onPress={() => setSelectedWorkspaceIndex(idx)}
+                          style={{
+                            backgroundColor: isSelected ? '#10B981' : '#F3F4F6',
+                            borderWidth: 1,
+                            borderColor: isSelected ? '#10B981' : '#E5E7EB',
+                            paddingHorizontal: 14,
+                            paddingVertical: 8,
+                            borderRadius: 20,
+                            flexDirection: 'row',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <Text style={{
+                            fontSize: 12,
+                            fontWeight: '700',
+                            color: isSelected ? '#FFF' : COLORS.textDark
+                          }}>
+                            {wsItem.contractor?.toUpperCase() || wsItem.title?.toUpperCase() || 'TEAM'}
+                          </Text>
+                          {hasCheckedIn && (
+                            <Feather 
+                              name="check-circle" 
+                              size={12} 
+                              color={isSelected ? '#FFF' : '#10B981'} 
+                              style={{ marginLeft: 6 }} 
+                            />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </ScrollView>
+              </View>
+            )}
+
+            {isCheckedIn ? (
               /* ── Checked-In State ── */
               <TouchableOpacity
                 style={styles.todayWorkCheckedCard}
                 activeOpacity={0.85}
                 onPress={() => {
-                  if (todayWork.workspace?._id) {
+                  if (activeWorkspace?._id) {
                     router.push({
                       pathname: '/project-progress',
-                      params: { workspaceId: todayWork.workspace._id }
+                      params: { workspaceId: activeWorkspace._id }
                     });
                   }
                 }}
@@ -1060,24 +1165,24 @@ export default function DashboardScreen() {
 
                 <View style={styles.twCheckedBody}>
                   <Text style={styles.twCheckedTime}>
-                    {todayWork.checkInTime
-                      ? (/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(todayWork.checkInTime)
-                        ? todayWork.checkInTime.toUpperCase()
+                    {checkInTimeValue
+                      ? (/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(checkInTimeValue)
+                        ? checkInTimeValue.toUpperCase()
                         : (() => {
-                            const parsed = new Date(todayWork.checkInTime);
-                            return !isNaN(parsed.getTime()) 
-                              ? parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()
-                              : todayWork.checkInTime;
-                          })())
+                             const parsed = new Date(checkInTimeValue);
+                             return !isNaN(parsed.getTime()) 
+                               ? parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()
+                               : checkInTimeValue;
+                           })())
                       : ''}
                   </Text>
-                  <Text style={styles.twCheckedProject}>{todayWork.workspace?.title?.toUpperCase() || 'PROJECT'}</Text>
+                  <Text style={styles.twCheckedProject}>{activeWorkspace?.title?.toUpperCase() || 'PROJECT'}</Text>
                 </View>
 
                 <View style={styles.twCheckedFooter}>
                   <Feather name="clock" size={12} color={COLORS.textMuted} />
                   <Text style={styles.twCheckedFooterText}>
-                    {todayWork.isApproved ? 'Approved by contractor ✓' : 'Waiting for contractor approval'}
+                    {isApprovedValue ? 'Approved by contractor ✓' : 'Waiting for contractor approval'}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -1095,12 +1200,12 @@ export default function DashboardScreen() {
                   </View>
                   <View style={styles.twProjectInfo}>
                     <Text style={styles.twProjectName} numberOfLines={1}>
-                      {todayWork.workspace?.title?.toUpperCase() || 'PROJECT'}
+                      {activeWorkspace?.title?.toUpperCase() || 'PROJECT'}
                     </Text>
                     <View style={styles.twLocationRow}>
                       <Feather name="map-pin" size={11} color={COLORS.textMuted} />
                       <Text style={styles.twLocationText}>
-                        {todayWork.workspace?.location?.toUpperCase() || 'LOCATION'}
+                        {activeWorkspace?.location?.toUpperCase() || 'LOCATION'}
                       </Text>
                     </View>
                   </View>

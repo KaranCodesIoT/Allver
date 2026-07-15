@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
 import TransliteratedTextInput from '../components/TransliteratedTextInput';
 import * as WebBrowser from 'expo-web-browser';
+import * as FileSystem from 'expo-file-system';
 import { useUnreadMessages } from '../context/UnreadMessageContext';
 import { useTranslation } from '../utils/i18n';
 
@@ -499,9 +500,20 @@ export default function ChatRoomScreen() {
       Alert.alert('Call Ended', 'The call has ended.');
     };
 
-    const handleReceiveVoiceChunk = (data: any) => {
-      console.log('[Socket] Received voice chunk:', data.url);
-      if (data && data.url) {
+    const handleReceiveVoiceChunk = async (data: any) => {
+      console.log('[Socket] Received voice chunk');
+      if (data && data.base64Data) {
+        try {
+          const tempFilename = `${FileSystem.cacheDirectory}call_chunk_${Date.now()}_${Math.random().toString(36).substring(7)}.m4a`;
+          await FileSystem.writeAsStringAsync(tempFilename, data.base64Data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          voiceQueueRef.current.push(tempFilename);
+          playNextInVoiceQueue();
+        } catch (err) {
+          console.error('[Socket] Failed to write incoming voice chunk:', err);
+        }
+      } else if (data && data.url) {
         voiceQueueRef.current.push(data.url);
         playNextInVoiceQueue();
       }
@@ -515,6 +527,7 @@ export default function ChatRoomScreen() {
     s.on('messages_read', handleMessagesRead);
     s.on('message_delivered', handleMessageDelivered);
     s.on('connect', handleReconnect);
+    s.on('incoming_call', handleIncomingCall);
     s.on('call_answered', handleCallAnswered);
     s.on('call_rejected', handleCallRejected);
     s.on('call_busy', handleCallBusy);
@@ -531,6 +544,7 @@ export default function ChatRoomScreen() {
       s.off('messages_read', handleMessagesRead);
       s.off('message_delivered', handleMessageDelivered);
       s.off('connect', handleReconnect);
+      s.off('incoming_call', handleIncomingCall);
       s.off('call_answered', handleCallAnswered);
       s.off('call_rejected', handleCallRejected);
       s.off('call_busy', handleCallBusy);
@@ -1857,14 +1871,17 @@ export default function ChatRoomScreen() {
       callRecordingRef.current = null;
 
       if (uri && socket && callerInfo) {
-        const url = await uploadToCloudinary(uri, 'call_chunk.m4a');
-        if (url) {
+        const base64Data = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        if (base64Data) {
           const target = callerInfo.callerId === currentUser._id || callerInfo.callerId === receiverId ? receiverId : callerInfo.callerId;
-          socket.emit('voice_chunk', { url, targetId: target });
+          socket.emit('voice_chunk', { base64Data, targetId: target });
         }
       }
     } catch (err) {
-      console.error('Failed to stop and upload call chunk:', err);
+      console.error('Failed to stop and process call chunk:', err);
     }
   };
 

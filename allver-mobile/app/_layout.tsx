@@ -18,6 +18,7 @@ import { getStoredUser, getStoredLanguage, getToken, removeToken, removeStoredUs
 import { UnreadMessageProvider } from '../context/UnreadMessageContext';
 import { UnreadActivityProvider } from '../context/UnreadActivityContext';
 import { CallProvider } from '../context/CallContext';
+import AIAssistantFloatingButton from '../components/AIAssistantFloatingButton';
 
 // Ignore specific warning logs in Expo Go / Development
 LogBox.ignoreLogs([
@@ -340,6 +341,10 @@ export default function RootLayout() {
     return null; // Let the native splash screen show
   }
 
+  const currentSegment = segments[0];
+  const currentUser = getCurrentUser();
+  const showAIAssistant = false; // Hidden for now: currentUser && currentSegment && currentSegment !== 'login' && currentSegment !== 'signup' && currentSegment !== 'choose-language' && currentSegment !== 'index';
+
   return (
     <I18nProvider>
       <UnreadMessageProvider>
@@ -364,6 +369,7 @@ export default function RootLayout() {
             <Stack.Screen name="contractors" options={{ headerShown: false }} />
             <Stack.Screen name="contractor-detail" options={{ headerShown: false }} />
             <Stack.Screen name="labour-detail" options={{ headerShown: false }} />
+            <Stack.Screen name="labours" options={{ headerShown: false }} />
             <Stack.Screen name="project-detail" options={{ headerShown: false }} />
             <Stack.Screen name="project-applications" options={{ headerShown: false }} />
             <Stack.Screen name="project-compare" options={{ headerShown: false }} />
@@ -373,6 +379,15 @@ export default function RootLayout() {
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
           <StatusBar style="auto" />
+
+          {/* AI Floating Assistant */}
+          {showAIAssistant && (
+            <AIAssistantFloatingButton
+              userRole={currentUser?.role || 'Client'}
+              userName={currentUser?.fullName || 'User'}
+              userId={currentUser?._id}
+            />
+          )}
 
           {/* Loading Spinner Overlay */}
           {stage === 'ready' && checkingLocation && (

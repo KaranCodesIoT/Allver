@@ -119,14 +119,42 @@ export default function LabourDetailScreen() {
       }
     };
 
+    const handleWorkspaceUpdated = (data: any) => {
+      if (data && data.workspaceId) {
+        setAllWorkspaces((prevList) => {
+          return prevList.map((w: any) => {
+            if (w._id === data.workspaceId) {
+              return {
+                ...w,
+                ...data.workspace
+              };
+            }
+            return w;
+          });
+        });
+      }
+    };
+
     SocketService.on('profile_updated', handleProfileUpdated);
     SocketService.on('user_stats_updated', handleUserStatsUpdated);
+    SocketService.on('workspace_updated', handleWorkspaceUpdated);
 
     return () => {
       SocketService.off('profile_updated', handleProfileUpdated);
       SocketService.off('user_stats_updated', handleUserStatsUpdated);
+      SocketService.off('workspace_updated', handleWorkspaceUpdated);
     };
   }, [id]);
+
+  useEffect(() => {
+    if (allWorkspaces && allWorkspaces.length > 0) {
+      allWorkspaces.forEach((w: any) => {
+        if (w._id) {
+          SocketService.emit('join_room', { roomId: w._id });
+        }
+      });
+    }
+  }, [allWorkspaces]);
 
   const displayName = professionalData?.fullName || name;
   const displayAvatar = resolveAvatarUrl(professionalData?.avatarUrl || professionalData?.avatar, professionalData?.updatedAt) || avatar;
@@ -703,6 +731,7 @@ export default function LabourDetailScreen() {
             labourId: id,
             status: editStatus,
             hours: parsedHours,
+            remarks: editRemarks,
             latitude: selectedDay.latitude || null,
             longitude: selectedDay.longitude || null,
             checkInTime: selectedDay.checkInTime || null,
@@ -1384,22 +1413,24 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
                         padding: 12,
                         marginBottom: 10,
                       }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
-                            <Feather name="briefcase" size={14} color="#059669" style={{ marginRight: 6 }} />
-                            <Text style={{ fontSize: 14, fontWeight: '700', color: '#065F46' }} numberOfLines={1}>Project: {wsProjectTitle}</Text>
+                        {ws.projectType !== 'Team' && (
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: 8 }}>
+                              <Feather name="briefcase" size={14} color="#059669" style={{ marginRight: 6 }} />
+                              <Text style={{ fontSize: 14, fontWeight: '700', color: '#065F46' }} numberOfLines={1}>Project: {wsProjectTitle}</Text>
+                            </View>
+                            <View style={{
+                              backgroundColor: ws.status === 'Completed' ? '#D1FAE5' : '#FEF3C7',
+                              paddingHorizontal: 8,
+                              paddingVertical: 3,
+                              borderRadius: 12,
+                            }}>
+                              <Text style={{ fontSize: 9, fontWeight: '700', color: ws.status === 'Completed' ? '#059669' : '#D97706' }}>
+                                {ws.status === 'Completed' ? 'Completed' : 'Ongoing'}
+                              </Text>
+                            </View>
                           </View>
-                          <View style={{
-                            backgroundColor: ws.status === 'Completed' ? '#D1FAE5' : '#FEF3C7',
-                            paddingHorizontal: 8,
-                            paddingVertical: 3,
-                            borderRadius: 12,
-                          }}>
-                            <Text style={{ fontSize: 9, fontWeight: '700', color: ws.status === 'Completed' ? '#059669' : '#D97706' }}>
-                              {ws.status === 'Completed' ? 'Completed' : 'Ongoing'}
-                            </Text>
-                          </View>
-                        </View>
+                        )}
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                           <Feather name="user" size={12} color="#059669" style={{ marginRight: 6 }} />
                           <Text style={{ fontSize: 12, fontWeight: '600', color: '#047857' }}>Contractor: {wsContractorName}</Text>
@@ -1699,10 +1730,10 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
         {/* ================= TAB 2B: PROJECTS CONTENT ================= */}
         {activeTab === 'projects' && (
           <View style={styles.projectsListCol}>
-            {allWorkspaces.length === 0 ? (
+            {allWorkspaces.filter((w: any) => w.projectType !== 'Team').length === 0 ? (
               <Text style={{ textAlign: 'center', padding: 20, color: COLORS.textMuted }}>No projects assigned yet.</Text>
             ) : (
-              allWorkspaces.map((w: any, idx) => {
+              allWorkspaces.filter((w: any) => w.projectType !== 'Team').map((w: any, idx) => {
                 const isCompleted = w.status === 'Completed';
                 const isCancelled = w.status === 'Cancelled';
                 const statusText = isCompleted ? 'Completed' : isCancelled ? 'Cancelled' : 'Ongoing';
