@@ -9,17 +9,21 @@
       "distribution": "internal",
       "channel": "development"
     },
-    "preview": {
-      "distribution": "internal",
-      "channel": "preview",
-      "android": {
-        "buildType": "apk"
-      }
-    },
+  "preview": {
+  "distribution": "internal",
+  "channel": "preview",
+  "android": {
+    "buildType": "apk",
+    "gradleCommand": ":app:assembleRelease --no-configure-on-demand"
+  }
+},
     "production": {
-      "autoIncrement": true,
-      "channel": "production"
-    }
+  "autoIncrement": true,
+  "channel": "production",
+  "android": {
+    "gradleCommand": ":app:bundleRelease --no-configure-on-demand"
+  }
+}
   },
   "submit": {
     "production": {}
