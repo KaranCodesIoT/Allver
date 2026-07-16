@@ -7,7 +7,7 @@
     "icon": "./assets/android-icon-foreground.png",
     "scheme": "allvermobile",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
