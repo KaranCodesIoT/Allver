@@ -1,0 +1,11 @@
+# EAS Build ignore rules
+node_modules/
+.expo/
+.gradle/
+android/.gradle/
+android/build/
+android/app/build/
+android/.cxx/
+ios/build/
+ios/Pods/
+.DS_Store
