@@ -84,6 +84,7 @@ const userSchema = new mongoose.Schema({
 
   expoPushToken: { type: String, default: '' },
   expoPushTokens: { type: [String], default: [] },
+  fcmTokens: { type: [String], default: [] },
   notificationSettings: {
     messages: { type: Boolean, default: true },
     projectUpdates: { type: Boolean, default: true },

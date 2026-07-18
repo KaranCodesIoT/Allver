@@ -35,10 +35,18 @@ const notificationSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  callUUID: {
+    type: String,
+    default: ''
+  },
   category: {
     type: String,
-    enum: ['messages', 'projectUpdates', 'contracts', 'payments', 'attendance', 'marketing', 'systemAlerts'],
+    enum: ['messages', 'projectUpdates', 'contracts', 'payments', 'attendance', 'marketing', 'systemAlerts', 'voice_call'],
     default: 'systemAlerts'
+  },
+  isSuppressed: {
+    type: Boolean,
+    default: false
   },
   isRead: {
     type: Boolean,
@@ -56,7 +64,52 @@ const notificationSchema = new mongoose.Schema({
 
 notificationSchema.index({ recipientId: 1, createdAt: -1 });
 
+// Pre-save hook to check settings and suppress if disabled
+notificationSchema.pre('save', async function(next) {
+  try {
+    const User = mongoose.model('User');
+    const recipient = await User.findById(this.recipientId);
+    if (!recipient) return next();
+
+    // 1. Resolve notification category
+    let resolvedCategory = this.category || 'systemAlerts';
+    if (!this.category) {
+      const textLower = this.text ? this.text.toLowerCase() : '';
+      if (textLower.includes('new message') || textLower.includes('💬') || this.conversationId) {
+        resolvedCategory = 'messages';
+      } else if (textLower.includes('project invitation') || textLower.includes('applied') || textLower.includes('application') || textLower.includes('accepted') || textLower.includes('rejected') || textLower.includes('proposal') || textLower.includes('invitation')) {
+        resolvedCategory = 'projectUpdates';
+      } else if (textLower.includes('assigned') || textLower.includes('contract')) {
+        resolvedCategory = 'contracts';
+      } else if (textLower.includes('payment') || textLower.includes('milestone') || textLower.includes('released')) {
+        resolvedCategory = 'payments';
+      } else if (textLower.includes('attendance') || textLower.includes('present')) {
+        resolvedCategory = 'attendance';
+      } else if (textLower.includes('marketing') || textLower.includes('promotional') || textLower.includes('recommendation')) {
+        resolvedCategory = 'marketing';
+      }
+      this.category = resolvedCategory;
+    }
+
+    // 2. Check recipient's notification settings preferences
+    if (recipient.notificationSettings) {
+      const isEnabled = recipient.notificationSettings[resolvedCategory];
+      if (isEnabled === false) {
+        this.isSuppressed = true;
+        this.isRead = true; // Mark as read so it doesn't count towards badges
+      }
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
 notificationSchema.post('save', async function(doc) {
+  if (doc.isSuppressed) {
+    console.log(`[Push Notification] Suppressed push for ${doc.recipientId}: category "${doc.category}" is disabled in settings.`);
+    return;
+  }
   try {
     const User = mongoose.model('User');
     const recipient = await User.findById(doc.recipientId);
@@ -88,6 +141,68 @@ notificationSchema.post('save', async function(doc) {
         console.log(`[Push Notification] Suppressed push for ${recipient.fullName}: category "${resolvedCategory}" is disabled in settings.`);
         return;
       }
+    }
+
+    // Direct FCM Data-Only push wakeup for voice calls
+    if (resolvedCategory === 'voice_call' || doc.category === 'voice_call') {
+      const fcmTokens = recipient.fcmTokens || [];
+      if (fcmTokens.length === 0) {
+        console.log(`[FCM Call Push] No FCM tokens registered for user ${recipient.fullName}. Cannot send background wakeup.`);
+        return;
+      }
+
+      let senderName = 'Allver User';
+      let senderAvatar = '';
+      try {
+        const senderUser = await User.findById(doc.senderId);
+        if (senderUser) {
+          senderName = senderUser.fullName;
+          senderAvatar = senderUser.avatarUrl || '';
+        }
+      } catch (e) {
+        console.error('[FCM Call Push] Error fetching sender details:', e);
+      }
+
+      let admin = null;
+      try {
+        admin = require('firebase-admin');
+      } catch (e) {
+        console.warn('[FCM Call Push] firebase-admin not installed. Skipping FCM dispatch.');
+      }
+
+      if (admin && admin.apps && admin.apps.length > 0) {
+        const payload = {
+          data: {
+            notificationId: doc._id.toString(),
+            category: 'voice_call',
+            callerId: doc.senderId ? doc.senderId.toString() : '',
+            callerName: senderName,
+            callerAvatar: senderAvatar,
+            conversationId: doc.conversationId || '',
+            callUUID: doc.callUUID || `call_${doc.senderId}_${Date.now()}`,
+            timestamp: Date.now().toString()
+          }
+        };
+
+        for (const fToken of fcmTokens) {
+          try {
+            await admin.messaging().send({
+              token: fToken,
+              ...payload,
+              android: {
+                priority: 'high',
+                ttl: 0
+              }
+            });
+            console.log(`[FCM Call Push] Successfully sent direct FCM background wakeup call message to token ${fToken}`);
+          } catch (fcmErr) {
+            console.error(`[FCM Call Push] Error sending to token ${fToken}:`, fcmErr.message);
+          }
+        }
+      } else {
+        console.warn('[FCM Call Push] Firebase Admin SDK not available or not initialized. FCM call push skipped.');
+      }
+      return; // Skip Expo Push logic for voice calls!
     }
 
     // 3. Resolve target Expo Push Tokens
@@ -133,10 +248,10 @@ notificationSchema.post('save', async function(doc) {
     // 5. Determine title based on category & text
     let title = 'Allver';
     const textLower = doc.text.toLowerCase();
-    if (resolvedCategory === 'messages') {
+    if (resolvedCategory === 'voice_call' || textLower.includes('incoming voice call') || textLower.includes('📞')) {
+      title = '📞 Incoming Voice Call';
+    } else if (resolvedCategory === 'messages') {
       title = '💬 New Message';
-    } else if (textLower.includes('incoming voice call') || textLower.includes('📞')) {
-      title = '📞 Incoming Call';
     } else if (resolvedCategory === 'projectUpdates') {
       title = textLower.includes('applied') || textLower.includes('application') ? '👥 New Application' : '📩 Project Invitation';
     } else if (resolvedCategory === 'contracts') {
@@ -152,6 +267,8 @@ notificationSchema.post('save', async function(doc) {
       const message = {
         to: token,
         sound: 'default',
+        priority: 'high',
+        channelId: 'default',
         title: title,
         body: doc.text,
         badge: badgeCount,
@@ -187,7 +304,17 @@ notificationSchema.post('save', async function(doc) {
           body: JSON.stringify(message),
         });
         const resData = await response.json();
-        console.log(`[Push Notification] Successfully sent to ${recipient.fullName} (${token}):`, resData);
+        const ticket = resData?.data?.[0];
+
+        if (ticket && ticket.status === 'ok') {
+          console.log(`[Push Notification] Successfully sent to ${recipient.fullName} (${token}) [Ticket ID: ${ticket.id}]`);
+        } else if (ticket && ticket.status === 'error') {
+          console.error(`[Push Notification] Expo Push API Error Ticket for ${recipient.fullName} (${token}):`, ticket.message, ticket.details);
+        } else if (resData?.errors && resData.errors.length > 0) {
+          console.error(`[Push Notification] Expo Push API Top-Level Error for ${recipient.fullName} (${token}):`, resData.errors);
+        } else {
+          console.log(`[Push Notification] Sent to ${recipient.fullName} (${token}):`, resData);
+        }
       } catch (sendErr) {
         console.error(`[Push Notification] Error sending to ${token}:`, sendErr);
       }

@@ -32,8 +32,18 @@ const projectWorkspaceSchema = new mongoose.Schema({
     attachment: {
       name: { type: String },
       url: { type: String },
-      type: { type: String } // 'file' or 'drawing'
+      type: { type: String },
+      width: { type: Number },
+      height: { type: Number }
     },
+    replyTo: {
+      _id: { type: String },
+      senderName: { type: String },
+      text: { type: String },
+      attachmentType: { type: String }
+    },
+    deletedFor: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    deletedForEveryone: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now }
   }],
   files: [{

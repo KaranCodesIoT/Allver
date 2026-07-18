@@ -12,6 +12,30 @@ require('dotenv').config();
 const jwt = require('jsonwebtoken');
 const authenticateJWT = require('./middleware/auth');
 let Jimp;
+
+// Initialize Firebase Admin SDK dynamically (optional — only needed for direct FCM call push)
+let admin = null;
+try {
+  admin = require('firebase-admin');
+  const firebaseServiceAccountPath = path.join(__dirname, 'firebase-service-account.json');
+
+  if (fs.existsSync(firebaseServiceAccountPath)) {
+    try {
+      admin.initializeApp({
+        credential: admin.credential.cert(require(firebaseServiceAccountPath))
+      });
+      console.log('[Firebase Admin] Successfully initialized Firebase Admin SDK.');
+    } catch (err) {
+      console.error('[Firebase Admin] Error initializing Firebase Admin SDK:', err);
+    }
+  } else {
+    console.warn('[Firebase Admin WARNING] firebase-service-account.json not found. Direct FCM call messages disabled.');
+  }
+} catch (e) {
+  console.warn('[Firebase Admin] firebase-admin package not installed. FCM push for voice calls is disabled. Install with: npm install firebase-admin');
+  admin = null;
+}
+
 console.log('--- Startup Environment ---');
 console.log('NODE_ENV:', process.env.NODE_ENV);
 console.log('HF_TOKEN Loaded:', process.env.HF_TOKEN ? 'YES (' + process.env.HF_TOKEN.substring(0, 5) + '...)' : 'NO');
@@ -43,10 +67,66 @@ const io = socketIo(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"]
-  }
+  },
+  // ─── Low-latency tuning ───
+  pingTimeout: 10000,        // Detect dead connections after 10s (default 20s)
+  pingInterval: 5000,        // Heartbeat every 5s (default 25s) — keeps NAT mappings alive
+  perMessageDeflate: false   // Disable compression — lower CPU, faster relay
 });
 
 app.set('io', io);
+
+// Intercept Socket.IO emits to dynamically suppress new_notification events if recipient disabled the category
+const originalTo = socketIo.Server.prototype.to;
+socketIo.Server.prototype.to = function(room) {
+  const operator = originalTo.apply(this, arguments);
+  const originalEmit = operator.emit;
+  operator.emit = function(event, ...args) {
+    if (event === 'new_notification') {
+      const notification = args[0];
+      if (notification) {
+        const User = mongoose.model('User');
+        const recipientId = room ? room.toString() : '';
+        if (/^[0-9a-fA-F]{24}$/.test(recipientId)) {
+          User.findById(recipientId).lean().then(recipient => {
+            if (recipient && recipient.notificationSettings) {
+              let resolvedCategory = notification.category || 'systemAlerts';
+              if (!notification.category && notification.text) {
+                const textLower = notification.text.toLowerCase();
+                if (textLower.includes('new message') || textLower.includes('💬')) {
+                  resolvedCategory = 'messages';
+                } else if (textLower.includes('project invitation') || textLower.includes('applied') || textLower.includes('application') || textLower.includes('accepted') || textLower.includes('rejected') || textLower.includes('proposal') || textLower.includes('invitation')) {
+                  resolvedCategory = 'projectUpdates';
+                } else if (textLower.includes('assigned') || textLower.includes('contract')) {
+                  resolvedCategory = 'contracts';
+                } else if (textLower.includes('payment') || textLower.includes('milestone') || textLower.includes('released')) {
+                  resolvedCategory = 'payments';
+                } else if (textLower.includes('attendance') || textLower.includes('present')) {
+                  resolvedCategory = 'attendance';
+                } else if (textLower.includes('marketing') || textLower.includes('promotional') || textLower.includes('recommendation')) {
+                  resolvedCategory = 'marketing';
+                }
+              }
+              const isEnabled = recipient.notificationSettings[resolvedCategory];
+              if (isEnabled === false) {
+                console.log(`[Socket Suppression] Suppressed new_notification socket event for ${recipient.fullName} (category: ${resolvedCategory})`);
+                return;
+              }
+            }
+            originalEmit.apply(operator, [event, ...args]);
+          }).catch(err => {
+            console.error('[Socket Suppression] Error fetching user:', err);
+            originalEmit.apply(operator, [event, ...args]);
+          });
+          return operator;
+        }
+      }
+    }
+    return originalEmit.apply(this, arguments);
+  };
+  return operator;
+};
+socketIo.Server.prototype.in = socketIo.Server.prototype.to;
 
 const onlineUsers = new Set();
 const activeCallUsers = new Map();
@@ -82,6 +162,35 @@ io.use(async (socket, next) => {
 
 io.on('connection', (socket) => {
   console.log('[Socket] Socket connected and authenticated. User ID:', socket.userId, 'Socket ID:', socket.id);
+
+  if (socket.userId) {
+    socket.join(socket.userId.toString());
+    socket.join(`user:${socket.userId.toString()}`);
+    console.log(`[Socket] Auto-joined personal rooms "${socket.userId}" and "user:${socket.userId}" on connection.`);
+  }
+
+  // ─── Server-side heartbeat for latency measurement ───
+  const heartbeatInterval = setInterval(() => {
+    if (socket.connected) {
+      socket.emit('server_ping', { timestamp: Date.now() });
+    } else {
+      clearInterval(heartbeatInterval);
+    }
+  }, 5000);
+
+  socket.on('client_pong', (data) => {
+    if (data && data.timestamp) {
+      const rtt = Date.now() - data.timestamp;
+      // Log only if RTT is abnormally high (> 500ms) to reduce noise
+      if (rtt > 500) {
+        console.warn(`[Socket] High RTT detected for user ${socket.userId}: ${rtt}ms`);
+      }
+    }
+  });
+
+  socket.on('disconnect', () => {
+    clearInterval(heartbeatInterval);
+  });
 
   // Join a specific room (project workspace or DM conversation) with participant validation
   socket.on('join_room', async ({ roomId }) => {
@@ -202,6 +311,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Real-time instant message deletion relay
+  socket.on('delete_message', ({ roomId, messageId }) => {
+    if (roomId && messageId) {
+      io.to(roomId).emit('message_deleted', {
+        conversationId: roomId,
+        messageId,
+        deleteType: 'everyone'
+      });
+    }
+  });
+
   // Typing indicator
   socket.on('typing', ({ roomId, userName }) => {
     const userId = socket.userId;
@@ -249,64 +369,148 @@ io.on('connection', (socket) => {
     console.log(`[Socket] Message ${messageId} marked read by user ${userId} in room ${roomId}`);
   });
 
-  // In-app calling events
-  socket.on('initiate_call', async ({ receiverId }) => {
+  // ─── In-app voice calling events (Ultra-Low-Latency Optimized) ───
+  //
+  // Pattern: Emit-First + Ack + Async DB Write
+  // 1. Look up caller name (cached in-memory if possible)
+  // 2. Immediately emit incoming_call via Socket.IO
+  // 3. Acknowledge the caller with latency metrics
+  // 4. Asynchronously save the notification (fires FCM for terminated receivers)
+  //
+  socket.on('initiate_call', async (data, ackCallback) => {
+    const { receiverId, conversationId, _emitTimestamp } = data || {};
     const callerId = socket.userId;
-    if (!callerId || !receiverId) return;
+    if (!callerId || !receiverId) {
+      if (typeof ackCallback === 'function') ackCallback({ error: 'Missing callerId or receiverId' });
+      return;
+    }
+    const serverReceiveTime = Date.now();
+    const clientToServerMs = _emitTimestamp ? serverReceiveTime - _emitTimestamp : -1;
+    console.log(`[Call] [Latency] Client→Server: ${clientToServerMs}ms`);
 
     try {
-      const callerUser = await User.findById(callerId);
+      // Stage 1: Resolve caller identity (lean query for speed)
+      const callerUser = await User.findById(callerId).select('fullName avatarUrl').lean();
       if (!callerUser) {
-        console.warn(`[Call] Caller user not found in database: ${callerId}`);
+        console.warn(`[Call] Caller user not found: ${callerId}`);
+        if (typeof ackCallback === 'function') ackCallback({ error: 'Caller not found' });
         return;
       }
+      const dbLookupMs = Date.now() - serverReceiveTime;
+      console.log(`[Call] [Latency] DB lookup: ${dbLookupMs}ms`);
 
       const callerName = callerUser.fullName;
       const callerAvatar = callerUser.avatarUrl || '';
+      const callUUID = crypto.randomUUID ? crypto.randomUUID() : `call_${callerId}_${Date.now()}`;
 
-      console.log(`[Call] Initiate call from ${callerId} (${callerName}) to ${receiverId}`);
-      io.to(receiverId.toString()).emit('incoming_call', {
+      // Stage 2: EMIT FIRST — deliver Socket.IO event before any DB write
+      const emitPayload = {
         callerId,
         callerName,
         callerAvatar,
-        socketId: socket.id
-      });
+        conversationId,
+        callUUID,
+        socketId: socket.id,
+        timestamp: serverReceiveTime
+      };
+      io.to(receiverId.toString()).emit('incoming_call', emitPayload);
+      const socketEmitMs = Date.now() - serverReceiveTime;
+      console.log(`[Call] [Stage 2 - Socket Emit] incoming_call sent to room ${receiverId} (${socketEmitMs}ms since server receive)`);
 
-      // Also send a push notification for the call so it alerts them if the app is in background/closed
+      // Stage 3: Acknowledge caller immediately with metrics
+      if (typeof ackCallback === 'function') {
+        ackCallback({
+          status: 'sent',
+          callUUID,
+          metrics: {
+            clientToServerMs,
+            dbLookupMs,
+            socketEmitMs,
+            totalServerMs: Date.now() - serverReceiveTime
+          }
+        });
+      }
+
+      // Stage 4: Async DB write — fires FCM for terminated/backgrounded receivers
+      // This does NOT block the caller's ack response
       const notification = new Notification({
         recipientId: receiverId,
         senderId: callerId,
+        conversationId: conversationId || '',
         text: `📞 Incoming voice call from ${callerName}`,
-        category: 'systemAlerts'
+        category: 'voice_call',
+        callUUID: callUUID || ''
       });
-      await notification.save();
+      notification.save().then(() => {
+        console.log(`[Call] [Stage 4 - FCM/Push] Notification saved & FCM dispatched for ${receiverId} (async, ${Date.now() - serverReceiveTime}ms total)`);
+      }).catch(err => {
+        console.error('[Call] Async notification save error:', err);
+      });
     } catch (err) {
-      console.error('[Call Push] Error creating notification for call:', err);
+      console.error('[Call] Error in initiate_call:', err);
+      if (typeof ackCallback === 'function') ackCallback({ error: 'Server error' });
     }
   });
 
-  socket.on('answer_call', ({ callerId }) => {
+  socket.on('answer_call', (data, ackCallback) => {
+    const { callerId, _emitTimestamp } = data || {};
     const receiverId = socket.userId;
     if (!callerId || !receiverId) return;
-    console.log(`[Call] Call answered by ${receiverId} to ${callerId}`);
+    const latency = _emitTimestamp ? Date.now() - _emitTimestamp : -1;
+    console.log(`[Call] [Call Answered] Receiver ${receiverId} accepted call from ${callerId} (latency: ${latency}ms)`);
     io.to(callerId.toString()).emit('call_answered', { receiverId });
+    if (typeof ackCallback === 'function') ackCallback({ status: 'ok' });
   });
 
-  socket.on('reject_call', ({ callerId }) => {
+  socket.on('reject_call', (data, ackCallback) => {
+    const { callerId, _emitTimestamp } = data || {};
     const receiverId = socket.userId;
     if (!callerId || !receiverId) return;
-    console.log(`[Call] Call rejected by ${receiverId}`);
+    const latency = _emitTimestamp ? Date.now() - _emitTimestamp : -1;
+    console.log(`[Call] [Call Rejected] Receiver ${receiverId} declined call from ${callerId} (latency: ${latency}ms)`);
     io.to(callerId.toString()).emit('call_rejected', { receiverId });
+    if (typeof ackCallback === 'function') ackCallback({ status: 'ok' });
   });
 
-  socket.on('end_call', ({ targetId }) => {
-    console.log(`[Call] Call ended. Notifying ${targetId}`);
+  socket.on('end_call', (data, ackCallback) => {
+    const { targetId, _emitTimestamp } = data || {};
+    const latency = _emitTimestamp ? Date.now() - _emitTimestamp : -1;
+    console.log(`[Call] [Call Ended] Signal sent to ${targetId} (latency: ${latency}ms)`);
     io.to(targetId.toString()).emit('call_ended');
+    if (typeof ackCallback === 'function') ackCallback({ status: 'ok' });
   });
 
-  socket.on('busy_call', ({ callerId }) => {
-    console.log(`[Call] Target is busy. Notifying ${callerId}`);
+  socket.on('busy_call', (data, ackCallback) => {
+    const { callerId, _emitTimestamp } = data || {};
+    const latency = _emitTimestamp ? Date.now() - _emitTimestamp : -1;
+    console.log(`[Call] [Call Busy] Target ${callerId} is busy (latency: ${latency}ms)`);
     io.to(callerId.toString()).emit('call_busy');
+    if (typeof ackCallback === 'function') ackCallback({ status: 'ok' });
+  });
+
+  // WebRTC Audio Signaling Relays (with ack support)
+  socket.on('webrtc_offer', (data, ackCallback) => {
+    const { targetId, offer, _emitTimestamp } = data || {};
+    const latency = _emitTimestamp ? Date.now() - _emitTimestamp : -1;
+    console.log(`[WebRTC] [Offer Relayed] → ${targetId} (latency: ${latency}ms)`);
+    io.to(targetId.toString()).emit('webrtc_offer', { senderId: socket.userId, offer });
+    if (typeof ackCallback === 'function') ackCallback({ status: 'ok' });
+  });
+
+  socket.on('webrtc_answer', (data, ackCallback) => {
+    const { targetId, answer, _emitTimestamp } = data || {};
+    const latency = _emitTimestamp ? Date.now() - _emitTimestamp : -1;
+    console.log(`[WebRTC] [Answer Relayed] → ${targetId} (latency: ${latency}ms)`);
+    io.to(targetId.toString()).emit('webrtc_answer', { senderId: socket.userId, answer });
+    if (typeof ackCallback === 'function') ackCallback({ status: 'ok' });
+  });
+
+  socket.on('webrtc_ice_candidate', (data, ackCallback) => {
+    const { targetId, candidate, _emitTimestamp } = data || {};
+    const latency = _emitTimestamp ? Date.now() - _emitTimestamp : -1;
+    console.log(`[WebRTC] [ICE Relayed] → ${targetId} (latency: ${latency}ms)`);
+    io.to(targetId.toString()).emit('webrtc_ice_candidate', { senderId: socket.userId, candidate });
+    if (typeof ackCallback === 'function') ackCallback({ status: 'ok' });
   });
 
   socket.on('voice_chunk', (data) => {
@@ -1359,6 +1563,51 @@ app.put('/api/user/profile/:id', async (req, res) => {
   }
 });
 
+// Update User Notification Settings
+app.put('/api/user/:id/notification-settings', async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const settings = req.body;
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.notificationSettings = {
+      messages: settings.messages !== false,
+      projectUpdates: settings.projectUpdates !== false,
+      contracts: settings.contracts !== false,
+      payments: settings.payments !== false,
+      attendance: settings.attendance !== false,
+      marketing: settings.marketing !== false,
+      systemAlerts: settings.systemAlerts !== false,
+    };
+
+    user.updatedAt = Date.now();
+    await user.save();
+
+    const userObj = user.toObject();
+    userObj.coverImage = userObj.cover;
+    userObj.avatar = userObj.avatarUrl;
+
+    // Emit socket event to synchronize settings immediately on other connected devices of this user
+    const io = req.app.get('io');
+    if (io) {
+      io.to(userId.toString()).emit('user_settings_updated', {
+        userId,
+        notificationSettings: user.notificationSettings
+      });
+      console.log(`[Socket] Emitted user_settings_updated for user ${userId}`);
+    }
+
+    res.status(200).json({ message: 'Notification settings updated successfully', user: userObj });
+  } catch (error) {
+    console.error('Error updating notification settings:', error);
+    res.status(500).json({ message: 'Error updating notification settings: ' + error.message });
+  }
+});
+
 // Save or Update User Expo Push Token
 app.post('/api/user/push-token', tokenLimiter, async (req, res) => {
   try {
@@ -1414,15 +1663,17 @@ app.delete('/api/user/push-token', async (req, res) => {
   }
 });
 
-// Update User Notification Settings
-app.put('/api/user/:id/notification-settings', async (req, res) => {
+// Save or Update User FCM token
+app.post('/api/user/fcm-token', async (req, res) => {
   try {
-    const { id } = req.params;
-    const settings = req.body;
+    const { userId, token } = req.body;
+    if (!userId || !token) {
+      return res.status(400).json({ message: 'userId and token are required' });
+    }
 
     const updatedUser = await User.findByIdAndUpdate(
-      id,
-      { $set: { notificationSettings: settings } },
+      userId,
+      { $addToSet: { fcmTokens: token } },
       { new: true }
     );
 
@@ -1430,11 +1681,37 @@ app.put('/api/user/:id/notification-settings', async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    console.log(`[Notification Settings] Updated for user ${updatedUser.fullName}`);
-    res.status(200).json({ message: 'Notification settings updated successfully', user: updatedUser });
+    console.log(`[FCM Token] Registered for user ${updatedUser.fullName}`);
+    res.status(200).json({ message: 'FCM token registered successfully', user: updatedUser });
   } catch (error) {
-    console.error('[Notification Settings] Error updating:', error);
-    res.status(500).json({ message: 'Error updating settings: ' + error.message });
+    console.error('[FCM Token] Error registering token:', error);
+    res.status(500).json({ message: 'Error registering FCM token: ' + error.message });
+  }
+});
+
+// Delete User FCM token on logout
+app.delete('/api/user/fcm-token', async (req, res) => {
+  try {
+    const { userId, token } = req.body;
+    if (!userId || !token) {
+      return res.status(400).json({ message: 'userId and token are required' });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $pull: { fcmTokens: token } },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    console.log(`[FCM Token] Unregistered for user ${updatedUser.fullName}`);
+    res.status(200).json({ message: 'FCM token removed successfully', user: updatedUser });
+  } catch (error) {
+    console.error('[FCM Token] Error removing token:', error);
+    res.status(500).json({ message: 'Error removing FCM token: ' + error.message });
   }
 });
 
@@ -3265,7 +3542,7 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: 'Invalid workspace ID format' });
     }
-    const { text, attachment, sender } = req.body;
+    const { text, attachment, sender, replyTo } = req.body;
 
     const workspace = await ProjectWorkspace.findById(id);
     if (!workspace) {
@@ -3287,6 +3564,12 @@ app.post('/api/project-workspaces/:id/messages', async (req, res) => {
       sender,
       text: text || '',
       attachment: attachment || null,
+      replyTo: replyTo ? {
+        _id: replyTo._id || '',
+        senderName: replyTo.senderName || 'User',
+        text: replyTo.text || '',
+        attachmentType: replyTo.attachmentType || ''
+      } : null,
       createdAt: new Date()
     };
 
@@ -5010,6 +5293,7 @@ app.get('/api/notifications/:userId', async (req, res) => {
     const { userId } = req.params;
     let notifications = await Notification.find({
       recipientId: userId,
+      isSuppressed: { $ne: true },
       text: { $not: /New Message|\[View Chat\]/ }
     })
       .sort({ createdAt: -1 })
@@ -5029,6 +5313,7 @@ app.get('/api/notifications/:userId', async (req, res) => {
         await Notification.insertMany(notifs);
         notifications = await Notification.find({
           recipientId: userId,
+          isSuppressed: { $ne: true },
           text: { $not: /New Message|\[View Chat\]/ }
         }).sort({ createdAt: -1 });
       }
@@ -5081,6 +5366,7 @@ app.get('/api/notifications/unread-count/:userId', async (req, res) => {
     const count = await Notification.countDocuments({
       recipientId: userId,
       isRead: false,
+      isSuppressed: { $ne: true },
       text: { $not: /New Message|\[View Chat\]|New Project|\[View Project\]|Applied|\[View Application\]|Project Invitation|\[View Invitation\]/ }
     });
     res.status(200).json({ success: true, unreadCount: count });
@@ -5291,7 +5577,7 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 // ============================
 const Conversation = require('./models/Conversation');
 
-// Upload file for chat (images, documents)
+// Upload file for chat (images, documents, videos)
 app.post('/api/chat/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -5305,7 +5591,9 @@ app.post('/api/chat/upload', upload.single('file'), async (req, res) => {
     });
 
     const mimeType = req.file.mimetype || 'application/octet-stream';
-    const fileType = mimeType.startsWith('image/') ? 'image' : 'file';
+    const isVideo = mimeType.startsWith('video/') || (req.file.originalname && /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(req.file.originalname));
+    const isImage = mimeType.startsWith('image/') || (req.file.originalname && /\.(jpg|jpeg|png|gif|webp)$/i.test(req.file.originalname));
+    const fileType = isImage ? 'image' : isVideo ? 'video' : 'file';
 
     const isCloudinaryConfigured = 
       process.env.CLOUDINARY_CLOUD_NAME && 
@@ -5313,38 +5601,52 @@ app.post('/api/chat/upload', upload.single('file'), async (req, res) => {
       process.env.CLOUDINARY_API_KEY && 
       process.env.CLOUDINARY_API_SECRET;
 
-    if (!isCloudinaryConfigured) {
-      console.error('Cloudinary is not configured for chat upload.');
-      return res.status(500).json({ message: 'Cloud storage is not configured.' });
+    if (isCloudinaryConfigured) {
+      try {
+        const uploadResult = await new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              folder: 'allver-chat',
+              resource_type: isVideo ? 'video' : 'auto',
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            }
+          );
+          stream.end(req.file.buffer);
+        });
+
+        const result = uploadResult;
+        return res.status(200).json({
+          url: result.secure_url,
+          name: req.file.originalname || `file_${Date.now()}`,
+          type: fileType,
+          size: req.file.size,
+        });
+      } catch (cloudErr) {
+        console.warn('Cloudinary chat upload failed, switching to local storage fallback:', cloudErr.message);
+      }
     }
 
-    // Try Cloudinary upload
-    try {
-      const uploadResult = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          {
-            folder: 'allver-chat',
-            resource_type: 'auto',
-          },
-          (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          }
-        );
-        stream.end(req.file.buffer);
-      });
+    // Local Disk Storage Fallback
+    const ext = path.extname(req.file.originalname) || (isVideo ? '.mp4' : isImage ? '.jpg' : '.dat');
+    const filename = `chat_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${ext}`;
+    const filePath = path.join(uploadsDir, filename);
+    fs.writeFileSync(filePath, req.file.buffer);
 
-      const result = uploadResult;
-      res.status(200).json({
-        url: result.secure_url,
-        name: req.file.originalname || `file_${Date.now()}`,
-        type: fileType,
-        size: req.file.size,
-      });
-    } catch (cloudErr) {
-      console.error('Cloudinary chat upload failed:', cloudErr.message);
-      return res.status(500).json({ message: 'Cloud upload failed: ' + cloudErr.message });
-    }
+    const host = req.get('host');
+    const protocol = req.protocol;
+    const fileUrl = `${protocol}://${host}/uploads/${filename}`;
+
+    console.log('[ChatUpload] File saved to local storage:', fileUrl);
+
+    return res.status(200).json({
+      url: fileUrl,
+      name: req.file.originalname || filename,
+      type: fileType,
+      size: req.file.size,
+    });
   } catch (error) {
     console.error('Chat upload error:', error);
     res.status(500).json({ message: 'Upload failed: ' + error.message });
@@ -5495,15 +5797,23 @@ app.get('/api/conversations/:conversationId/messages', async (req, res) => {
       }
     }
 
-    // Clean up messages: strip empty attachment objects from legacy data
-    const cleanMessages = conversation.messages.map(msg => {
-      const msgObj = msg.toObject ? msg.toObject() : msg;
-      // Remove empty attachment objects that have no url
-      if (msgObj.attachment && !msgObj.attachment.url) {
-        msgObj.attachment = null;
-      }
-      return msgObj;
-    });
+    // Clean up messages: filter deletedFor me, format deletedForEveryone, strip empty attachments
+    const cleanMessages = conversation.messages
+      .filter(msg => {
+        if (!userId) return true;
+        const delFor = msg.deletedFor || [];
+        return !delFor.some(d => d.toString() === userId.toString());
+      })
+      .map(msg => {
+        const msgObj = msg.toObject ? msg.toObject() : msg;
+        if (msgObj.deletedForEveryone) {
+          msgObj.text = '🚫 This message was deleted';
+          msgObj.attachment = null;
+        } else if (msgObj.attachment && !msgObj.attachment.url) {
+          msgObj.attachment = null;
+        }
+        return msgObj;
+      });
 
     res.status(200).json({ 
       messages: cleanMessages,
@@ -5521,7 +5831,7 @@ app.post('/api/conversations/:conversationId/messages', async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(conversationId)) {
       return res.status(400).json({ message: 'Invalid conversation ID format' });
     }
-    const { text, attachment, senderId } = req.body;
+    const { text, attachment, senderId, replyTo } = req.body;
 
     if (!senderId || (!text && !attachment)) {
       return res.status(400).json({ message: 'text (or attachment) is required' });
@@ -5538,14 +5848,39 @@ app.post('/api/conversations/:conversationId/messages', async (req, res) => {
     }
 
     // Create the new message — only include attachment if it has a valid URL
+    let attType = attachment?.type || '';
+    if (attachment && attachment.url) {
+      const lowerUrl = (attachment.url || '').toLowerCase();
+      const lowerName = (attachment.name || '').toLowerCase();
+      if (!attType || attType === 'file') {
+        if (lowerUrl.match(/\.(jpg|jpeg|png|webp|gif)/i) || lowerName.match(/\.(jpg|jpeg|png|webp|gif)/i) || lowerName.startsWith('image_')) {
+          attType = 'image';
+        } else if (lowerUrl.match(/\.(mp4|mov|m4v|webm|avi|mkv)/i) || lowerName.match(/\.(mp4|mov|m4v|webm|avi|mkv)/i) || lowerName.startsWith('video_')) {
+          attType = 'video';
+        } else if (lowerUrl.match(/\.(m4a|aac|mp3|wav|ogg)/i) || lowerName.startsWith('voice_')) {
+          attType = 'voice';
+        } else {
+          attType = 'file';
+        }
+      }
+    }
+
     const newMessage = {
       sender: senderId,
       text: text || '',
       attachment: (attachment && attachment.url) ? {
         name: attachment.name || '',
         url: attachment.url,
-        type: attachment.type || 'file',
+        type: attType,
+        width: attachment.width || null,
+        height: attachment.height || null,
         duration: attachment.duration || 0
+      } : null,
+      replyTo: replyTo ? {
+        _id: replyTo._id || '',
+        senderName: replyTo.senderName || 'User',
+        text: replyTo.text || '',
+        attachmentType: replyTo.attachmentType || ''
       } : null,
       readBy: [senderId],
       createdAt: new Date()
@@ -5554,9 +5889,25 @@ app.post('/api/conversations/:conversationId/messages', async (req, res) => {
     conversation.messages.push(newMessage);
     
     // Update last message preview
-    const attachmentPreview = newMessage.attachment 
-      ? (newMessage.attachment.type === 'image' ? '📷 Photo' : newMessage.attachment.type === 'voice' ? '🎤 Voice message' : '📎 File') 
-      : '';
+    const getAttachmentPreview = (att) => {
+      if (!att) return '';
+      const type = (att.type || '').toLowerCase();
+      const url = (att.url || '').toLowerCase();
+      const name = (att.name || '').toLowerCase();
+
+      if (type === 'image' || type === 'photo' || url.match(/\.(jpg|jpeg|png|webp|gif)/i) || name.match(/\.(jpg|jpeg|png|webp|gif)/i) || name.startsWith('image_')) {
+        return '📷 Photo';
+      }
+      if (type === 'video' || url.match(/\.(mp4|mov|m4v|webm|avi|mkv)/i) || name.match(/\.(mp4|mov|m4v|webm|avi|mkv)/i) || name.startsWith('video_')) {
+        return '📹 Video';
+      }
+      if (type === 'voice' || type === 'audio' || name.startsWith('voice_')) {
+        return '🎤 Voice message';
+      }
+      return '📎 File';
+    };
+
+    const attachmentPreview = getAttachmentPreview(newMessage.attachment);
     conversation.lastMessage = {
       text: text || attachmentPreview,
       sender: senderId,
@@ -5703,6 +6054,247 @@ app.post('/api/conversations/:conversationId/read', async (req, res) => {
     res.status(200).json({ success: true });
   } catch (error) {
     res.status(500).json({ message: 'Error marking as read: ' + error.message });
+  }
+});
+
+// DELETE message in Conversation (Delete for me / Delete for everyone)
+app.delete('/api/conversations/:conversationId/messages/:messageId', async (req, res) => {
+  try {
+    const { conversationId, messageId } = req.params;
+    const { userId, deleteType } = req.body;
+
+    if (!userId || !deleteType) {
+      return res.status(400).json({ message: 'userId and deleteType ("me" or "everyone") are required' });
+    }
+
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+      return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    const msg = conversation.messages.id(messageId);
+    if (!msg) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    const ioInstance = req.app.get('io');
+
+    if (deleteType === 'everyone') {
+      const msgSenderId = msg.sender ? (msg.sender._id ? msg.sender._id.toString() : msg.sender.toString()) : '';
+      if (msgSenderId !== userId.toString()) {
+        return res.status(403).json({ message: 'Only the sender can delete this message for everyone.' });
+      }
+
+      msg.deletedForEveryone = true;
+      msg.text = '🚫 This message was deleted';
+      msg.attachment = null;
+
+      await conversation.save();
+
+      if (ioInstance) {
+        ioInstance.to(conversationId).emit('message_deleted', {
+          conversationId,
+          messageId,
+          deleteType: 'everyone'
+        });
+        conversation.participants.forEach(pId => {
+          ioInstance.to(pId.toString()).emit('message_deleted', {
+            conversationId,
+            messageId,
+            deleteType: 'everyone'
+          });
+        });
+      }
+
+      return res.status(200).json({ success: true, messageId, deleteType: 'everyone' });
+    } else {
+      // Delete for me
+      if (!msg.deletedFor) msg.deletedFor = [];
+      if (!msg.deletedFor.includes(userId)) {
+        msg.deletedFor.push(userId);
+      }
+      await conversation.save();
+
+      return res.status(200).json({ success: true, messageId, deleteType: 'me' });
+    }
+  } catch (error) {
+    console.error('Error deleting DM message:', error);
+    res.status(500).json({ message: 'Error deleting message: ' + error.message });
+  }
+});
+
+// BATCH DELETE messages in Conversation (Delete for me / Delete for everyone)
+app.post('/api/conversations/:conversationId/messages/batch-delete', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { messageIds, userId, deleteType } = req.body;
+
+    if (!Array.isArray(messageIds) || messageIds.length === 0 || !userId || !deleteType) {
+      return res.status(400).json({ message: 'messageIds (array), userId, and deleteType are required' });
+    }
+
+    const conversation = await Conversation.findById(conversationId);
+    if (!conversation) {
+      return res.status(404).json({ message: 'Conversation not found' });
+    }
+
+    const ioInstance = req.app.get('io');
+    const deletedEveryoneIds = [];
+
+    messageIds.forEach(mId => {
+      const msg = conversation.messages.id(mId);
+      if (msg) {
+        if (deleteType === 'everyone') {
+          const msgSenderId = msg.sender ? (msg.sender._id ? msg.sender._id.toString() : msg.sender.toString()) : '';
+          if (msgSenderId === userId.toString()) {
+            msg.deletedForEveryone = true;
+            msg.text = '🚫 This message was deleted';
+            msg.attachment = null;
+            deletedEveryoneIds.push(mId);
+          }
+        } else {
+          if (!msg.deletedFor) msg.deletedFor = [];
+          if (!msg.deletedFor.includes(userId)) {
+            msg.deletedFor.push(userId);
+          }
+        }
+      }
+    });
+
+    await conversation.save();
+
+    if (deleteType === 'everyone' && deletedEveryoneIds.length > 0 && ioInstance) {
+      ioInstance.to(conversationId).emit('batch_messages_deleted', {
+        conversationId,
+        messageIds: deletedEveryoneIds,
+        deleteType: 'everyone'
+      });
+      conversation.participants.forEach(pId => {
+        ioInstance.to(pId.toString()).emit('batch_messages_deleted', {
+          conversationId,
+          messageIds: deletedEveryoneIds,
+          deleteType: 'everyone'
+        });
+      });
+    }
+
+    res.status(200).json({ success: true, messageIds, deleteType });
+  } catch (error) {
+    console.error('Error batch deleting DM messages:', error);
+    res.status(500).json({ message: 'Error batch deleting messages: ' + error.message });
+  }
+});
+
+// DELETE message in Project Workspace (Delete for me / Delete for everyone)
+app.delete('/api/project-workspaces/:workspaceId/messages/:messageId', async (req, res) => {
+  try {
+    const { workspaceId, messageId } = req.params;
+    const { userId, deleteType } = req.body;
+
+    if (!userId || !deleteType) {
+      return res.status(400).json({ message: 'userId and deleteType are required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(workspaceId);
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found' });
+    }
+
+    const msg = workspace.messages.id(messageId);
+    if (!msg) {
+      return res.status(404).json({ message: 'Message not found' });
+    }
+
+    const ioInstance = req.app.get('io');
+
+    if (deleteType === 'everyone') {
+      const msgSenderId = msg.sender ? (msg.sender._id ? msg.sender._id.toString() : msg.sender.toString()) : '';
+      if (msgSenderId !== userId.toString()) {
+        return res.status(403).json({ message: 'Only the sender can delete this message for everyone.' });
+      }
+
+      msg.deletedForEveryone = true;
+      msg.text = '🚫 This message was deleted';
+      msg.attachment = null;
+
+      await workspace.save();
+
+      if (ioInstance) {
+        ioInstance.to(workspaceId).emit('message_deleted', {
+          conversationId: workspaceId,
+          messageId,
+          deleteType: 'everyone'
+        });
+      }
+
+      return res.status(200).json({ success: true, messageId, deleteType: 'everyone' });
+    } else {
+      if (!msg.deletedFor) msg.deletedFor = [];
+      if (!msg.deletedFor.includes(userId)) {
+        msg.deletedFor.push(userId);
+      }
+      await workspace.save();
+
+      return res.status(200).json({ success: true, messageId, deleteType: 'me' });
+    }
+  } catch (error) {
+    console.error('Error deleting workspace message:', error);
+    res.status(500).json({ message: 'Error deleting message: ' + error.message });
+  }
+});
+
+// BATCH DELETE messages in Project Workspace
+app.post('/api/project-workspaces/:workspaceId/messages/batch-delete', async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    const { messageIds, userId, deleteType } = req.body;
+
+    if (!Array.isArray(messageIds) || messageIds.length === 0 || !userId || !deleteType) {
+      return res.status(400).json({ message: 'messageIds (array), userId, and deleteType are required' });
+    }
+
+    const workspace = await ProjectWorkspace.findById(workspaceId);
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found' });
+    }
+
+    const ioInstance = req.app.get('io');
+    const deletedEveryoneIds = [];
+
+    messageIds.forEach(mId => {
+      const msg = workspace.messages.id(mId);
+      if (msg) {
+        if (deleteType === 'everyone') {
+          const msgSenderId = msg.sender ? (msg.sender._id ? msg.sender._id.toString() : msg.sender.toString()) : '';
+          if (msgSenderId === userId.toString()) {
+            msg.deletedForEveryone = true;
+            msg.text = '🚫 This message was deleted';
+            msg.attachment = null;
+            deletedEveryoneIds.push(mId);
+          }
+        } else {
+          if (!msg.deletedFor) msg.deletedFor = [];
+          if (!msg.deletedFor.includes(userId)) {
+            msg.deletedFor.push(userId);
+          }
+        }
+      }
+    });
+
+    await workspace.save();
+
+    if (deleteType === 'everyone' && deletedEveryoneIds.length > 0 && ioInstance) {
+      ioInstance.to(workspaceId).emit('batch_messages_deleted', {
+        conversationId: workspaceId,
+        messageIds: deletedEveryoneIds,
+        deleteType: 'everyone'
+      });
+    }
+
+    res.status(200).json({ success: true, messageIds, deleteType });
+  } catch (error) {
+    console.error('Error batch deleting workspace messages:', error);
+    res.status(500).json({ message: 'Error batch deleting messages: ' + error.message });
   }
 });
 
