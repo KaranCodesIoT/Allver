@@ -52,6 +52,7 @@
     },
     "plugins": [
       "./plugins/withUnifiedAgp",
+      "./plugins/withAndroidManifestFixes",
       "expo-router",
       [
         "expo-notifications",
