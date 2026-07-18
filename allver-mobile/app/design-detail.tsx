@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import * as ScreenCapture from 'expo-screen-capture';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { Video, ResizeMode } from 'expo-av';
 import SocketService from '../utils/SocketService';
@@ -26,9 +25,6 @@ const COLORS = {
 export default function DesignDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-
-  // Prevent screenshots or screen recording of this screen
-  ScreenCapture.usePreventScreenCapture();
 
   // Load params
   const designId = (params.id as string) || '1';

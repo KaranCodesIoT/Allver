@@ -18,6 +18,7 @@ import { getStoredUser, getStoredLanguage, getToken, removeToken, removeStoredUs
 import { UnreadMessageProvider } from '../context/UnreadMessageContext';
 import { UnreadActivityProvider } from '../context/UnreadActivityContext';
 import { CallProvider } from '../context/CallContext';
+import CallKeepService from '../utils/CallKeepService';
 import AIAssistantFloatingButton from '../components/AIAssistantFloatingButton';
 
 // Ignore specific warning logs in Expo Go / Development
@@ -39,12 +40,16 @@ Notifications.setNotificationHandler({
     if (activeChatRoomId && incomingConvoId && activeChatRoomId === incomingConvoId) {
       return {
         shouldShowAlert: false,
+        shouldShowBanner: false,
+        shouldList: false,
         shouldPlaySound: false,
         shouldSetBadge: false,
       };
     }
     return {
       shouldShowAlert: true,
+      shouldShowBanner: true,
+      shouldList: true,
       shouldPlaySound: true,
       shouldSetBadge: true,
     };
@@ -153,6 +158,9 @@ export default function RootLayout() {
       return;
     }
 
+    // Initialize CallKeep for Android ConnectionService and TelecomManager
+    CallKeepService.setupCallKeep().catch(err => console.error('[RootLayout] CallKeep setup error:', err));
+
     // Initialize/re-verify global socket connection
     console.log('[RootLayout] [Checkpoint K] Found active user session. Loading SocketService...');
     import('@/utils/SocketService')
@@ -230,7 +238,7 @@ export default function RootLayout() {
           }
           console.log('[RootLayout] [Checkpoint S] Push notification permissions granted.');
 
-          const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+          const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId ?? "b344fb16-eb64-4279-8dc7-88dcd752db27";
           console.log('[RootLayout] [Checkpoint T] Requesting Expo Push Token with ProjectId:', projectId);
           token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
           console.log('[RootLayout] [Checkpoint U] Retrieved Expo Push Token:', token);
@@ -248,6 +256,25 @@ export default function RootLayout() {
             (global as any).currentPushToken = token;
           } else {
             console.warn('[RootLayout] [Checkpoint W-Warning] Backend push token registration failed:', await response.text());
+          }
+
+          // Direct FCM Token Setup
+          try {
+            const fcmToken = await messaging().getToken();
+            console.log('[RootLayout] Retrieved FCM Token:', fcmToken);
+            const fcmResponse = await fetch(`${BACKEND_URL}/api/user/fcm-token`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: user._id, token: fcmToken })
+            });
+            if (fcmResponse.ok) {
+              console.log('[RootLayout] Registered FCM token with backend successfully.');
+              (global as any).currentFcmToken = fcmToken;
+            } else {
+              console.warn('[RootLayout] Backend FCM token registration failed:', await fcmResponse.text());
+            }
+          } catch (fcmErr) {
+            console.error('[RootLayout] Error retrieving/registering FCM Token:', fcmErr);
           }
         } else {
           console.log('[RootLayout] [Checkpoint R] Must use a physical device for push notifications (Simulator/Emulator detected).');
@@ -268,7 +295,19 @@ export default function RootLayout() {
       Notifications.setBadgeCountAsync(0).catch(err => console.log('Error resetting badge:', err));
 
       const category = data.category || '';
-      if (category === 'messages' || data.conversationId) {
+      if (category === 'voice_call' || (data.text && data.text.includes('voice call'))) {
+        console.log('[Push Notification] Tapped incoming voice call notification. Launching call screen...');
+        router.push({
+          pathname: '/chat-room',
+          params: {
+            receiverId: data.senderId,
+            conversationId: data.conversationId,
+            name: data.senderName || 'Voice Call',
+            avatar: data.senderAvatar || '',
+            autoAcceptCall: 'true'
+          }
+        });
+      } else if (category === 'messages' || data.conversationId) {
         router.push({
           pathname: '/chat-room',
           params: {

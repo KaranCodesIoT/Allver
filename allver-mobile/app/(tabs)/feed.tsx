@@ -556,17 +556,27 @@ export default function DiscoverScreen() {
   };
 
   const handleConnect = (id: string) => {
-    setPosts(prev =>
-      prev.map(post => {
-        if (post.id === id) {
+    setPosts(prev => {
+      const targetPost = prev.find(p => p.id === id);
+      if (!targetPost) return prev;
+
+      const targetCreatorId = targetPost.creator.id;
+      const targetCreatorName = targetPost.creator.name?.trim().toLowerCase();
+      const newConnectedStatus = !targetPost.hasConnected;
+
+      return prev.map(post => {
+        const matchesId = Boolean(targetCreatorId && post.creator?.id && targetCreatorId.toString() === post.creator.id.toString());
+        const matchesName = Boolean(targetCreatorName && post.creator?.name && targetCreatorName === post.creator.name.trim().toLowerCase());
+
+        if (matchesId || matchesName) {
           return {
             ...post,
-            hasConnected: !post.hasConnected,
+            hasConnected: newConnectedStatus,
           };
         }
         return post;
-      })
-    );
+      });
+    });
   };
 
   const handleSave = (id: string) => {
@@ -779,115 +789,125 @@ export default function DiscoverScreen() {
         <Text style={styles.subHeadingText}>{t('followPostsSubheading')}</Text>
 
         {/* Posts List */}
-        {filteredPosts.map(post => (
-          <View 
-            key={post.id} 
-            style={styles.postCard}
-            onLayout={(event) => {
-              const { y, height } = event.nativeEvent.layout;
-              postLayouts.current[post.id] = { y, height };
-            }}
-          >
-            
-            {/* Card Header */}
-            <View style={styles.cardHeader}>
-              <Image source={{ uri: post.creator.avatar }} style={styles.avatar} contentFit="cover" />
-              <View style={styles.headerInfo}>
-                <View style={styles.nameRow}>
-                  <Text style={styles.profileName}>{post.creator.name}</Text>
-                  {post.creator.isVerified && (
-                    <MaterialCommunityIcons name="check-circle" size={14} color={COLORS.green} style={styles.verifiedIcon} />
-                  )}
+        {filteredPosts.map(post => {
+          const isOwnPost = Boolean(
+            currentUser && (
+              (currentUser._id && post.creator?.id && currentUser._id.toString() === post.creator.id.toString()) ||
+              (currentUser.fullName && post.creator?.name && currentUser.fullName.trim().toLowerCase() === post.creator.name.trim().toLowerCase())
+            )
+          );
+
+          return (
+            <View 
+              key={post.id} 
+              style={styles.postCard}
+              onLayout={(event) => {
+                const { y, height } = event.nativeEvent.layout;
+                postLayouts.current[post.id] = { y, height };
+              }}
+            >
+              
+              {/* Card Header */}
+              <View style={styles.cardHeader}>
+                <Image source={{ uri: post.creator.avatar }} style={styles.avatar} contentFit="cover" />
+                <View style={styles.headerInfo}>
+                  <View style={styles.nameRow}>
+                    <Text style={styles.profileName}>{post.creator.name}</Text>
+                    {post.creator.isVerified && (
+                      <MaterialCommunityIcons name="check-circle" size={14} color={COLORS.green} style={styles.verifiedIcon} />
+                    )}
+                  </View>
+                  <Text style={styles.profileMeta}>{post.creator.role} • {post.creator.location}</Text>
+                  <View style={styles.timeRow}>
+                    <Text style={styles.timeText}>{post.timeAgo} • </Text>
+                    <Feather name="globe" size={11} color="#9CA3AF" />
+                  </View>
                 </View>
-                <Text style={styles.profileMeta}>{post.creator.role} • {post.creator.location}</Text>
-                <View style={styles.timeRow}>
-                  <Text style={styles.timeText}>{post.timeAgo} • </Text>
-                  <Feather name="globe" size={11} color="#9CA3AF" />
+                <TouchableOpacity 
+                  style={styles.menuBtn} 
+                  activeOpacity={0.7}
+                  onPress={() => handleMenuPress(post)}
+                >
+                  <Feather name="more-horizontal" size={20} color={COLORS.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Post Body Text */}
+              <Text style={styles.bodyText}>{post.bodyText}</Text>
+
+              {/* Post Images Grid */}
+              {renderImageGrid(post.images, post.id)}
+
+              {/* Stats Summary Row */}
+              <View style={styles.statsSummaryRow}>
+                <View style={styles.likesCountWrap}>
+                  <Text style={styles.likesText}>{post.likes} {t('appreciations')}</Text>
                 </View>
+                <Text style={styles.commentsText}>{post.comments} {t('comments')}</Text>
               </View>
-              <TouchableOpacity 
-                style={styles.menuBtn} 
-                activeOpacity={0.7}
-                onPress={() => handleMenuPress(post)}
-              >
-                <Feather name="more-horizontal" size={20} color={COLORS.textMuted} />
-              </TouchableOpacity>
-            </View>
 
-            {/* Post Body Text */}
-            <Text style={styles.bodyText}>{post.bodyText}</Text>
+              {/* Card Actions Row */}
+              <View style={styles.cardDivider} />
+              <View style={styles.actionsRow}>
+                <TouchableOpacity 
+                  style={styles.actionBtn} 
+                  onPress={() => handleAppreciate(post.id)}
+                  activeOpacity={0.7}
+                >
+                  <Feather 
+                    name="thumbs-up" 
+                    size={15} 
+                    color={post.hasLiked ? COLORS.green : COLORS.textMuted} 
+                  />
+                  <Text style={[styles.actionBtnText, post.hasLiked && { color: COLORS.green, fontWeight: '700' }]}>
+                    {t('appreciate')}
+                  </Text>
+                </TouchableOpacity>
 
-            {/* Post Images Grid */}
-            {renderImageGrid(post.images, post.id)}
+                <TouchableOpacity 
+                  style={styles.actionBtn} 
+                  activeOpacity={0.7}
+                  onPress={() => handleCommentPress(post)}
+                >
+                  <Feather name="message-square" size={15} color={COLORS.textMuted} />
+                  <Text style={styles.actionBtnText}>{t('comment')}</Text>
+                </TouchableOpacity>
 
-            {/* Stats Summary Row */}
-            <View style={styles.statsSummaryRow}>
-              <View style={styles.likesCountWrap}>
-                <Text style={styles.likesText}>{post.likes} {t('appreciations')}</Text>
-              </View>
-              <Text style={styles.commentsText}>{post.comments} {t('comments')}</Text>
-            </View>
-
-            {/* Card Actions Row */}
-            <View style={styles.cardDivider} />
-            <View style={styles.actionsRow}>
-              <TouchableOpacity 
-                style={styles.actionBtn} 
-                onPress={() => handleAppreciate(post.id)}
-                activeOpacity={0.7}
-              >
-                <Feather 
-                  name="thumbs-up" 
-                  size={15} 
-                  color={post.hasLiked ? COLORS.green : COLORS.textMuted} 
-                />
-                <Text style={[styles.actionBtnText, post.hasLiked && { color: COLORS.green, fontWeight: '700' }]}>
-                  {t('appreciate')}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.actionBtn} 
-                activeOpacity={0.7}
-                onPress={() => handleCommentPress(post)}
-              >
-                <Feather name="message-square" size={15} color={COLORS.textMuted} />
-                <Text style={styles.actionBtnText}>{t('comment')}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.actionBtn} 
-                onPress={() => handleConnect(post.id)}
-                activeOpacity={0.7}
-              >
-                <Feather 
-                  name="user-plus" 
-                  size={15} 
-                  color={post.hasConnected ? COLORS.green : COLORS.textMuted} 
-                />
-                <Text style={[styles.actionBtnText, post.hasConnected && { color: COLORS.green, fontWeight: '700' }]}>
-                  {post.hasConnected ? t('connected') : t('network')}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.actionBtn} 
-                onPress={() => handleSave(post.id)}
-                activeOpacity={0.7}
-              >
-                {post.hasSaved ? (
-                  <FontAwesome5 name="bookmark" size={14} color={COLORS.green} solid />
-                ) : (
-                  <Feather name="bookmark" size={15} color={COLORS.textMuted} />
+                {!isOwnPost && (
+                  <TouchableOpacity 
+                    style={styles.actionBtn} 
+                    onPress={() => handleConnect(post.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Feather 
+                      name="user-plus" 
+                      size={15} 
+                      color={post.hasConnected ? COLORS.green : COLORS.textMuted} 
+                    />
+                    <Text style={[styles.actionBtnText, post.hasConnected && { color: COLORS.green, fontWeight: '700' }]}>
+                      {post.hasConnected ? t('connected') : t('network')}
+                    </Text>
+                  </TouchableOpacity>
                 )}
-                <Text style={[styles.actionBtnText, post.hasSaved && { color: COLORS.green, fontWeight: '700' }]}>
-                  {post.hasSaved ? t('saved') : t('save')}
-                </Text>
-              </TouchableOpacity>
-            </View>
 
-          </View>
-        ))}
+                <TouchableOpacity 
+                  style={styles.actionBtn} 
+                  onPress={() => handleSave(post.id)}
+                  activeOpacity={0.7}
+                >
+                  {post.hasSaved ? (
+                    <FontAwesome5 name="bookmark" size={14} color={COLORS.green} solid />
+                  ) : (
+                    <Feather name="bookmark" size={15} color={COLORS.textMuted} />
+                  )}
+                  <Text style={[styles.actionBtnText, post.hasSaved && { color: COLORS.green, fontWeight: '700' }]}>
+                    {post.hasSaved ? t('saved') : t('save')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        })}
 
         {filteredPosts.length === 0 && (
           <View style={styles.emptyContainer}>

@@ -11,20 +11,18 @@ let nativeRTCSessionDescription: any = null;
 let nativeRTCIceCandidate: any = null;
 let isNativeWebRTCAvailable = false;
 
-if (Platform.OS !== 'web') {
-  try {
-    const webrtcModule = require('react-native-webrtc');
-    nativeRTCPeerConnection = webrtcModule.RTCPeerConnection;
-    nativeMediaDevices = webrtcModule.mediaDevices;
-    nativeRTCSessionDescription = webrtcModule.RTCSessionDescription;
-    nativeRTCIceCandidate = webrtcModule.RTCIceCandidate;
-    isNativeWebRTCAvailable = !!(nativeRTCPeerConnection && nativeMediaDevices);
-    if (isNativeWebRTCAvailable) {
-      console.log('[WebRTC] [Native] Native react-native-webrtc module detected and ready.');
-    }
-  } catch (e) {
-    console.log('[WebRTC] react-native-webrtc native binary not present in bundle (Expo Go). Using WebRTC facade & high-importance audio session mode.');
+try {
+  const webrtcModule = require('react-native-webrtc');
+  nativeRTCPeerConnection = webrtcModule.RTCPeerConnection;
+  nativeMediaDevices = webrtcModule.mediaDevices;
+  nativeRTCSessionDescription = webrtcModule.RTCSessionDescription;
+  nativeRTCIceCandidate = webrtcModule.RTCIceCandidate;
+  isNativeWebRTCAvailable = !!(nativeRTCPeerConnection && nativeMediaDevices);
+  if (isNativeWebRTCAvailable) {
+    console.log('[WebRTC] [Native] Native react-native-webrtc module detected and ready.');
   }
+} catch (e) {
+  console.log('[WebRTC] react-native-webrtc native binary not present in bundle (Expo Go). Using WebRTC facade & high-importance audio session mode.');
 }
 
 // TURN & STUN Configuration for Production Peer Connectivity across strict NATs / 4G / 5G
@@ -54,7 +52,7 @@ export const RTC_CONFIGURATION = {
   iceCandidatePoolSize: 10,
 };
 
-class WebRTCManager {
+class WebRTCManagerNative {
   private localStream: any = null;
   private peerConnection: any = null;
   private isMuted: boolean = false;
@@ -64,11 +62,6 @@ class WebRTCManager {
 
   private onRemoteTrackCallback: ((stream: any) => void) | null = null;
   private onConnectionStateChangeCallback: ((state: string) => void) | null = null;
-
-  // ─── Latency instrumentation ───
-  private callStartTime: number = 0;        // When startCall/handleOffer begins
-  private firstIceCandidateTime: number = 0; // First ICE candidate discovered
-  private iceGatheringComplete: boolean = false;
 
   constructor() {
     console.log('[WebRTC] WebRTCManager initialized with TURN/STUN configuration.');
@@ -125,57 +118,26 @@ class WebRTCManager {
 
     if (isNativeWebRTCAvailable && nativeRTCPeerConnection) {
       try {
-        this.callStartTime = Date.now();
-        this.firstIceCandidateTime = 0;
-        this.iceGatheringComplete = false;
         console.log('[WebRTC] [Native] Creating native RTCPeerConnection with TURN/STUN servers...');
         this.peerConnection = new nativeRTCPeerConnection(RTC_CONFIGURATION);
         
         // Capture native microphone stream
         this.localStream = await nativeMediaDevices.getUserMedia({ audio: true, video: false });
-        const mediaSetupMs = Date.now() - this.callStartTime;
-        console.log(`[WebRTC] [Latency] Media capture: ${mediaSetupMs}ms`);
+        console.log('[Audio] [Stage 10 - Local Audio Track Started] Native microphone stream captured.');
         
         this.localStream.getTracks().forEach((track: any) => {
           this.peerConnection.addTrack(track, this.localStream);
         });
 
-        this.peerConnection.oniceconnectionstatechange = () => {
-          const state = this.peerConnection?.iceConnectionState;
-          const elapsed = Date.now() - this.callStartTime;
-          console.log(`[WebRTC] [Latency] ICE Connection: ${state} (${elapsed}ms since call start)`);
-          if (state === 'connected' || state === 'completed') {
-            console.log(`[WebRTC] ✅ WebRTC CONNECTED in ${elapsed}ms total`);
-          }
-          if (state === 'failed') {
-            this.initiateIceRestart();
-          }
-        };
-
-        this.peerConnection.onicegatheringstatechange = () => {
-          const gatherState = this.peerConnection?.iceGatheringState;
-          console.log(`[WebRTC] ICE Gathering State: ${gatherState}`);
-          if (gatherState === 'complete' && !this.iceGatheringComplete) {
-            this.iceGatheringComplete = true;
-            const gatherMs = Date.now() - this.callStartTime;
-            console.log(`[WebRTC] [Latency] ICE gathering complete: ${gatherMs}ms`);
-          }
-        };
-
         this.peerConnection.onicecandidate = (event: any) => {
           if (event.candidate) {
-            if (!this.firstIceCandidateTime) {
-              this.firstIceCandidateTime = Date.now();
-              const firstCandidateMs = this.firstIceCandidateTime - this.callStartTime;
-              console.log(`[WebRTC] [Latency] First ICE candidate: ${firstCandidateMs}ms (Trickle ICE active)`);
-            }
+            console.log('[WebRTC] [Stage 8 - ICE Candidate Discovered] Native ICE candidate:', event.candidate.candidate);
             this.sendIceCandidate(targetUserId, event.candidate);
           }
         };
 
         this.peerConnection.ontrack = (event: any) => {
-          const trackMs = Date.now() - this.callStartTime;
-          console.log(`[WebRTC] [Latency] Remote audio track received: ${trackMs}ms`);
+          console.log('[Audio] [Stage 11 - Remote Audio Track Received] Native remote audio stream active.');
           if (this.onRemoteTrackCallback && event.streams?.[0]) {
             this.onRemoteTrackCallback(event.streams[0]);
           }
@@ -183,10 +145,8 @@ class WebRTCManager {
 
         const offer = await this.peerConnection.createOffer({ offerToReceiveAudio: true });
         await this.peerConnection.setLocalDescription(offer);
-        const offerMs = Date.now() - this.callStartTime;
-        console.log(`[WebRTC] [Latency] SDP offer created + set: ${offerMs}ms`);
 
-        console.log(`[WebRTC] [Stage 6 - Offer Sent] Sending native SDP offer to ${targetUserId}`);
+        console.log(`[WebRTC] [Stage 6 - Offer Sent] Sending native SDP offer via Socket.IO to ${targetUserId}`);
         SocketService.emit('webrtc_offer', {
           targetId: targetUserId,
           offer
@@ -227,9 +187,6 @@ class WebRTCManager {
 
     if (isNativeWebRTCAvailable && nativeRTCPeerConnection) {
       try {
-        this.callStartTime = Date.now();
-        this.firstIceCandidateTime = 0;
-        this.iceGatheringComplete = false;
         console.log('[WebRTC] [Native] Receiver creating native RTCPeerConnection...');
         this.peerConnection = new nativeRTCPeerConnection(RTC_CONFIGURATION);
         
@@ -238,38 +195,14 @@ class WebRTCManager {
           this.peerConnection.addTrack(track, this.localStream);
         });
 
-        this.peerConnection.oniceconnectionstatechange = () => {
-          const state = this.peerConnection?.iceConnectionState;
-          const elapsed = Date.now() - this.callStartTime;
-          console.log(`[WebRTC] [Latency] Receiver ICE Connection: ${state} (${elapsed}ms)`);
-          if (state === 'connected' || state === 'completed') {
-            console.log(`[WebRTC] ✅ Receiver WebRTC CONNECTED in ${elapsed}ms`);
-          }
-          if (state === 'failed') {
-            this.initiateIceRestart();
-          }
-        };
-
-        this.peerConnection.onicegatheringstatechange = () => {
-          const gatherState = this.peerConnection?.iceGatheringState;
-          if (gatherState === 'complete' && !this.iceGatheringComplete) {
-            this.iceGatheringComplete = true;
-            console.log(`[WebRTC] [Latency] Receiver ICE gathering complete: ${Date.now() - this.callStartTime}ms`);
-          }
-        };
-
         this.peerConnection.onicecandidate = (event: any) => {
           if (event.candidate) {
-            if (!this.firstIceCandidateTime) {
-              this.firstIceCandidateTime = Date.now();
-              console.log(`[WebRTC] [Latency] Receiver first ICE candidate: ${this.firstIceCandidateTime - this.callStartTime}ms`);
-            }
             this.sendIceCandidate(senderId, event.candidate);
           }
         };
 
         this.peerConnection.ontrack = (event: any) => {
-          console.log(`[WebRTC] [Latency] Receiver remote audio track: ${Date.now() - this.callStartTime}ms`);
+          console.log('[Audio] [Stage 11 - Remote Audio Active] Native remote audio stream playing.');
           if (this.onRemoteTrackCallback && event.streams?.[0]) {
             this.onRemoteTrackCallback(event.streams[0]);
           }
@@ -279,7 +212,7 @@ class WebRTCManager {
         const answer = await this.peerConnection.createAnswer();
         await this.peerConnection.setLocalDescription(answer);
 
-        console.log(`[WebRTC] [Stage 7 - Answer Sent] Sending native SDP answer to ${senderId}`);
+        console.log(`[WebRTC] [Stage 7 - Answer Sent] Sending native SDP answer via Socket.IO to ${senderId}`);
         SocketService.emit('webrtc_answer', {
           targetId: senderId,
           answer
@@ -349,24 +282,6 @@ class WebRTCManager {
     });
   }
 
-  public async initiateIceRestart(): Promise<void> {
-    if (!this.peerConnection || !this.targetUserId) return;
-    try {
-      console.log('[WebRTC] Initiating ICE restart...');
-      const offer = await this.peerConnection.createOffer({
-        offerToReceiveAudio: true,
-        iceRestart: true
-      });
-      await this.peerConnection.setLocalDescription(offer);
-      SocketService.emit('webrtc_offer', {
-        targetId: this.targetUserId,
-        offer
-      });
-    } catch (err) {
-      console.error('[WebRTC] Failed to initiate ICE restart:', err);
-    }
-  }
-
   public setCallbacks(callbacks: {
     onRemoteTrack?: (stream: any) => void;
     onConnectionStateChange?: (state: string) => void;
@@ -429,5 +344,5 @@ class WebRTCManager {
   }
 }
 
-const WebRTCService = new WebRTCManager();
+const WebRTCService = new WebRTCManagerNative();
 export default WebRTCService;

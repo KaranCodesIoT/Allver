@@ -132,11 +132,29 @@ export default function ProfileScreen() {
       }
     };
 
+    const handleUserSettingsUpdated = (data: any) => {
+      const loggedInUserId = (global as any).currentUser?._id;
+      if (data && loggedInUserId && data.userId === loggedInUserId && data.notificationSettings) {
+        console.log('[Profile] Current user settings updated via socket:', data.notificationSettings);
+        setNotifSettings({
+          messages: data.notificationSettings.messages !== false,
+          projectUpdates: data.notificationSettings.projectUpdates !== false,
+          contracts: data.notificationSettings.contracts !== false,
+          payments: data.notificationSettings.payments !== false,
+          attendance: data.notificationSettings.attendance !== false,
+          marketing: data.notificationSettings.marketing !== false,
+          systemAlerts: data.notificationSettings.systemAlerts !== false,
+        });
+      }
+    };
+
     SocketService.on('profile_updated', handleProfileUpdated);
     SocketService.on('workspace_updated', handleWorkspaceUpdated);
+    SocketService.on('user_settings_updated', handleUserSettingsUpdated);
     return () => {
       SocketService.off('profile_updated', handleProfileUpdated);
       SocketService.off('workspace_updated', handleWorkspaceUpdated);
+      SocketService.off('user_settings_updated', handleUserSettingsUpdated);
     };
   }, [currentUser?._id]);
 
@@ -983,6 +1001,42 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleToggleSettings = async (key: string, newValue: boolean) => {
+    if (!currentUser?._id) return;
+    const previousSettings = { ...notifSettings };
+    const updatedSettings = {
+      ...notifSettings,
+      [key]: newValue
+    };
+    
+    // Optimistic UI update
+    setNotifSettings(updatedSettings);
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/user/${currentUser._id}/notification-settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedSettings)
+      });
+      const data = await res.json();
+      if (res.ok && data.user) {
+        (global as any).currentUser = data.user;
+        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+          localStorage.setItem('currentUser', JSON.stringify(data.user));
+        }
+        setCurrentUser(data.user);
+      } else {
+        // Rollback on error
+        setNotifSettings(previousSettings);
+        Alert.alert('Error', data.message || 'Failed to update notification preference');
+      }
+    } catch (err) {
+      // Rollback on network failure
+      setNotifSettings(previousSettings);
+      Alert.alert('Error', 'Network error occurred. Reverting preference.');
+    }
+  };
+
   const handleEditMediaPress = (item: any) => {
     setEditingPostId(item.postId);
     setEditingPostTitle(item.title);
@@ -1198,6 +1252,20 @@ export default function ProfileScreen() {
           console.warn('Failed to delete push token from backend on logout:', fetchErr);
         }
         (global as any).currentPushToken = null;
+      }
+
+      const activeFcmToken = (global as any).currentFcmToken;
+      if (activeFcmToken && currentUser?._id) {
+        try {
+          await fetch(`${BACKEND_URL}/api/user/fcm-token`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser._id, token: activeFcmToken })
+          });
+        } catch (fetchErr) {
+          console.warn('Failed to delete FCM token from backend on logout:', fetchErr);
+        }
+        (global as any).currentFcmToken = null;
       }
 
       await removeToken();
@@ -3223,10 +3291,7 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
                       borderBottomColor: '#F1F5F9',
                     }}
                     onPress={() => {
-                      setNotifSettings(prev => ({
-                        ...prev,
-                        [item.key]: !isChecked
-                      }));
+                      handleToggleSettings(item.key, !isChecked);
                     }}
                     activeOpacity={0.7}
                   >
@@ -3309,16 +3374,11 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
                   justifyContent: 'center',
                   alignItems: 'center',
                 }}
-                onPress={() => handleSaveNotificationSettings(notifSettings)}
-                disabled={savingSettings}
+                onPress={() => setShowSettingsModal(false)}
               >
-                {savingSettings ? (
-                  <ActivityIndicator size="small" color={COLORS.white} />
-                ) : (
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.white }}>
-                    Save Settings
-                  </Text>
-                )}
+                <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.white }}>
+                  Done
+                </Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>

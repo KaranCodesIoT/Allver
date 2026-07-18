@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useRouter } from 'expo-router';
 import SocketService from '../utils/SocketService';
+import CallKeepService from '../utils/CallKeepService';
 
 interface CallContextType {
   callState: 'idle' | 'calling' | 'incoming' | 'active';
@@ -12,6 +13,7 @@ interface CallContextType {
     callerId: string;
     callerName: string;
     callerAvatar: string;
+    conversationId?: string;
   } | null;
   declineIncomingCall: () => void;
   acceptIncomingCall: () => void;
@@ -22,7 +24,7 @@ const CallContext = createContext<CallContextType | undefined>(undefined);
 export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const router = useRouter();
   const [callState, setCallState] = useState<'idle' | 'calling' | 'incoming' | 'active'>('idle');
-  const [callerInfo, setCallerInfo] = useState<{ callerId: string; callerName: string; callerAvatar: string } | null>(null);
+  const [callerInfo, setCallerInfo] = useState<{ callerId: string; callerName: string; callerAvatar: string; conversationId?: string } | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const callStateRef = useRef(callState);
@@ -86,6 +88,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     stopRingtone();
     setCallState('idle');
     setCallerInfo(null);
+    CallKeepService.endNativeCall();
     if (callTimeoutRef.current) {
       clearTimeout(callTimeoutRef.current);
       callTimeoutRef.current = null;
@@ -112,18 +115,26 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     cleanupCall();
   };
 
+  // Track when the incoming call UI was displayed (for time-to-accept measurement)
+  const incomingDisplayTimeRef = useRef<number>(0);
+
   const handleAcceptCall = () => {
     if (!callerInfo || !currentUserId) return;
+    const acceptTime = Date.now();
+    const timeToAccept = incomingDisplayTimeRef.current ? acceptTime - incomingDisplayTimeRef.current : -1;
+    console.log(`[Call] [Stage 7 - Call Accepted] User accepted call from ${callerInfo.callerName} (time-to-accept: ${timeToAccept}ms)`);
     SocketService.emit('answer_call', {
       callerId: callerInfo.callerId,
       receiverId: currentUserId
     });
+    const convoId = callerInfo.conversationId;
     cleanupCall();
 
     router.push({
       pathname: '/chat-room',
       params: {
         receiverId: callerInfo.callerId,
+        conversationId: convoId || '',
         name: callerInfo.callerName,
         avatar: callerInfo.callerAvatar,
         autoAcceptCall: 'true',
@@ -138,18 +149,32 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const handleIncomingCall = (data: any) => {
-      console.log('[Global Call] Incoming call from:', data.callerName);
+      const receiveTime = Date.now();
+      const serverToClientMs = data.timestamp ? receiveTime - data.timestamp : -1;
+      console.log(`[Call] [Latency] Server→Client: ${serverToClientMs}ms | Caller: ${data.callerName} | UUID: ${data.callUUID}`);
+      
       if (callStateRef.current !== 'idle') {
+        console.log(`[Call] User busy. Emitting busy_call for ${data.callerId}`);
         SocketService.emit('busy_call', { callerId: data.callerId });
         return;
       }
+
       setCallerInfo({
         callerId: data.callerId,
         callerName: data.callerName,
         callerAvatar: data.callerAvatar,
+        conversationId: data.conversationId || '',
       });
       setCallState('incoming');
+      incomingDisplayTimeRef.current = Date.now();
+      const displayLatency = incomingDisplayTimeRef.current - receiveTime;
+      console.log(`[Call] [Stage 5 - UI Displayed] Overlay shown (display setup: ${displayLatency}ms, total since server emit: ${serverToClientMs + displayLatency}ms)`);
       playRingtone();
+
+      const callUUID = data.callUUID || `call_${data.callerId}_${Date.now()}`;
+      CallKeepService.displayIncomingCall(callUUID, data.callerName, data.callerName, data);
+      const callKeepLatency = Date.now() - incomingDisplayTimeRef.current;
+      console.log(`[Call] [Stage 5b - CallKeep Displayed] Native call UI triggered (${callKeepLatency}ms)`);
 
       if (callTimeoutRef.current) clearTimeout(callTimeoutRef.current);
       callTimeoutRef.current = setTimeout(() => {
