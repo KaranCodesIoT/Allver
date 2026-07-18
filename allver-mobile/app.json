@@ -51,7 +51,6 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "./plugins/withUnifiedAgp",
       "./plugins/withAndroidManifestFixes",
       "expo-router",
       [
