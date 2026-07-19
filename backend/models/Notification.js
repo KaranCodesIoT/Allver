@@ -65,11 +65,11 @@ const notificationSchema = new mongoose.Schema({
 notificationSchema.index({ recipientId: 1, createdAt: -1 });
 
 // Pre-save hook to check settings and suppress if disabled
-notificationSchema.pre('save', async function(next) {
+notificationSchema.pre('save', async function() {
   try {
     const User = mongoose.model('User');
     const recipient = await User.findById(this.recipientId);
-    if (!recipient) return next();
+    if (!recipient) return;
 
     // 1. Resolve notification category
     let resolvedCategory = this.category || 'systemAlerts';
@@ -99,9 +99,8 @@ notificationSchema.pre('save', async function(next) {
         this.isRead = true; // Mark as read so it doesn't count towards badges
       }
     }
-    next();
   } catch (error) {
-    next(error);
+    throw error;
   }
 });
 
@@ -196,7 +195,7 @@ notificationSchema.post('save', async function(doc) {
             });
             console.log(`[FCM Call Push] Successfully sent direct FCM background wakeup call message to token ${fToken}`);
           } catch (fcmErr) {
-            console.error(`[FCM Call Push] Error sending to token ${fToken}:`, fcmErr.message);
+            console.error(`[FCM Call Push Error] Error sending to token ${fToken}: Code = ${fcmErr.code || 'N/A'} | Message = ${fcmErr.message}`);
           }
         }
       } else {
@@ -221,10 +220,16 @@ notificationSchema.post('save', async function(doc) {
     };
 
     targetTokens = targetTokens.filter(isExpoPushToken);
-    if (targetTokens.length === 0) {
-      console.log(`[Push Notification] No valid push tokens found for ${recipient.fullName}.`);
+
+    // Resolve target FCM Tokens
+    const fcmTokens = recipient.fcmTokens || [];
+
+    if (targetTokens.length === 0 && fcmTokens.length === 0) {
+      console.log(`[Push Notification] No valid Expo or FCM push tokens found for ${recipient.fullName}.`);
       return;
     }
+
+    console.log(`[Push Notification Log] Recipient: ${recipient.fullName}. Found ${targetTokens.length} Expo tokens and ${fcmTokens.length} FCM tokens.`);
 
     // 4. Compute unread notifications count (badge)
     const badgeCount = await mongoose.model('Notification').countDocuments({
@@ -262,61 +267,116 @@ notificationSchema.post('save', async function(doc) {
       title = '📋 Attendance Marked';
     }
 
-    // Send push payload to all registered device tokens
-    for (const token of targetTokens) {
-      const message = {
-        to: token,
-        sound: 'default',
-        priority: 'high',
-        channelId: 'default',
-        title: title,
-        body: doc.text,
-        badge: badgeCount,
-        data: {
-          notificationId: doc._id.toString(),
-          text: doc.text,
-          workspaceId: doc.workspaceId || '',
-          conversationId: doc.conversationId || '',
-          projectId: doc.projectId || '',
-          postId: doc.postId || '',
-          postType: doc.postType || '',
-          senderId: doc.senderId ? doc.senderId.toString() : '',
-          senderName,
-          senderAvatar,
-          category: resolvedCategory
-        },
-        android: {
+    // A. Send to Expo Push Tokens (via Expo Push API)
+    if (targetTokens.length > 0) {
+      for (const token of targetTokens) {
+        const message = {
+          to: token,
+          sound: 'default',
+          priority: 'high',
           channelId: 'default',
-          importance: 'high',
-          vibrationPattern: [0, 250, 250, 250],
-          lightColor: '#FF231F7C',
-        }
-      };
-
-      try {
-        const response = await fetch('https://exp.host/--/api/v2/push/send', {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Accept-encoding': 'gzip, deflate',
-            'Content-Type': 'application/json',
+          title: title,
+          body: doc.text,
+          badge: badgeCount,
+          data: {
+            notificationId: doc._id.toString(),
+            text: doc.text,
+            workspaceId: doc.workspaceId || '',
+            conversationId: doc.conversationId || '',
+            projectId: doc.projectId || '',
+            postId: doc.postId || '',
+            postType: doc.postType || '',
+            senderId: doc.senderId ? doc.senderId.toString() : '',
+            senderName,
+            senderAvatar,
+            category: resolvedCategory
           },
-          body: JSON.stringify(message),
-        });
-        const resData = await response.json();
-        const ticket = resData?.data?.[0];
+          android: {
+            channelId: 'default',
+            importance: 'high',
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#FF231F7C',
+          }
+        };
 
-        if (ticket && ticket.status === 'ok') {
-          console.log(`[Push Notification] Successfully sent to ${recipient.fullName} (${token}) [Ticket ID: ${ticket.id}]`);
-        } else if (ticket && ticket.status === 'error') {
-          console.error(`[Push Notification] Expo Push API Error Ticket for ${recipient.fullName} (${token}):`, ticket.message, ticket.details);
-        } else if (resData?.errors && resData.errors.length > 0) {
-          console.error(`[Push Notification] Expo Push API Top-Level Error for ${recipient.fullName} (${token}):`, resData.errors);
-        } else {
-          console.log(`[Push Notification] Sent to ${recipient.fullName} (${token}):`, resData);
+        try {
+          console.log(`[Push Notification - Expo Send] Sending payload to ${recipient.fullName}:`, JSON.stringify(message));
+          const response = await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Accept-encoding': 'gzip, deflate',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(message),
+          });
+          const resData = await response.json();
+          const ticket = resData?.data?.[0];
+
+          if (ticket && ticket.status === 'ok') {
+            console.log(`[Push Notification - Expo Response] Successfully sent to ${recipient.fullName} (${token}) [Ticket ID: ${ticket.id}]`);
+          } else if (ticket && ticket.status === 'error') {
+            console.error(`[Push Notification - Expo Response] Expo Push API Error Ticket for ${recipient.fullName} (${token}):`, ticket.message, ticket.details);
+          } else if (resData?.errors && resData.errors.length > 0) {
+            console.error(`[Push Notification - Expo Response] Expo Push API Top-Level Error for ${recipient.fullName} (${token}):`, resData.errors);
+          } else {
+            console.log(`[Push Notification - Expo Response] Sent to ${recipient.fullName} (${token}):`, resData);
+          }
+        } catch (sendErr) {
+          console.error(`[Push Notification - Expo Error] Error sending to ${token}:`, sendErr);
         }
-      } catch (sendErr) {
-        console.error(`[Push Notification] Error sending to ${token}:`, sendErr);
+      }
+    }
+
+    // B. Send to FCM Tokens (via Firebase Admin SDK)
+    if (fcmTokens.length > 0) {
+      let admin = null;
+      try {
+        admin = require('firebase-admin');
+      } catch (e) {
+        console.warn('[Push Notification - FCM Error] firebase-admin package not available.');
+      }
+
+      if (admin && admin.apps && admin.apps.length > 0) {
+        for (const fToken of fcmTokens) {
+          const fcmPayload = {
+            token: fToken,
+            notification: {
+              title: title,
+              body: doc.text
+            },
+            data: {
+              notificationId: doc._id.toString(),
+              text: doc.text || '',
+              workspaceId: doc.workspaceId || '',
+              conversationId: doc.conversationId || '',
+              projectId: doc.projectId || '',
+              postId: doc.postId || '',
+              postType: doc.postType || '',
+              senderId: doc.senderId ? doc.senderId.toString() : '',
+              senderName: senderName || '',
+              senderAvatar: senderAvatar || '',
+              category: resolvedCategory || ''
+            },
+            android: {
+              priority: 'high',
+              notification: {
+                sound: 'default',
+                channelId: 'default'
+              }
+            }
+          };
+
+          try {
+            console.log(`[Push Notification - FCM Send] Sending to ${recipient.fullName} (${fToken}) payload:`, JSON.stringify(fcmPayload));
+            const responseMessageId = await admin.messaging().send(fcmPayload);
+            console.log(`[Push Notification - FCM Response] Successfully sent FCM message to ${recipient.fullName} (${fToken}). MessageID: ${responseMessageId}`);
+          } catch (fcmErr) {
+            console.error(`[Push Notification - FCM Error] Error sending to FCM token ${fToken}: Code = ${fcmErr.code || 'N/A'} | Message = ${fcmErr.message}`);
+          }
+        }
+      } else {
+        console.warn('[Push Notification - FCM Error] Firebase Admin SDK is not initialized. Skipping FCM notification send.');
       }
     }
   } catch (error) {

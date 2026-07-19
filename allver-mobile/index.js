@@ -31,16 +31,31 @@ if (Platform.OS !== 'web') {
       console.log('[FCM Background] Received background wakeup data message:', remoteMessage);
       if (remoteMessage.data && remoteMessage.data.category === 'voice_call') {
         const data = remoteMessage.data;
-        const callUUID = data.callUUID || `call_${data.callerId}_${Date.now()}`;
+        const callId = data.callId || data.callUUID || `call_${data.callerId}_${Date.now()}`;
+        const callerName = data.callerName || 'Someone';
 
         try {
-          const CallKeepManager = require('./utils/CallKeepService').default;
-          logStep('FCM Background CallKeep', 'Calling setupCallKeep...');
-          await CallKeepManager.setupCallKeep();
-          logStep('FCM Background CallKeep', 'Displaying incoming call...');
-          CallKeepManager.displayIncomingCall(callUUID, data.callerName, data.callerName, data);
+          logStep('FCM Background Incoming Call', `Launching native fullscreen UI for call: ${callId}`);
+          const IncomingCallService = require('./utils/IncomingCallService').default;
+          IncomingCallService.showIncomingCall(callId, callerName);
         } catch (err) {
-          console.error('[FCM Background] Error displaying CallKeep UI:', err);
+          console.error('[FCM Background] Error displaying native Fullscreen Intent UI, falling back to banner:', err);
+          try {
+            const Notifications = require('expo-notifications');
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: `📞 Incoming Voice Call`,
+                body: `${callerName} is calling you...`,
+                data: data,
+                sound: 'default',
+                priority: 'high',
+              },
+              trigger: null, // deliver immediately
+            });
+            console.log('[FCM Background] Local notification scheduled successfully for incoming call fallback.');
+          } catch (notifErr) {
+            console.error('[FCM Background] Error scheduling local notification fallback:', notifErr);
+          }
         }
       }
     });

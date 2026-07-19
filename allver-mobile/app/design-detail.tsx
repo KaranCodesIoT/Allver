@@ -76,14 +76,38 @@ export default function DesignDetailScreen() {
   const [authorExperience, setAuthorExperience] = useState(initialAuthorExperience);
 
   useEffect(() => {
-    let user = (global as any).currentUser;
-    if (!user && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-      const stored = localStorage.getItem('currentUser');
-      if (stored) {
-        user = JSON.parse(stored);
+    const loadUser = async () => {
+      let user = (global as any).currentUser;
+      if (!user) {
+        if (Platform.OS === 'web') {
+          if (typeof localStorage !== 'undefined') {
+            const stored = localStorage.getItem('currentUser');
+            if (stored) {
+              try {
+                user = JSON.parse(stored);
+              } catch (e) {
+                console.error(e);
+              }
+            }
+          }
+        } else {
+          try {
+            const { getStoredUser } = require('../constants/Auth');
+            const stored = await getStoredUser();
+            if (stored) {
+              user = JSON.parse(stored);
+              (global as any).currentUser = user;
+            }
+          } catch (e) {
+            console.error('[DesignDetail] Error restoring user session from SecureStore:', e);
+          }
+        }
       }
-    }
-    setCurrentUser(user);
+      if (user) {
+        setCurrentUser(user);
+      }
+    };
+    loadUser();
   }, []);
 
   const [activeTab, setActiveTab] = useState<'photos' | 'videos' | 'quotation'>('photos');

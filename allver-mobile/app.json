@@ -53,6 +53,7 @@
     "plugins": [
       "./plugins/withGradleFixes",
       "./plugins/withAndroidManifestFixes",
+      "./plugins/withIncomingCall",
       "expo-router",
       [
         "expo-notifications",

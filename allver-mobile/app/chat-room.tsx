@@ -2730,9 +2730,9 @@ export default function ChatRoomScreen() {
 
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-        enabled={Platform.OS === 'ios'}
+        enabled={true}
       >
         {/* ===== CHAT AREA ===== */}
         <View style={styles.chatArea}>

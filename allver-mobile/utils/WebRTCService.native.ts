@@ -49,7 +49,7 @@ export const RTC_CONFIGURATION = {
       credential: turnCredential,
     },
   ],
-  iceCandidatePoolSize: 10,
+  iceCandidatePoolSize: 0,
 };
 
 class WebRTCManagerNative {

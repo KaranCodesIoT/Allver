@@ -19,20 +19,33 @@ try {
   admin = require('firebase-admin');
   const firebaseServiceAccountPath = path.join(__dirname, 'firebase-service-account.json');
 
+  let serviceAccount = null;
   if (fs.existsSync(firebaseServiceAccountPath)) {
+    serviceAccount = require(firebaseServiceAccountPath);
+  } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      console.log('[Firebase Admin] Found FIREBASE_SERVICE_ACCOUNT environment variable.');
+    } catch (parseErr) {
+      console.error('[Firebase Admin] Error parsing FIREBASE_SERVICE_ACCOUNT environment variable:', parseErr);
+    }
+  }
+
+  if (serviceAccount) {
     try {
       admin.initializeApp({
-        credential: admin.credential.cert(require(firebaseServiceAccountPath))
+        credential: admin.credential.cert(serviceAccount)
       });
       console.log('[Firebase Admin] Successfully initialized Firebase Admin SDK.');
     } catch (err) {
       console.error('[Firebase Admin] Error initializing Firebase Admin SDK:', err);
     }
   } else {
-    console.warn('[Firebase Admin WARNING] firebase-service-account.json not found. Direct FCM call messages disabled.');
+    console.warn('[Firebase Admin WARNING] Neither firebase-service-account.json nor FIREBASE_SERVICE_ACCOUNT env variable found. FCM push notifications disabled.');
+    admin = null;
   }
 } catch (e) {
-  console.warn('[Firebase Admin] firebase-admin package not installed. FCM push for voice calls is disabled. Install with: npm install firebase-admin');
+  console.warn('[Firebase Admin] firebase-admin package not installed or failed to initialize. FCM push disabled:', e.message);
   admin = null;
 }
 
@@ -5109,11 +5122,15 @@ app.post('/api/follow/:userId', async (req, res) => {
     const { userId } = req.params; // Target user to follow
     const { followerId } = req.body; // Logged-in user who follows
 
+    console.log(`[API Follow Request] Target User ID (userId): "${userId}", Follower User ID (followerId): "${followerId}"`);
+
     if (!followerId) {
+      console.warn('[API Follow Warning] followerId is missing in request body.');
       return res.status(400).json({ message: 'followerId is required' });
     }
 
     if (followerId === userId) {
+      console.warn('[API Follow Warning] Self-follow rejected. followerId and userId are identical.');
       return res.status(400).json({ message: 'You cannot follow yourself' });
     }
 
@@ -5121,12 +5138,14 @@ app.post('/api/follow/:userId', async (req, res) => {
     const targetUser = await User.findById(userId);
     const followerUser = await User.findById(followerId);
     if (!targetUser || !followerUser) {
+      console.warn(`[API Follow Warning] User check failed. targetUser found: ${!!targetUser}, followerUser found: ${!!followerUser}`);
       return res.status(404).json({ message: 'User not found' });
     }
 
     // Check if follow record already exists
     const existingFollow = await Follow.findOne({ followerId, followingId: userId });
     if (existingFollow) {
+      console.warn('[API Follow Warning] Already following record exists in DB.');
       return res.status(400).json({ message: 'You are already following this user' });
     }
 

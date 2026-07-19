@@ -319,20 +319,38 @@ export default function ContractorDetailScreen() {
   };
 
   useEffect(() => {
-    let user = (global as any).currentUser;
-    if (!user && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-      const stored = localStorage.getItem('currentUser');
-      if (stored) {
-        try {
-          user = JSON.parse(stored);
-        } catch (e) {
-          console.error(e);
+    const loadUser = async () => {
+      let user = (global as any).currentUser;
+      if (!user) {
+        if (Platform.OS === 'web') {
+          if (typeof localStorage !== 'undefined') {
+            const stored = localStorage.getItem('currentUser');
+            if (stored) {
+              try {
+                user = JSON.parse(stored);
+              } catch (e) {
+                console.error(e);
+              }
+            }
+          }
+        } else {
+          try {
+            const { getStoredUser } = require('../constants/Auth');
+            const stored = await getStoredUser();
+            if (stored) {
+              user = JSON.parse(stored);
+              (global as any).currentUser = user;
+            }
+          } catch (e) {
+            console.error('[ContractorDetail] Error restoring user session from SecureStore:', e);
+          }
         }
       }
-    }
-    if (user) {
-      setCurrentUser(user);
-    }
+      if (user) {
+        setCurrentUser(user);
+      }
+    };
+    loadUser();
   }, []);
 
   useEffect(() => {

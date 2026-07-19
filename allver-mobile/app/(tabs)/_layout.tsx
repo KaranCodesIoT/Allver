@@ -1,7 +1,7 @@
 import { Tabs, router } from 'expo-router';
 import React, { useState, useEffect, useRef } from 'react';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
-import { Platform, View, Text, TouchableOpacity, AppState } from 'react-native';
+import { Platform, View, Text, TouchableOpacity, AppState, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../../utils/i18n';
 import * as Notifications from 'expo-notifications';
@@ -93,6 +93,49 @@ export default function TabLayout() {
     if (user?.role) {
       setUserRole(user.role);
     }
+  }, []);
+
+  // POC: Listen to CallIntent actions from our custom native IncomingCallActivity
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const checkCallIntent = async () => {
+      try {
+        const IncomingCallService = require('../../utils/IncomingCallService').default;
+        const pendingCall = await IncomingCallService.getPendingCallAction();
+        if (pendingCall) {
+          console.log('[POC] Detected pending call intent action:', pendingCall);
+          const { action, callId, callerName } = pendingCall;
+          if (action === 'accept_call') {
+            Alert.alert(
+              '📞 Call Accepted (POC)',
+              `Successfully caught Accept event!\nCallID: ${callId}\nCaller: ${callerName || 'Unknown'}`
+            );
+          } else if (action === 'decline_call') {
+            Alert.alert(
+              '❌ Call Declined (POC)',
+              `Successfully caught Decline event!\nCallID: ${callId}`
+            );
+          }
+        }
+      } catch (err) {
+        console.error('[POC Error] Error checking call intent:', err);
+      }
+    };
+
+    // Check on initial load
+    checkCallIntent();
+
+    // Check again when the app comes back to the foreground
+    const subscription = AppState.addEventListener('change', (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        checkCallIntent();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -208,24 +251,32 @@ export default function TabLayout() {
             return;
           }
 
-          const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId ?? "b344fb16-eb64-4279-8dc7-88dcd752db27";
-          console.log('[BOOT] [TabLayout] Requesting Expo Push Token with ProjectId:', projectId);
-          token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-          console.log('[BOOT] [TabLayout] Retrieved Expo Push Token:', token);
+          // A. Expo Push Token Setup (Wrapped in try-catch so failures don't block FCM Setup)
+          try {
+            const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId ?? "b344fb16-eb64-4279-8dc7-88dcd752db27";
+            console.log('[BOOT] [TabLayout] Requesting Expo Push Token with ProjectId:', projectId);
+            token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+            console.log('[BOOT] [TabLayout] Retrieved Expo Push Token:', token);
 
-          // Send token securely to the backend
-          console.log('[BOOT] [TabLayout] Sending push token to backend...');
-          const response = await fetch(`${BACKEND_URL}/api/user/push-token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, token })
-          });
+            // Send token securely to the backend
+            const payload = { userId, token };
+            console.log('[BOOT] [TabLayout] POST /api/user/push-token payload:', JSON.stringify(payload));
+            const response = await fetch(`${BACKEND_URL}/api/user/push-token`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
 
-          if (response.ok) {
-            console.log('[BOOT] [TabLayout] Registered push token with backend.');
-            (global as any).currentPushToken = token;
-          } else {
-            console.warn('[BOOT] [TabLayout Warning] Backend push token registration failed:', await response.text());
+            const responseText = await response.text();
+            console.log('[BOOT] [TabLayout] Backend Expo push-token response status:', response.status, 'body:', responseText);
+            if (response.ok) {
+              console.log('[BOOT] [TabLayout] Registered push token with backend.');
+              (global as any).currentPushToken = token;
+            } else {
+              console.warn('[BOOT] [TabLayout Warning] Backend push token registration failed.');
+            }
+          } catch (expoPushErr) {
+            console.warn('[BOOT] [TabLayout Warning] Expo push token registration failed (skipping to FCM):', expoPushErr);
           }
 
           // Direct FCM Token Setup
@@ -236,17 +287,20 @@ export default function TabLayout() {
             const fcmToken = await messaging().getToken();
             console.log('[BOOT] [TabLayout] Retrieved FCM Token:', fcmToken);
             
-            console.log('[BOOT] [TabLayout] Registering FCM token with backend...');
+            const fcmPayload = { userId, token: fcmToken };
+            console.log('[BOOT] [TabLayout] POST /api/user/fcm-token payload:', JSON.stringify(fcmPayload));
             const fcmResponse = await fetch(`${BACKEND_URL}/api/user/fcm-token`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId, token: fcmToken })
+              body: JSON.stringify(fcmPayload)
             });
+            const fcmResponseText = await fcmResponse.text();
+            console.log('[BOOT] [TabLayout] Backend FCM fcm-token response status:', fcmResponse.status, 'body:', fcmResponseText);
             if (fcmResponse.ok) {
               console.log('[BOOT] [TabLayout] Registered FCM token with backend.');
               (global as any).currentFcmToken = fcmToken;
             } else {
-              console.warn('[BOOT] [TabLayout Warning] Backend FCM token registration failed:', await fcmResponse.text());
+              console.warn('[BOOT] [TabLayout Warning] Backend FCM token registration failed.');
             }
           } catch (fcmErr) {
             console.error('[BOOT] [TabLayout Error] Error retrieving/registering FCM Token:', fcmErr);
