@@ -4,6 +4,18 @@ import { Platform } from 'react-native';
 const TOKEN_KEY = 'userToken';
 const USER_KEY = 'currentUser';
 
+const withTimeout = <T>(promise: Promise<T>, timeoutMs = 2000, fallback: T): Promise<T> => {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) =>
+      setTimeout(() => {
+        console.warn(`[Auth SecureStore] Timeout reached (${timeoutMs}ms). Returning fallback.`);
+        resolve(fallback);
+      }, timeoutMs)
+    ),
+  ]);
+};
+
 export const saveToken = async (token: string): Promise<void> => {
   try {
     if (Platform.OS === 'web') {
@@ -26,7 +38,7 @@ export const getToken = async (): Promise<string | null> => {
       }
       return null;
     } else {
-      return await SecureStore.getItemAsync(TOKEN_KEY);
+      return await withTimeout(SecureStore.getItemAsync(TOKEN_KEY), 2000, null);
     }
   } catch (error) {
     console.error('Error getting token:', error);
@@ -91,7 +103,7 @@ export const getStoredUser = async (): Promise<string | null> => {
       }
       return null;
     } else {
-      return await SecureStore.getItemAsync(USER_KEY);
+      return await withTimeout(SecureStore.getItemAsync(USER_KEY), 2000, null);
     }
   } catch (error) {
     console.error('Error getting stored user:', error);
@@ -137,7 +149,7 @@ export const getStoredLanguage = async (): Promise<string | null> => {
       }
       return null;
     } else {
-      return await SecureStore.getItemAsync(LANG_KEY);
+      return await withTimeout(SecureStore.getItemAsync(LANG_KEY), 2000, null);
     }
   } catch (error) {
     console.error('Error getting language:', error);

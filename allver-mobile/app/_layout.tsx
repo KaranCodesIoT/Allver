@@ -260,6 +260,7 @@ export default function RootLayout() {
 
           // Direct FCM Token Setup
           try {
+            const messaging = require('@react-native-firebase/messaging').default;
             const fcmToken = await messaging().getToken();
             console.log('[RootLayout] Retrieved FCM Token:', fcmToken);
             const fcmResponse = await fetch(`${BACKEND_URL}/api/user/fcm-token`, {
@@ -358,6 +359,25 @@ export default function RootLayout() {
 
   useEffect(() => {
     console.log('[RootLayout] [Checkpoint A] prepare Effect triggered.');
+    
+    // Failsafe timer: Force transition to ready and hide splash screen after 3 seconds
+    // in case any SecureStore or native splash hiding process hangs.
+    const failsafeTimer = setTimeout(() => {
+      console.warn('[RootLayout] [Failsafe] prepare took too long. Forcing ready stage...');
+      try {
+        SplashScreen.hideAsync().catch((e) => {
+          console.warn('[RootLayout] [Failsafe Warning] SplashScreen.hideAsync failed during failsafe:', e);
+        });
+      } catch (e) {}
+      setStage((prev) => {
+        if (prev !== 'ready') {
+          console.log('[RootLayout] [Failsafe] Transitioned stage to ready via failsafe.');
+          return 'ready';
+        }
+        return prev;
+      });
+    }, 3000);
+
     const prepare = async () => {
       console.log('[RootLayout] [Checkpoint B] prepare execution started.');
       try {
@@ -383,13 +403,20 @@ export default function RootLayout() {
       } catch (error) {
         console.error('[RootLayout] [Checkpoint Error] Failed to load stored user session or language:', error);
       } finally {
+        // Clear failsafe timer since preparation completed successfully
+        clearTimeout(failsafeTimer);
+        
         try {
           console.log('[RootLayout] [Checkpoint G] Hiding native splash screen...');
-          await SplashScreen.hideAsync();
-          console.log('[RootLayout] [Checkpoint H] Native splash screen hidden successfully.');
+          // Trigger splash screen hiding asynchronously without awaiting it
+          // to prevent potential native UI hang from blocking React state updates
+          SplashScreen.hideAsync()
+            .then(() => console.log('[RootLayout] [Checkpoint H] Native splash screen hidden successfully.'))
+            .catch((e) => console.warn('[RootLayout] [Checkpoint Warning] SplashScreen.hideAsync failed:', e));
         } catch (e) {
-          console.warn('[RootLayout] [Checkpoint Warning] SplashScreen.hideAsync failed:', e);
+          console.warn('[RootLayout] [Checkpoint Warning] Synchronous hideAsync wrapper error:', e);
         }
+        
         console.log('[RootLayout] [Checkpoint I] Transitioning stage to ready.');
         setStage('ready');
       }
@@ -397,7 +424,10 @@ export default function RootLayout() {
     
     // Allow a minimum visual splash delay of 200ms
     const timer = setTimeout(prepare, 200);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      clearTimeout(failsafeTimer);
+    };
   }, []);
 
   if (stage === 'splash') {
