@@ -30,6 +30,7 @@ LogBox.ignoreLogs([
 
 
 // Keep the splash screen visible until we hide it
+console.log('[BOOT] [Step 8] app/_layout.tsx evaluation started.');
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 Notifications.setNotificationHandler({
@@ -57,6 +58,7 @@ Notifications.setNotificationHandler({
 });
 
 export default function RootLayout() {
+  console.log('[BOOT] [Step 9] RootLayout component execution/rendering started.');
   const colorScheme = useColorScheme();
   const [stage, setStage] = useState<'splash' | 'ready'>('splash');
   const [locationPermissionGranted, setLocationPermissionGranted] = useState<boolean | null>(null);
@@ -138,212 +140,11 @@ export default function RootLayout() {
     if (stage === 'ready') {
       checkLocationPermission(false);
     }
-  }, [stage, segments]);
+  }, [stage]);
 
-  const responseListener = useRef<any>();
-
-  useEffect(() => {
-    if (stage !== 'ready') return;
-    console.log('[RootLayout] [Checkpoint J] stage is ready. Starting post-ready initializations.');
-
-    const user = getCurrentUser();
-    if (!user || !user._id) {
-      console.log('[RootLayout] [Checkpoint K] No logged in user session. Ensuring socket is disconnected.');
-      import('@/utils/SocketService')
-        .then(({ default: SocketService }) => {
-          SocketService.disconnect();
-          console.log('[RootLayout] [Checkpoint L] Socket disconnected successfully.');
-        })
-        .catch(err => console.log('[RootLayout] [Checkpoint Error] Socket disconnect error:', err));
-      return;
-    }
-
-    // Initialize CallKeep for Android ConnectionService and TelecomManager
-    CallKeepService.setupCallKeep().catch(err => console.error('[RootLayout] CallKeep setup error:', err));
-
-    // Initialize/re-verify global socket connection
-    console.log('[RootLayout] [Checkpoint K] Found active user session. Loading SocketService...');
-    import('@/utils/SocketService')
-      .then(({ default: SocketService }) => {
-        console.log('[RootLayout] [Checkpoint L] SocketService imported. Initializing...');
-        SocketService.initialize(user._id);
-        console.log('[RootLayout] [Checkpoint M] SocketService initialization command sent.');
-      })
-      .catch(err => console.error('[RootLayout] [Checkpoint Error] SocketService import error:', err));
-
-    // Background validation of session (non-blocking)
-    const validateSession = async () => {
-      const token = await getToken();
-      if (token && user._id) {
-        try {
-          const res = await fetch(`${BACKEND_URL}/api/user/${user._id}`, {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.success && data.user) {
-              await saveStoredUser(data.user);
-              (global as any).currentUser = data.user;
-            }
-          } else if (res.status === 404 || res.status === 401) {
-            console.log('[RootLayout] Session validation failed on background check. Logging out...');
-            await removeToken();
-            await removeStoredUser();
-            (global as any).currentUser = null;
-            import('@/utils/SocketService').then(({ default: s }) => s.disconnect());
-            router.replace('/login');
-          }
-        } catch (err) {
-          console.warn('[RootLayout] Background session validation failed (offline fallback):', err);
-        }
-      }
-    };
-    validateSession();
-
-    // 1. Setup Push Notifications
-    const setupPush = async () => {
-      console.log('[RootLayout] [Checkpoint N] setupPush executing.');
-      try {
-        let token;
-        if (Platform.OS === 'android') {
-          console.log('[RootLayout] [Checkpoint O] Configuring default notification channel...');
-          await Notifications.setNotificationChannelAsync('default', {
-            name: 'default',
-            importance: Notifications.AndroidImportance.MAX,
-            vibrationPattern: [0, 250, 250, 250],
-            lightColor: '#FF231F7C',
-          });
-          console.log('[RootLayout] [Checkpoint P] Default notification channel configured.');
-        }
-
-        if (Constants.executionEnvironment === 'storeClient') {
-          console.log('[RootLayout] [Checkpoint Q] Skipping push token setup inside Expo Go (not supported in SDK 53)');
-          return;
-        }
-
-        if (Device.isDevice) {
-          console.log('[RootLayout] [Checkpoint R] Physical device detected. Requesting/checking permissions...');
-          const { status: existingStatus } = await Notifications.getPermissionsAsync();
-          let finalStatus = existingStatus;
-          if (existingStatus !== 'granted') {
-            const { status } = await Notifications.requestPermissionsAsync();
-            finalStatus = status;
-          }
-          if (finalStatus !== 'granted') {
-            console.log('[RootLayout] [Checkpoint S] Failed to get permission for push notifications');
-            return;
-          }
-          console.log('[RootLayout] [Checkpoint S] Push notification permissions granted.');
-
-          const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId ?? "b344fb16-eb64-4279-8dc7-88dcd752db27";
-          console.log('[RootLayout] [Checkpoint T] Requesting Expo Push Token with ProjectId:', projectId);
-          token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-          console.log('[RootLayout] [Checkpoint U] Retrieved Expo Push Token:', token);
-
-          // Send token securely to the backend
-          console.log('[RootLayout] [Checkpoint V] Sending push token to backend...');
-          const response = await fetch(`${BACKEND_URL}/api/user/push-token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: user._id, token })
-          });
-
-          if (response.ok) {
-            console.log('[RootLayout] [Checkpoint W] Registered push token with backend successfully.');
-            (global as any).currentPushToken = token;
-          } else {
-            console.warn('[RootLayout] [Checkpoint W-Warning] Backend push token registration failed:', await response.text());
-          }
-
-          // Direct FCM Token Setup
-          try {
-            const messaging = require('@react-native-firebase/messaging').default;
-            const fcmToken = await messaging().getToken();
-            console.log('[RootLayout] Retrieved FCM Token:', fcmToken);
-            const fcmResponse = await fetch(`${BACKEND_URL}/api/user/fcm-token`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: user._id, token: fcmToken })
-            });
-            if (fcmResponse.ok) {
-              console.log('[RootLayout] Registered FCM token with backend successfully.');
-              (global as any).currentFcmToken = fcmToken;
-            } else {
-              console.warn('[RootLayout] Backend FCM token registration failed:', await fcmResponse.text());
-            }
-          } catch (fcmErr) {
-            console.error('[RootLayout] Error retrieving/registering FCM Token:', fcmErr);
-          }
-        } else {
-          console.log('[RootLayout] [Checkpoint R] Must use a physical device for push notifications (Simulator/Emulator detected).');
-        }
-      } catch (err) {
-        console.error('[RootLayout] [Checkpoint Error] Error setting up notifications:', err);
-      }
-    };
-
-    setupPush();
-
-    // 2. Handle Responding to notifications (terminated, background, or foreground states)
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
-      const data = response.notification.request.content.data || {};
-      console.log('[Push Notification] Notification tapped by user:', data);
-
-      // Reset badge count on notification tap
-      Notifications.setBadgeCountAsync(0).catch(err => console.log('Error resetting badge:', err));
-
-      const category = data.category || '';
-      if (category === 'voice_call' || (data.text && data.text.includes('voice call'))) {
-        console.log('[Push Notification] Tapped incoming voice call notification. Launching call screen...');
-        router.push({
-          pathname: '/chat-room',
-          params: {
-            receiverId: data.senderId,
-            conversationId: data.conversationId,
-            name: data.senderName || 'Voice Call',
-            avatar: data.senderAvatar || '',
-            autoAcceptCall: 'true'
-          }
-        });
-      } else if (category === 'messages' || data.conversationId) {
-        router.push({
-          pathname: '/chat-room',
-          params: {
-            receiverId: data.senderId,
-            conversationId: data.conversationId,
-            name: data.senderName || 'Chat',
-            avatar: data.senderAvatar || ''
-          }
-        });
-      } else if (category === 'contracts' || category === 'payments' || category === 'attendance' || data.workspaceId) {
-        router.push({
-          pathname: '/project-progress',
-          params: { workspaceId: data.workspaceId }
-        });
-      } else if (category === 'projectUpdates' || data.projectId) {
-        router.push({
-          pathname: '/project-detail',
-          params: { id: data.projectId }
-        });
-      } else if (data.senderId) {
-        router.push({
-          pathname: '/architect-detail',
-          params: { id: data.senderId }
-        });
-      } else {
-        router.push('/notifications');
-      }
-    });
-
-    return () => {
-      if (responseListener.current) {
-        responseListener.current.remove();
-      }
-    };
-  }, [stage, segments]);
+  // Sockets, CallKeep, and Push Notification initializations have been moved
+  // to app/(tabs)/_layout.tsx to execute only after successful authentication,
+  // preventing native call permission prompts from stalling early navigation.
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
@@ -358,20 +159,20 @@ export default function RootLayout() {
   }, [stage]);
 
   useEffect(() => {
-    console.log('[RootLayout] [Checkpoint A] prepare Effect triggered.');
+    console.log('[BOOT] [Step 10] RootLayout prepare Effect triggered.');
     
     // Failsafe timer: Force transition to ready and hide splash screen after 3 seconds
     // in case any SecureStore or native splash hiding process hangs.
     const failsafeTimer = setTimeout(() => {
-      console.warn('[RootLayout] [Failsafe] prepare took too long. Forcing ready stage...');
+      console.warn('[BOOT] [Failsafe Warning] prepare took too long. Forcing ready stage...');
       try {
         SplashScreen.hideAsync().catch((e) => {
-          console.warn('[RootLayout] [Failsafe Warning] SplashScreen.hideAsync failed during failsafe:', e);
+          console.warn('[BOOT] [Failsafe Warning] SplashScreen.hideAsync failed during failsafe:', e);
         });
       } catch (e) {}
       setStage((prev) => {
         if (prev !== 'ready') {
-          console.log('[RootLayout] [Failsafe] Transitioned stage to ready via failsafe.');
+          console.log('[BOOT] [Failsafe] Transitioned stage to ready via failsafe.');
           return 'ready';
         }
         return prev;
@@ -379,45 +180,45 @@ export default function RootLayout() {
     }, 3000);
 
     const prepare = async () => {
-      console.log('[RootLayout] [Checkpoint B] prepare execution started.');
+      console.log('[BOOT] [Step 11] prepare() execution started.');
       try {
         // Load stored language asynchronously before hiding splash screen
-        console.log('[RootLayout] [Checkpoint C] Querying stored language...');
+        console.log('[BOOT] [Step 12] Querying stored language...');
         const storedLanguage = await getStoredLanguage();
         if (storedLanguage) {
           (global as any).localLanguage = storedLanguage;
-          console.log('[RootLayout] [Checkpoint D] Loaded stored language:', storedLanguage);
+          console.log('[BOOT] [Step 13] Loaded stored language:', storedLanguage);
         } else {
-          console.log('[RootLayout] [Checkpoint D] No stored language found.');
+          console.log('[BOOT] [Step 13] No stored language found.');
         }
 
         // Load stored user asynchronously before hiding splash screen
-        console.log('[RootLayout] [Checkpoint E] Querying stored user session...');
+        console.log('[BOOT] [Step 14] Querying stored user session...');
         const storedUserStr = await getStoredUser();
         if (storedUserStr) {
           (global as any).currentUser = JSON.parse(storedUserStr);
-          console.log('[RootLayout] [Checkpoint F] Loaded stored user session:', (global as any).currentUser?.fullName);
+          console.log('[BOOT] [Step 15] Loaded stored user session:', (global as any).currentUser?.fullName);
         } else {
-          console.log('[RootLayout] [Checkpoint F] No stored user session found.');
+          console.log('[BOOT] [Step 15] No stored user session found.');
         }
       } catch (error) {
-        console.error('[RootLayout] [Checkpoint Error] Failed to load stored user session or language:', error);
+        console.error('[BOOT] [Step 15 Error] Failed to load stored user session or language:', error);
       } finally {
         // Clear failsafe timer since preparation completed successfully
         clearTimeout(failsafeTimer);
         
         try {
-          console.log('[RootLayout] [Checkpoint G] Hiding native splash screen...');
+          console.log('[BOOT] [Step 16] Hiding native splash screen...');
           // Trigger splash screen hiding asynchronously without awaiting it
           // to prevent potential native UI hang from blocking React state updates
           SplashScreen.hideAsync()
-            .then(() => console.log('[RootLayout] [Checkpoint H] Native splash screen hidden successfully.'))
-            .catch((e) => console.warn('[RootLayout] [Checkpoint Warning] SplashScreen.hideAsync failed:', e));
+            .then(() => console.log('[BOOT] [Step 17] Native splash screen hidden successfully.'))
+            .catch((e) => console.warn('[BOOT] [Step 17 Warning] SplashScreen.hideAsync failed:', e));
         } catch (e) {
-          console.warn('[RootLayout] [Checkpoint Warning] Synchronous hideAsync wrapper error:', e);
+          console.warn('[BOOT] [Step 17 Warning] Synchronous hideAsync wrapper error:', e);
         }
         
-        console.log('[RootLayout] [Checkpoint I] Transitioning stage to ready.');
+        console.log('[BOOT] [Step 18] Transitioning stage to ready.');
         setStage('ready');
       }
     };
@@ -431,8 +232,11 @@ export default function RootLayout() {
   }, []);
 
   if (stage === 'splash') {
+    console.log('[BOOT] [Step 19a] stage is splash. Rendering null (native splash active)...');
     return null; // Let the native splash screen show
   }
+
+  console.log('[BOOT] [Step 19b] stage is ready. Rendering context providers & router Stack...');
 
   const currentSegment = segments[0];
   const currentUser = getCurrentUser();

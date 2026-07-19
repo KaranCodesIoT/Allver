@@ -21,3 +21,13 @@ highlight_search.json
 .env
 *.env
 allver-mobile/.env
+allver-mobile/node_modules/
+allver-mobile/android/.gradle/
+allver-mobile/android/build/
+allver-mobile/android/app/build/
+allver-mobile/android/.cxx/
+allver-mobile/ios/build/
+allver-mobile/ios/Pods/
+*.lock
+**/*.lock
+**/checksums.lock

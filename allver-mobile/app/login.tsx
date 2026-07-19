@@ -65,6 +65,16 @@ const showAlert = (title: string, message: string, buttons?: any[]) => {
 export default function LoginScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
+
+  React.useEffect(() => {
+    console.log('[BOOT] [LoginScreen] component mounted.');
+    return () => {
+      console.log('[BOOT] [LoginScreen] component unmounted.');
+    };
+  }, []);
+
+  console.log('[BOOT] [LoginScreen] component rendered.');
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -78,38 +88,48 @@ export default function LoginScreen() {
   const [isResetting, setIsResetting] = useState(false);
 
   const handleLogin = async () => {
+    console.log('[BOOT] [LoginScreen] handleLogin called. Email:', email);
     if (!email || !password) {
+      console.log('[BOOT] [LoginScreen] missing credentials.');
       Alert.alert('Missing Fields', 'Please enter both email and password.');
       return;
     }
 
     setIsLoading(true);
     try {
+      console.log('[BOOT] [LoginScreen] sending login POST request to:', `${BACKEND_URL}/api/login`);
       const response = await fetch(`${BACKEND_URL}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       });
 
+      console.log('[BOOT] [LoginScreen] login POST response status:', response.status);
       const data = await response.json();
+      console.log('[BOOT] [LoginScreen] login POST response data parsed.');
 
       if (response.ok) {
+        console.log('[BOOT] [LoginScreen] login successful. Saving token and user...');
         await saveToken(data.token);
         await saveStoredUser(data.user);
         (global as any).currentUser = data.user;
 
         // Apply profile language
         if (data.user?.language) {
+          console.log('[BOOT] [LoginScreen] applying user language:', data.user.language);
           i18n.changeLanguage(data.user.language);
         }
 
+        console.log('[BOOT] [LoginScreen] redirecting based on user role:', data.user?.role);
         if (data.user?.role === 'Architect') {
           const done =
             data.user.experience ||
             data.user.firmName ||
             (data.user.specialization?.length > 0) ||
             (data.user.portfolioImages?.length > 0);
-          router.replace(done ? '/(tabs)' : '/architect-profile');
+          const target = done ? '/(tabs)' : '/architect-profile';
+          console.log('[BOOT] [LoginScreen] replacing route with target:', target);
+          router.replace(target as any);
         } else if (data.user?.role === 'Contractor') {
           const done =
             data.user.contractorType ||
@@ -117,18 +137,23 @@ export default function LoginScreen() {
             (data.user.workCategory?.length > 0) ||
             (data.user.serviceLocation?.length > 0) ||
             data.user.experience;
-          router.replace(done ? '/(tabs)' : '/contractor-profile');
+          const target = done ? '/(tabs)' : '/contractor-profile';
+          console.log('[BOOT] [LoginScreen] replacing route with target:', target);
+          router.replace(target as any);
         } else {
+          console.log('[BOOT] [LoginScreen] replacing route with target: /(tabs)');
           router.replace('/(tabs)');
         }
       } else {
+        console.warn('[BOOT] [LoginScreen] login failed on server:', data.message);
         Alert.alert('Login Failed', data.message || 'Please try again.');
       }
     } catch (err) {
-      console.error(err);
+      console.error('[BOOT] [LoginScreen Error] login exception:', err);
       Alert.alert('Network Error', 'Could not connect to the server.');
     } finally {
       setIsLoading(false);
+      console.log('[BOOT] [LoginScreen] handleLogin finished.');
     }
   };
 
@@ -159,9 +184,12 @@ export default function LoginScreen() {
                 {/* Back button */}
                 <TouchableOpacity
                   onPress={() => {
+                    console.log('[BOOT] [LoginScreen] back button pressed.');
                     if (router.canGoBack()) {
+                      console.log('[BOOT] [LoginScreen] going back...');
                       router.back();
                     } else {
+                      console.log('[BOOT] [LoginScreen] replacing route with /...');
                       router.replace('/');
                     }
                   }}

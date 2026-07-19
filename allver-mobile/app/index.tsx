@@ -12,35 +12,35 @@ export default function Index() {
 
   useEffect(() => {
     const checkAuthAndRouting = async () => {
-      console.log('[StartupGuard] [Checkpoint 1] checkAuthAndRouting started.');
+      console.log('[BOOT] [Step 21] index.tsx checkAuthAndRouting started.');
       try {
         // Yield to the next tick to ensure navigation container is fully mounted and ready
-        console.log('[StartupGuard] [Checkpoint 2] Deferring execution for navigation mount...');
+        console.log('[BOOT] [Step 22] Deferring execution for navigation mount...');
         await new Promise(resolve => setTimeout(resolve, 100));
-        console.log('[StartupGuard] [Checkpoint 3] Deferral completed. Performing auth check.');
+        console.log('[BOOT] [Step 23] Deferral completed. Performing auth check.');
 
         // 1. Check synchronous memory cache first for instant routing
         let userObj = (global as any).currentUser;
         let token = userObj ? 'cached_token_placeholder' : null;
-        console.log('[StartupGuard] [Checkpoint 4] In-memory user object:', userObj ? 'Found' : 'Not Found');
+        console.log('[BOOT] [Step 24] In-memory user object:', userObj ? 'Found' : 'Not Found');
 
         if (!userObj) {
-          console.log('[StartupGuard] [Checkpoint 5] No user in memory. Querying storage.');
+          console.log('[BOOT] [Step 25] No user in memory. Querying storage...');
           token = await getToken();
           const storedUserStr = await getStoredUser();
-          console.log('[StartupGuard] [Checkpoint 6] Storage lookup - Token:', token ? 'Found' : 'Not Found', 'User String:', storedUserStr ? 'Found' : 'Not Found');
+          console.log('[BOOT] [Step 26] Storage lookup - Token:', token ? 'Found' : 'Not Found', 'User String:', storedUserStr ? 'Found' : 'Not Found');
           
           if (token && storedUserStr) {
             try {
               userObj = JSON.parse(storedUserStr);
               (global as any).currentUser = userObj;
-              console.log('[StartupGuard] [Checkpoint 7] Successfully parsed and cached stored user.');
+              console.log('[BOOT] [Step 27] Successfully parsed and cached stored user.');
             } catch (e) {
-              console.error('[StartupGuard] [Checkpoint 7-Error] Stored user parsing failed:', e);
+              console.error('[BOOT] [Step 27 Error] Stored user parsing failed:', e);
               await removeToken();
               await removeStoredUser();
               (global as any).currentUser = null;
-              console.log('[StartupGuard] [Checkpoint 8-Fallback] Routing to /login after parse failure.');
+              console.log('[BOOT] [Step 28 Fallback] Routing to /login after parse failure.');
               router.replace('/login');
               return;
             }
@@ -48,14 +48,14 @@ export default function Index() {
         }
 
         if (userObj) {
-          console.log('[StartupGuard] [Checkpoint 9] Found valid user session. Setting up locale & routing.');
+          console.log('[BOOT] [Step 28] Found valid user session. Setting up locale & routing...');
           // Apply saved language
           const userLang = userObj.language || (global as any).localLanguage || (await getStoredLanguage()) || 'en';
-          console.log('[StartupGuard] [Checkpoint 10] Applying language:', userLang);
+          console.log('[BOOT] [Step 29] Applying language:', userLang);
           i18n.changeLanguage(userLang);
 
           // Role-based Navigation logic
-          console.log('[StartupGuard] [Checkpoint 11] User role:', userObj.role);
+          console.log('[BOOT] [Step 30] User role:', userObj.role);
           if (userObj.role === 'Architect') {
             const isProfileComplete =
               userObj.experience ||
@@ -64,7 +64,7 @@ export default function Index() {
               (userObj.portfolioImages && userObj.portfolioImages.length > 0);
             
             const target = isProfileComplete ? '/(tabs)' : '/architect-profile';
-            console.log('[StartupGuard] [Checkpoint 12] Routing Architect to:', target);
+            console.log('[BOOT] [Step 31] Routing Architect to:', target);
             router.replace(target as any);
           } else if (userObj.role === 'Contractor') {
             const isProfileComplete =
@@ -75,25 +75,25 @@ export default function Index() {
               userObj.experience;
 
             const target = isProfileComplete ? '/(tabs)' : '/contractor-profile';
-            console.log('[StartupGuard] [Checkpoint 12] Routing Contractor to:', target);
+            console.log('[BOOT] [Step 31] Routing Contractor to:', target);
             router.replace(target as any);
           } else {
-            console.log('[StartupGuard] [Checkpoint 12] Routing general user to /(tabs)');
+            console.log('[BOOT] [Step 31] Routing general user to /(tabs)');
             router.replace('/(tabs)');
           }
           return;
         }
 
         // 2. If no valid session, route to Choose Language screen
-        console.log('[StartupGuard] [Checkpoint 13] No active session. Routing to /choose-language.');
+        console.log('[BOOT] [Step 32] No active session. Routing to /choose-language.');
         router.replace('/choose-language');
 
       } catch (error) {
-        console.error('[StartupGuard] [Checkpoint Error] Unexpected error during startup check:', error);
+        console.error('[BOOT] [Step 33 Error] Unexpected error during startup check:', error);
         try {
           router.replace('/login');
         } catch (navError) {
-          console.error('[StartupGuard] [Checkpoint Error-Fallback] Failed to fall back to login screen:', navError);
+          console.error('[BOOT] [Step 33 Fallback Error] Failed to fall back to login screen:', navError);
         }
       }
     };
