@@ -27,39 +27,113 @@ if (Platform.OS !== 'web') {
     logStep('Step 2', 'Importing @react-native-firebase/messaging...');
     const messaging = require('@react-native-firebase/messaging').default;
     logStep('Step 3', 'Registering background message handler...');
-    messaging().setBackgroundMessageHandler(async (remoteMessage) => {
-      console.log('[FCM Background] Received background wakeup data message:', remoteMessage);
-      if (remoteMessage.data && remoteMessage.data.category === 'voice_call') {
-        const data = remoteMessage.data;
-        const callId = data.callId || data.callUUID || `call_${data.callerId}_${Date.now()}`;
-        const callerName = data.callerName || 'Someone';
+    // 4. Register Notifee Background Event Handler for Inline Reply & Action Buttons
+    try {
+      const notifee = require('@notifee/react-native').default;
+      const NotifeeNotificationService = require('./utils/NotifeeNotificationService').default;
+      const { BACKEND_URL } = require('./constants/Config');
 
-        try {
-          logStep('FCM Background Incoming Call', `Launching native fullscreen UI for call: ${callId}`);
-          const IncomingCallService = require('./utils/IncomingCallService').default;
-          IncomingCallService.showIncomingCall(callId, callerName);
-        } catch (err) {
-          console.error('[FCM Background] Error displaying native Fullscreen Intent UI, falling back to banner:', err);
+      notifee.onBackgroundEvent(async ({ type, detail }) => {
+        const { notification, pressAction, input } = detail;
+        const data = notification?.data;
+
+        console.log(`[Notifee Background Event] Action ID: ${pressAction?.id} | Input: ${input}`);
+
+        if (pressAction?.id === 'reply' && input && data?.conversationId) {
+          const conversationId = data.conversationId;
+          const senderId = data.senderId;
+
           try {
-            const Notifications = require('expo-notifications');
-            await Notifications.scheduleNotificationAsync({
-              content: {
-                title: `📞 Incoming Voice Call`,
-                body: `${callerName} is calling you...`,
-                data: data,
-                sound: 'default',
-                priority: 'high',
-              },
-              trigger: null, // deliver immediately
+            console.log(`[Inline Reply] Sending message to conversation ${conversationId}: ${input}`);
+            await fetch(`${BACKEND_URL}/api/conversations/${conversationId}/messages`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                senderId: senderId || 'current_user',
+                text: input,
+              }),
             });
-            console.log('[FCM Background] Local notification scheduled successfully for incoming call fallback.');
-          } catch (notifErr) {
-            console.error('[FCM Background] Error scheduling local notification fallback:', notifErr);
+
+            // Update thread notification locally with sent message
+            await NotifeeNotificationService.displayChatMessagingNotification({
+              conversationId,
+              senderId: 'user_me',
+              senderName: 'You',
+              text: input,
+              timestamp: Date.now(),
+            });
+          } catch (err) {
+            console.error('[Inline Reply Error]', err);
+          }
+        } else if (pressAction?.id === 'mark_read' && data?.conversationId) {
+          const conversationId = data.conversationId;
+          try {
+            console.log(`[Notifee Background] Marking conversation ${conversationId} as read`);
+            await fetch(`${BACKEND_URL}/api/conversations/${conversationId}/read`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: data.senderId }),
+            });
+            await NotifeeNotificationService.clearConversationNotification(conversationId);
+          } catch (err) {
+            console.error('[Mark Read Error]', err);
+          }
+        } else if (pressAction?.id === 'decline_call' || pressAction?.id === 'accept_call') {
+          if (notification?.id) {
+            await notifee.cancelNotification(notification.id);
           }
         }
-      }
-    });
-    logStep('Step 4', 'FCM Background message handler registered successfully.');
+      });
+
+      // FCM Background Message Handler with Rich Notifee Dispatch
+      messaging().setBackgroundMessageHandler(async (remoteMessage) => {
+        console.log('[FCM Background] Received background payload:', remoteMessage);
+        const data = remoteMessage.data || {};
+        const category = data.category || data.type;
+
+        if (category === 'chat' || category === 'chat_message') {
+          await NotifeeNotificationService.displayChatMessagingNotification({
+            conversationId: data.conversationId || data.roomId,
+            senderId: data.senderId,
+            senderName: data.senderName || 'Sender',
+            senderAvatar: data.senderAvatar,
+            text: data.text || data.body || remoteMessage.notification?.body || '',
+            unreadCount: data.unreadCount ? parseInt(data.unreadCount, 10) : 1,
+          });
+        } else if (category === 'voice_call') {
+          const callId = data.callId || `call_${data.callerId}_${Date.now()}`;
+          const callerName = data.callerName || 'Someone';
+
+          await NotifeeNotificationService.displayCallNotification({
+            callId,
+            callerId: data.callerId,
+            callerName,
+            callerAvatar: data.callerAvatar,
+          });
+        } else if (category === 'job_invite') {
+          await NotifeeNotificationService.displayJobInviteNotification({
+            jobId: data.jobId,
+            jobTitle: data.jobTitle || 'New Job Invitation',
+            clientName: data.clientName || 'Client',
+            salaryText: data.salaryText,
+          });
+        } else if (category === 'attendance') {
+          await NotifeeNotificationService.displayAttendanceNotification({
+            workspaceId: data.workspaceId,
+            projectName: data.projectName || 'Site Project',
+          });
+        } else if (category === 'payment') {
+          await NotifeeNotificationService.displayPaymentNotification({
+            paymentId: data.paymentId,
+            amount: parseFloat(data.amount) || 0,
+            projectTitle: data.projectTitle || 'Project',
+          });
+        }
+      });
+      logStep('Step 4', 'FCM & Notifee Background message handlers registered successfully.');
+    } catch (notifErr) {
+      logStep('Notifee Setup Info', `Notifee or Firebase background handling skipped in current build: ${notifErr?.message}`);
+    }
   } catch (e) {
     // @react-native-firebase not available (Expo Go). Voice call wakeup
     // will fall back to Socket.IO while developing in Expo Go.

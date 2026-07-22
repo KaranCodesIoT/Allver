@@ -17,6 +17,15 @@ module.exports = function withAndroidManifestFixes(config) {
     if (androidManifest.manifest && androidManifest.manifest.application && androidManifest.manifest.application[0]) {
       const mainApplication = androidManifest.manifest.application[0];
       
+      if (mainApplication.activity) {
+        mainApplication.activity.forEach((act) => {
+          if (act.$ && (act.$['android:name'] === '.MainActivity' || act.$['android:name']?.endsWith('MainActivity'))) {
+            act.$['android:windowSoftInputMode'] = 'adjustResize';
+            console.log('[withAndroidManifestFixes] Ensured android:windowSoftInputMode="adjustResize" on MainActivity.');
+          }
+        });
+      }
+
       if (mainApplication['meta-data']) {
         mainApplication['meta-data'].forEach((metaItem) => {
           const name = metaItem.$['android:name'];

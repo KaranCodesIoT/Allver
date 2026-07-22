@@ -219,7 +219,9 @@
   "searchMessagesPlaceholder": "ਸੁਨੇਹੇ ਜਾਂ ਸੰਪਰਕ ਖੋਜੋ...",
   "system": "ਸਿਸਟમ",
   "unread": "ਅਣਪੜ੍ਹੇ",
-  "noMessagesFound": "ਕੋਈ ਸੁਨੇਹੇ ਨਹੀਂ ਮਿਲੇ"
+  "noMessagesFound": "ਕੋਈ ਸੁਨੇਹੇ ਨਹੀਂ ਮਿਲੇ",
+  "postNewProject": "ਨਵਾਂ ਪ੍ਰੋਜੈਕਟ ਪੋਸਟ ਕਰੋ",
+  "postNewProjectDesc": "ਇੱਕ ਪ੍ਰੋਜੈਕਟ ਬਣਾਓ ਅਤੇ ਪ੍ਰਮੁੱਖ ਪੇਸ਼ੇਵਰਾਂ ਨੂੰ ਨਿਯੁਕਤ ਕਰੋ"
 }
 
 

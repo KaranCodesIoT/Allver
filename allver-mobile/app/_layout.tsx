@@ -231,6 +231,51 @@ export default function RootLayout() {
     };
   }, []);
 
+  // Notifee Foreground & Initial Notification Deep-Link Handler
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    try {
+      const notifee = require('@notifee/react-native').default;
+      
+      // Handle Initial Notification on App Launch (Tapped while app was killed)
+      notifee.getInitialNotification().then((initialNotification: any) => {
+        if (initialNotification) {
+          const data = initialNotification.notification?.data;
+          console.log('[Notifee Initial Notification Tapped]', data);
+          if (data?.conversationId) {
+            router.push({ pathname: '/chat-room', params: { conversationId: data.conversationId, receiverId: data.senderId } });
+          } else if (data?.jobId) {
+            router.push('/jobs');
+          } else if (data?.workspaceId) {
+            router.push('/labours');
+          }
+        }
+      });
+
+      // Handle Foreground Notification Events (Tapped while app is active)
+      const unsubscribe = notifee.onForegroundEvent(({ type, detail }: any) => {
+        const data = detail.notification?.data;
+        const pressAction = detail.pressAction;
+
+        console.log(`[Notifee Foreground Event] Type: ${type} | Action: ${pressAction?.id}`);
+
+        if (pressAction?.id === 'default' || type === 1) { // EventType.PRESS
+          if (data?.conversationId) {
+            router.push({ pathname: '/chat-room', params: { conversationId: data.conversationId, receiverId: data.senderId } });
+          } else if (data?.jobId) {
+            router.push('/jobs');
+          } else if (data?.workspaceId) {
+            router.push('/labours');
+          }
+        }
+      });
+
+      return () => unsubscribe();
+    } catch (e) {
+      console.log('[Notifee Foreground Listener Setup]', e);
+    }
+  }, []);
+
   if (stage === 'splash') {
     console.log('[BOOT] [Step 19a] stage is splash. Rendering null (native splash active)...');
     return null; // Let the native splash screen show

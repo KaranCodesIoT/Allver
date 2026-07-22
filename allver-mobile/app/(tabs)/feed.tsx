@@ -9,7 +9,9 @@ import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
 import NotificationBell from '../../components/NotificationBell';
 import { useTranslation } from '../../utils/i18n';
 import SocketService from '../../utils/SocketService';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 
+const isExpoGo = Constants.appOwnership === 'expo' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 const { width } = Dimensions.get('window');
 
 const COLORS = {
@@ -1248,7 +1250,7 @@ export default function DiscoverScreen() {
           justifyContent: 'flex-end'
         }}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            behavior={Platform.OS === 'ios' ? 'padding' : (isExpoGo ? 'height' : undefined)}
             style={{
               backgroundColor: COLORS.white,
               borderTopLeftRadius: 24,

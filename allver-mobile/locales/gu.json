@@ -219,7 +219,9 @@
   "searchMessagesPlaceholder": "સંદેશાઓ અથવા સંપર્કો શોધો...",
   "system": "સિસ્ટમ",
   "unread": "ન વંચાયેલ",
-  "noMessagesFound": "કોઈ સંદેશાઓ મળ્યા નથી"
+  "noMessagesFound": "કોઈ સંદેશાઓ મળ્યા નથી",
+  "postNewProject": "નવો પ્રોજેક્ટ પોસ્ટ કરો",
+  "postNewProjectDesc": "એક પ્રોજેક્ટ બનાવો અને શ્રેષ્ઠ નિષ્ણાતોને હાયર કરો"
 }
 
 

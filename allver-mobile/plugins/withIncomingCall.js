@@ -48,9 +48,10 @@ module.exports = function withIncomingCall(config) {
       'android/app/src/main/java/com/allver/app'
     );
 
-    // Create target dir if prebuild generated it
-    if (fs.existsSync(javaDir)) {
-      // I. Write IncomingCallActivity.kt
+    // Ensure target package directory exists
+    fs.mkdirSync(javaDir, { recursive: true });
+
+    // I. Write IncomingCallActivity.kt
       const activityCode = `package com.allver.app
 
 import android.app.Activity
@@ -394,7 +395,6 @@ class IncomingCallPackage : ReactPackage {
           }
         }
       }
-    }
   });
 
   return config;

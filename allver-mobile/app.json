@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "allver-mobile",
-    "slug": "allver-mobile",
+    "slug": "karandot101",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/android-icon-foreground.png",
@@ -43,7 +43,7 @@
       ]
     },
     "notification": {
-      "icon": "./assets/android-icon-foreground.png",
+      "icon": "./assets/images/notification-icon.png",
       "color": "#0F172A"
     },
     "web": {
@@ -58,7 +58,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/android-icon-foreground.png",
+          "icon": "./assets/images/notification-icon.png",
           "color": "#0F172A"
         }
       ],
@@ -97,12 +97,12 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "b344fb16-eb64-4279-8dc7-88dcd752db27"
+        "projectId": "ad1c8bce-6e55-4191-8606-4181998e2732"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "owner": "karan80"
+    "owner": "karandots-team"
   }
 }

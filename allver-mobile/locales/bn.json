@@ -219,7 +219,9 @@
   "searchMessagesPlaceholder": "বার্তা বা পরিচিতি খুঁজুন...",
   "system": "সিস্টেম",
   "unread": "অপঠিত",
-  "noMessagesFound": "কোনো বার্তা পাওয়া যায়নি"
+  "noMessagesFound": "কোনো বার্তা পাওয়া যায়নি",
+  "postNewProject": "নতুন প্রজেক্ট পোস্ট করুন",
+  "postNewProjectDesc": "একটি প্রজেক্ট তৈরি করুন এবং সেরা পেশাদারদের নিয়োগ করুন"
 }
 
 

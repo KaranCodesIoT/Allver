@@ -1921,7 +1921,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   qaCardHeader: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 4,
   },
   qaIconWrap: {
@@ -1937,11 +1937,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
     marginTop: 4,
+    textAlign: 'center',
   },
   qaCardFooter: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'flex-start',
+    justifyContent: 'flex-end',
     marginTop: 4,
   },
   qaPill: {

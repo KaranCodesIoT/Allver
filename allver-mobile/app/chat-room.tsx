@@ -12,7 +12,9 @@ import * as WebBrowser from 'expo-web-browser';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useUnreadMessages } from '../context/UnreadMessageContext';
 import { useTranslation } from '../utils/i18n';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 
+const isExpoGo = Constants.appOwnership === 'expo' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 const { width } = Dimensions.get('window');
 
 const COLORS = {
@@ -2730,9 +2732,8 @@ export default function ChatRoomScreen() {
 
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        behavior={Platform.OS === 'ios' ? 'padding' : (isExpoGo ? 'height' : undefined)} 
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-        enabled={true}
       >
         {/* ===== CHAT AREA ===== */}
         <View style={styles.chatArea}>
@@ -2777,7 +2778,7 @@ export default function ChatRoomScreen() {
       {/* ===== ATTACHMENT MENU MODAL ===== */}
       <Modal visible={showAttachMenu} transparent animationType="fade" onRequestClose={() => setShowAttachMenu(false)}>
         <TouchableOpacity style={styles.attachOverlay} activeOpacity={1} onPress={() => setShowAttachMenu(false)}>
-          <View style={styles.attachMenuCard}>
+          <View style={[styles.attachMenuCard, { paddingBottom: Math.max(insets.bottom + 20, Platform.OS === 'android' ? 48 : 30) }]}>
             <View style={styles.attachRow}>
               <TouchableOpacity style={styles.attachOption} onPress={handlePickImage}>
                 <View style={[styles.attachIconCircle, { backgroundColor: '#7C3AED' }]}>
@@ -2890,7 +2891,7 @@ export default function ChatRoomScreen() {
             </ScrollView>
 
             {/* Bottom Forward Action Button */}
-            <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}>
+            <View style={{ padding: 16, paddingBottom: Math.max(insets.bottom + 12, 16), borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}>
               <TouchableOpacity
                 style={{
                   backgroundColor: selectedForwardTargetIds.length > 0 ? '#2563EB' : '#94A3B8',

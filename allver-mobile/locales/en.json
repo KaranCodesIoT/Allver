@@ -326,7 +326,9 @@
   "urbanplanning": "Urban Planning",
   "projectTeam": "Project Team",
   "noActiveProjects": "No Active Projects",
-  "noActiveProjectsDesc": "You don't have any ongoing projects at the moment."
+  "noActiveProjectsDesc": "You don't have any ongoing projects at the moment.",
+  "postNewProject": "Post New Project",
+  "postNewProjectDesc": "Create a project and hire top professionals"
 }
 
 
