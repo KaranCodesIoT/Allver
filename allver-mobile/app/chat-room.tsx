@@ -5,6 +5,7 @@ import { Feather, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import SocketService from '../utils/SocketService';
+import WebRTCService from '../utils/WebRTCService';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio, Video, ResizeMode } from 'expo-av';
 import TransliteratedTextInput from '../components/TransliteratedTextInput';

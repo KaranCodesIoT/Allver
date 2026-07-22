@@ -48,8 +48,14 @@ module.exports = function withIncomingCall(config) {
       'android/app/src/main/java/com/allver/app'
     );
 
-    // Ensure target package directory exists
-    fs.mkdirSync(javaDir, { recursive: true });
+    // Copy ringtone asset to native Android res/raw directory
+    const rawDir = path.join(projectRoot, 'android/app/src/main/res/raw');
+    fs.mkdirSync(rawDir, { recursive: true });
+    const soundAssetPath = path.join(projectRoot, 'assets/sounds/ringtone.mp3');
+    if (fs.existsSync(soundAssetPath)) {
+      fs.copyFileSync(soundAssetPath, path.join(rawDir, 'ringtone.mp3'));
+      console.log('[withIncomingCall] Copied ringtone.mp3 to android/app/src/main/res/raw/ringtone.mp3');
+    }
 
     // I. Write IncomingCallActivity.kt
       const activityCode = `package com.allver.app
@@ -66,6 +72,7 @@ import android.graphics.Typeface
 import android.media.AudioAttributes
 import android.media.Ringtone
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Vibrator
@@ -117,7 +124,12 @@ class IncomingCallActivity : Activity() {
 
         // 4. Play Ringtone and Vibrate
         try {
-            val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            val soundResId = resources.getIdentifier("ringtone", "raw", packageName)
+            val ringtoneUri = if (soundResId != 0) {
+                Uri.parse("android.resource://" + packageName + "/" + soundResId)
+            } else {
+                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            }
             ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 ringtone?.audioAttributes = AudioAttributes.Builder()
@@ -321,6 +333,17 @@ class IncomingCallModule(reactContext: ReactApplicationContext) : ReactContextBa
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val soundResId = context.resources.getIdentifier("ringtone", "raw", context.packageName)
+            val soundUri = if (soundResId != 0) {
+                android.net.Uri.parse("android.resource://" + context.packageName + "/" + soundResId)
+            } else {
+                android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+            }
+            val audioAttrs = android.media.AudioAttributes.Builder()
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                .build()
+
             val channel = NotificationChannel(
                 channelId,
                 "Incoming Voice Calls",
@@ -329,6 +352,9 @@ class IncomingCallModule(reactContext: ReactApplicationContext) : ReactContextBa
                 description = "Channel for Allver voice call alerts"
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 500, 250, 500)
+                if (soundUri != null) {
+                    setSound(soundUri, audioAttrs)
+                }
             }
             notificationManager.createNotificationChannel(channel)
         }
