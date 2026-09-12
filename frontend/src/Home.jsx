@@ -54,7 +54,7 @@ import welcomeHero from './assets/welcome_hero.png';
 import architectImg from './assets/architect_home.png';
 import contractorImg from './assets/contractor_site.png';
 import labourImg from './assets/labour_working.png';
-import allverLogo from './assets/allver-logo.svg';
+import allverLogo from './assets/allver-logo.png';
 import LabourManagementTab from './LabourManagementTab';
 
 const ROLE_ROUTES = { Architect: '/architects', Contractor: '/contractors', Labour: '/labour' };

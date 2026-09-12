@@ -4,7 +4,7 @@ import {
   Layout, Sparkles, Compass, MessageCircle,
   User, LogOut, Bell, HardHat, Hammer
 } from 'lucide-react';
-import allverLogo from './assets/allver-logo.svg';
+import allverLogo from './assets/allver-logo.png';
 
 const DashboardLayout = ({ children, pageTitle, pageSubtitle, accentColor = '#10b981' }) => {
   const navigate = useNavigate();

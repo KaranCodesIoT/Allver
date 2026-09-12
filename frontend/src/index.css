@@ -84,8 +84,11 @@ body {
 }
 
 .brand-logo-svg {
-  height: 24px;
-  width: auto;
+  height: 36px;
+  width: 36px;
+  object-fit: contain;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .footer-logo-svg {
@@ -8056,8 +8059,11 @@ body {
 }
 
 .av-brand-logo {
-  height: 28px;
-  width: auto;
+  height: 38px;
+  width: 38px;
+  object-fit: contain;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .av-brand-text {

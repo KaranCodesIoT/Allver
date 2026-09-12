@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ChevronDown, Menu, X, HardHat, Compass, Hammer } from 'lucide-react';
-import allverLogo from './assets/allver-logo.svg';
+import allverLogo from './assets/allver-logo.png';
 
 const Navbar = () => {
   const location = useLocation();
@@ -19,6 +19,9 @@ const Navbar = () => {
       <div className="av-navbar-inner">
         <Link to="/" className="av-brand" onClick={() => setMobileMenuOpen(false)}>
           <img src={allverLogo} alt="Allver" className="av-brand-logo" />
+          <div className="av-brand-text">
+            <span className="av-brand-name" style={{ color: '#0f172a', fontWeight: '900', letterSpacing: '2px', fontSize: '1.25rem' }}>ALLVER</span>
+          </div>
         </Link>
 
         {/* Desktop Navigation Links */}
