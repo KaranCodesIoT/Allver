@@ -45,8 +45,6 @@ export const UnreadActivityProvider: React.FC<{ children: React.ReactNode }> = (
            t.includes('Joined Project') ||
            t.includes('Payment Received') ||
            t.includes('[View Details]') ||
-           t.includes('Attendance Submitted') ||
-           t.includes('[View Attendance]') ||
            t.includes('Milestone') ||
            t.includes('[View Progress]') ||
            t.includes('Document Shared') ||

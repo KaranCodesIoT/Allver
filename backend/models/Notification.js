@@ -41,7 +41,7 @@ const notificationSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['messages', 'projectUpdates', 'contracts', 'payments', 'attendance', 'marketing', 'systemAlerts', 'voice_call'],
+    enum: ['messages', 'projectUpdates', 'contracts', 'payments', 'marketing', 'systemAlerts', 'voice_call'],
     default: 'systemAlerts'
   },
   isSuppressed: {
@@ -83,8 +83,6 @@ notificationSchema.pre('save', async function() {
         resolvedCategory = 'contracts';
       } else if (textLower.includes('payment') || textLower.includes('milestone') || textLower.includes('released')) {
         resolvedCategory = 'payments';
-      } else if (textLower.includes('attendance') || textLower.includes('present')) {
-        resolvedCategory = 'attendance';
       } else if (textLower.includes('marketing') || textLower.includes('promotional') || textLower.includes('recommendation')) {
         resolvedCategory = 'marketing';
       }
@@ -126,8 +124,6 @@ notificationSchema.post('save', async function(doc) {
         resolvedCategory = 'contracts';
       } else if (textLower.includes('payment') || textLower.includes('milestone') || textLower.includes('released')) {
         resolvedCategory = 'payments';
-      } else if (textLower.includes('attendance') || textLower.includes('present')) {
-        resolvedCategory = 'attendance';
       } else if (textLower.includes('marketing')) {
         resolvedCategory = 'marketing';
       }
@@ -263,8 +259,6 @@ notificationSchema.post('save', async function(doc) {
       title = '🏗 New Contract Assigned';
     } else if (resolvedCategory === 'payments') {
       title = '💰 Payment Received';
-    } else if (resolvedCategory === 'attendance') {
-      title = '📋 Attendance Marked';
     }
 
     // A. Send to Expo Push Tokens (via Expo Push API)

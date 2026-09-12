@@ -7,22 +7,6 @@ export interface ChatMessage {
   content: string;
   action?: AIAction;
   timestamp: Date;
-  attendanceSuccessCard?: {
-    projectName: string;
-    checkType: string;
-    time: string;
-    lat: number;
-    lng: number;
-    address: string;
-  };
-  contractorAttendanceSuccessCard?: {
-    workerName: string;
-    projectName: string;
-    dayType: string;
-    status: string;
-    hours: number;
-    date: string;
-  };
   jobPostSuccessCard?: {
     title: string;
     projectType: string;
@@ -68,35 +52,6 @@ export class AIService {
       keywords: ['portfolio', 'highlight', 'my work', 'upload photo', 'add highlight'],
       text: 'Opening your Portfolio Highlights view where you can showcase your completed works to potential clients.',
       actionType: ActionType.UPDATE_PORTFOLIO,
-    },
-    {
-      keywords: ['rahul', 'राहुल'],
-      text: 'Initiating worker attendance logging flow...',
-      actionType: ActionType.MARK_ATTENDANCE,
-      getParams: (input) => ({
-        workerName: 'Rahul',
-        checkType: 'check-in'
-      }),
-    },
-    {
-      keywords: [
-        'check-in', 'check in', 'checkin', 'check me in', 'check in me',
-        'attendance', 'mark attendance', 'log attendance',
-        'mera check in', 'mera checkin', 'mera attendance',
-        'attendance laga', 'attendance lagao', 'attendance mark',
-        'aaj attendance', 'aaj ki attendance',
-        'site pe aa gaya', 'reached site', 'site pahuch',
-        'हाजिरी', 'हाजीरी', 'उपस्थिती', 'उपस्थिति',
-        'हाजिरी लगाओ', 'अटेंडेंस', 'चेक इन',
-        'present mark', 'mark present', 'mark me present',
-        'punch in', 'log in attendance'
-      ],
-      text: 'Opening check-in attendance confirmation dialog...',
-      actionType: ActionType.MARK_ATTENDANCE,
-      getParams: (input) => ({
-        checkType: 'check-in',
-        projectName: 'XYZ Tower'
-      }),
     },
     {
       keywords: [
@@ -189,11 +144,6 @@ export class AIService {
       actionType: ActionType.OPEN_NOTIFICATIONS,
     },
     {
-      keywords: ['open attendance', 'attendance logs'],
-      text: 'Redirecting you to your attendance dashboard...',
-      actionType: ActionType.OPEN_ATTENDANCE,
-    },
-    {
       keywords: ['payments', 'payment', 'invoices', 'salary'],
       text: 'Redirecting you to view payments...',
       actionType: ActionType.OPEN_PAYMENTS,
@@ -213,7 +163,7 @@ export class AIService {
       keywords: ['labour', 'show labour', 'employee'],
       text: 'I found multiple matching actions for "labour". Did you mean one of these?',
       actionType: ActionType.AMBIGUOUS,
-      suggestions: ['Find Labour', 'Labour Attendance', 'Team Members', 'Labour Profile'],
+      suggestions: ['Find Labour', 'Team Members', 'Labour Profile'],
     },
   ];
 
@@ -399,7 +349,7 @@ export class AIService {
     const inputLower = input.toLowerCase().trim();
     
     // Better Unknown Handling: List available options when intent is not identified
-    let replyText = 'I can help with:\n\n• Attendance\n• Projects\n• Payments\n• Jobs\n• Team\n• Similarity Designs\n\nTry typing one of these commands!';
+    let replyText = 'I can help with:\n\n• Projects\n• Payments\n• Jobs\n• Team\n• Similarity Designs\n\nTry typing one of these commands!';
     let triggeredAction: AIAction | undefined;
 
     for (const mock of this.MOCK_RESPONSES) {
@@ -512,7 +462,6 @@ Instruction: "${instruction}"`
   public static async generateProgressSummary(role: string, rawData: any): Promise<string> {
     if (!this.GEMINI_API_KEY || this.GEMINI_API_KEY === 'YOUR_GEMINI_API_KEY') {
       return `Daily Site Progress Report for ${rawData.projectName} (Mock Summary):\n` +
-             `- Attendance: ${rawData.attendanceCount} present.\n` +
              `- Updates: ${rawData.updatesCount} work updates logged.\n` +
              `- Tasks: ${rawData.pendingTasksCount} pending tasks.`;
     }
@@ -526,8 +475,8 @@ Instruction: "${instruction}"`
 
 User Role Context:
 - Client: Focus on milestone achievements, overall progress updates, and media uploads. Keep it high-level, clear, and professional.
-- Contractor: Focus on worker attendance, pending tasks, updates, and alerts/issues.
-- Labour: Focus on attendance confirmation and tasks to do today.
+- Contractor: Focus on pending tasks, work updates, and alerts/issues.
+- Labour: Focus on tasks and activities scheduled for today.
 - Architect: Focus on construction drawings, structural uploads, design files, and milestone logs.
 
 Raw Daily Site Data:

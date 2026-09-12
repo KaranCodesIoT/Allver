@@ -29,9 +29,11 @@ if (Platform.OS !== 'web') {
     logStep('Step 3', 'Registering background message handler...');
     // 4. Register Notifee Background Event Handler for Inline Reply & Action Buttons
     try {
-      const notifee = require('@notifee/react-native').default;
-      const NotifeeNotificationService = require('./utils/NotifeeNotificationService').default;
-      const { BACKEND_URL } = require('./constants/Config');
+      const notifeeModule = require('@notifee/react-native');
+      const notifee = notifeeModule?.default || notifeeModule;
+      if (notifee && typeof notifee.onBackgroundEvent === 'function') {
+        const NotifeeNotificationService = require('./utils/NotifeeNotificationService').default;
+        const { BACKEND_URL } = require('./constants/Config');
 
       notifee.onBackgroundEvent(async ({ type, detail }) => {
         const { notification, pressAction, input } = detail;
@@ -84,6 +86,7 @@ if (Platform.OS !== 'web') {
           }
         }
       });
+      }
 
       // FCM Background Message Handler with Rich Notifee Dispatch
       messaging().setBackgroundMessageHandler(async (remoteMessage) => {
@@ -116,11 +119,6 @@ if (Platform.OS !== 'web') {
             jobTitle: data.jobTitle || 'New Job Invitation',
             clientName: data.clientName || 'Client',
             salaryText: data.salaryText,
-          });
-        } else if (category === 'attendance') {
-          await NotifeeNotificationService.displayAttendanceNotification({
-            workspaceId: data.workspaceId,
-            projectName: data.projectName || 'Site Project',
           });
         } else if (category === 'payment') {
           await NotifeeNotificationService.displayPaymentNotification({

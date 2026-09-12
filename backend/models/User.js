@@ -2,10 +2,10 @@ const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
 
   phoneNumber: { type: String, default: '' },
-  password: { type: String, required: true },
+  password: { type: String, default: 'firebase_auth_verified' },
   role: { type: String, enum: ['Architect', 'Contractor', 'Labour', 'Client'], required: true },
   city: { type: String, required: true },
 
@@ -38,7 +38,10 @@ const userSchema = new mongoose.Schema({
   
   // Labour profile fields
   skillType: { type: String },
-  availability: { type: String }, // 'Available' or 'Not Available'
+  availability: { type: String, default: 'Available' }, // 'Available' or 'Not Available'
+  isPremium: { type: Boolean, default: false },
+  workArea: { type: String, default: '' }, // city or area name
+  workAreaRadius: { type: Number, default: 15 }, // km radius
   
   // Shared fields
   experience: { type: String },
@@ -90,7 +93,6 @@ const userSchema = new mongoose.Schema({
     projectUpdates: { type: Boolean, default: true },
     contracts: { type: Boolean, default: true },
     payments: { type: Boolean, default: true },
-    attendance: { type: Boolean, default: true },
     marketing: { type: Boolean, default: true },
     systemAlerts: { type: Boolean, default: true }
   },

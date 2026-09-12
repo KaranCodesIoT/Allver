@@ -6,7 +6,7 @@ export class VoiceService {
 
   /**
    * Starts speech-to-text recording (mock).
-   * Supports random simulation of multi-lingual attendance check-in/out phrases.
+   * Supports random simulation of multi-lingual voice queries.
    */
   static startListening(onResult: (text: string) => void): void {
     if (this.isListening) return;
@@ -17,20 +17,12 @@ export class VoiceService {
     setTimeout(() => {
       if (this.isListening) {
         const mockPhrases = [
-          // Attendance check-in (English, Hindi, Marathi)
-          'Check me in',
-          'आज हाजिरी लगा दो',
-          'माझी उपस्थिती लावा',
-          
-          // Contractor marking labour attendance
-          'Mark Rahul attendance',
-          'राहुल की हाजिरी लगा दो',
-          'राहुलची उपस्थिती नोंदवा',
-
           // Search / Other Commands
           'Show me modern living room designs',
           'Find contractors in my area',
           'Compare project estimates',
+          'Show my project updates',
+          'Search for skilled carpenters',
         ];
         const randomPhrase = mockPhrases[Math.floor(Math.random() * mockPhrases.length)];
         console.log('[VoiceService] Mock Speech Result (Multi-lingual):', randomPhrase);

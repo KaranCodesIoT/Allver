@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import { safeReverseGeocode } from '../../utils/GeocodingService';
 import { BACKEND_URL } from '../../constants/Config';
 import { ExecutionContextState } from './ExecutionContext';
 import { AIService } from '../AIService';
@@ -35,11 +36,7 @@ export class GetLocationTool {
 
       let address = 'Project Site Location';
       try {
-        const geo = await Location.reverseGeocodeAsync({ latitude, longitude });
-        if (geo && geo.length > 0) {
-          const item = geo[0];
-          address = [item.name, item.street, item.city].filter(Boolean).join(', ') || address;
-        }
+        address = await safeReverseGeocode(latitude, longitude);
       } catch (e) {
         console.log('[GetLocationTool] Reverse geocoding failed, using coordinates fallback.', e);
       }
@@ -90,99 +87,7 @@ export class GetActiveWorkspacesTool {
   }
 }
 
-export class CheckLabourAttendanceTool {
-  static async run(context: ExecutionContextState, params: { userId: string }): Promise<ToolResultContract<{ alreadyCheckedIn: boolean; time?: string; projectName?: string }>> {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/labour/today-status/${params.userId}`);
-      if (!res.ok) {
-        throw new Error('Failed to fetch today status');
-      }
-      const data = await res.json();
-      if (data.checkedIn) {
-        return {
-          status: 'SUCCESS',
-          data: {
-            alreadyCheckedIn: true,
-            time: data.checkInTime,
-            projectName: data.workspace?.title || 'Active Project'
-          },
-          message: 'Attendance already recorded today.'
-        };
-      }
-      return {
-        status: 'SUCCESS',
-        data: { alreadyCheckedIn: false },
-        message: 'Attendance not checked in yet today.'
-      };
-    } catch (err: any) {
-      console.error('[CheckLabourAttendanceTool] error:', err);
-      return { status: 'RETRY', message: err.message || 'Failed to check today status' };
-    }
-  }
-}
 
-export class SubmitLabourAttendanceTool {
-  static async run(context: ExecutionContextState, params: { userId: string }): Promise<ToolResultContract<any>> {
-    try {
-      const workspaceId = context.workspaceId;
-      const dateStr = new Date().toISOString().split('T')[0];
-      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-      const record = {
-        labourId: params.userId,
-        status: 'Present',
-        hours: 0,
-        latitude: context.location?.latitude,
-        longitude: context.location?.longitude,
-        checkInTime: timeStr,
-        address: context.location?.address,
-        isMarked: false,
-      };
-
-      const response = await fetch(`${BACKEND_URL}/api/project-workspaces/${workspaceId}/labour/attendance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: dateStr,
-          records: [record],
-          senderId: params.userId,
-        }),
-      });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.message || 'Failed to submit check-in.');
-      }
-
-      // --- VERIFICATION LAYER ---
-      // Fetch status again to audit and confirm the check-in actually exists in DB
-      const verifyRes = await fetch(`${BACKEND_URL}/api/labour/today-status/${params.userId}`);
-      if (!verifyRes.ok) {
-        throw new Error('Verification request failed.');
-      }
-      const verifyData = await verifyRes.json();
-      if (!verifyData.checkedIn) {
-        throw new Error('Database audit check failed: Attendance record not saved.');
-      }
-
-      return {
-        status: 'SUCCESS',
-        data: {
-          projectName: verifyData.workspace?.title || context.projectName,
-          checkType: 'Check-In',
-          time: verifyData.checkInTime || timeStr,
-          lat: context.location?.latitude || 0,
-          lng: context.location?.longitude || 0,
-          address: context.location?.address || 'Site Location'
-        },
-        message: 'Verified check-in successfully logged to database.'
-      };
-    } catch (err: any) {
-      console.error('[SubmitLabourAttendanceTool] error:', err);
-      return { status: 'RETRY', message: err.message || 'Failed to submit and verify attendance' };
-    }
-  }
-}
 
 export class ResolveWorkerTool {
   static async run(context: ExecutionContextState, params: { userId: string }): Promise<ToolResultContract<any[]>> {
@@ -296,136 +201,7 @@ export class ResolveWorkerTool {
   }
 }
 
-export class CheckWorkerAttendanceTool {
-  static async run(context: ExecutionContextState, params: { userId: string }): Promise<ToolResultContract<{ alreadyMarked: boolean; dayType?: string; status?: string; hours?: number }>> {
-    try {
-      const workspaceRes = await GetActiveWorkspacesTool.run(context, { userId: params.userId });
-      if (workspaceRes.status !== 'SUCCESS' || !workspaceRes.data) {
-        return { status: 'FAILED', message: workspaceRes.message };
-      }
 
-      const workspaces = workspaceRes.data;
-      const targetWorkspace = workspaces.find(w => w._id === context.workspaceId);
-      if (!targetWorkspace) {
-        return { status: 'SUCCESS', data: { alreadyMarked: false }, message: 'Worker is not assigned to this project site' };
-      }
-
-      const todayStr = new Date().toISOString().split('T')[0];
-      const attendance = targetWorkspace.labourManagement?.attendance || [];
-      const todayEntry = attendance.find((a: any) => a.date === todayStr);
-
-      if (todayEntry && todayEntry.records) {
-        const record = todayEntry.records.find((r: any) => {
-          const rId = r.labourId?._id || r.labourId;
-          return rId?.toString() === context.workerId;
-        });
-
-        if (record && record.isMarked) {
-          const hours = record.hours;
-          const dayType = hours >= 12 ? 'Overtime' : (hours >= 8 ? 'Full Day' : 'Half Day');
-          return {
-            status: 'SUCCESS',
-            data: {
-              alreadyMarked: true,
-              dayType,
-              status: record.status || 'Present',
-              hours
-            },
-            message: 'Worker attendance already marked today.'
-          };
-        }
-      }
-
-      return {
-        status: 'SUCCESS',
-        data: { alreadyMarked: false },
-        message: 'Worker attendance not marked yet today.'
-      };
-    } catch (err: any) {
-      console.error('[CheckWorkerAttendanceTool] error:', err);
-      return { status: 'RETRY', message: err.message || 'Failed to check worker status' };
-    }
-  }
-}
-
-export class SubmitWorkerAttendanceTool {
-  static async run(context: ExecutionContextState, params: { userId: string }): Promise<ToolResultContract<any>> {
-    try {
-      const dayTypeLabel = context.dayType === 'overtime' ? 'Overtime' : (context.dayType === 'half' ? 'Half Day' : 'Full Day');
-      const hours = context.attendanceStatus === 'Absent' ? 0 : (context.dayType === 'overtime' ? 12 : (context.dayType === 'half' ? 4 : 8));
-      const dateStr = new Date().toISOString().split('T')[0];
-
-      const record = {
-        labourId: context.workerId,
-        status: context.attendanceStatus,
-        hours,
-        isMarked: true,
-      };
-
-      const response = await fetch(`${BACKEND_URL}/api/project-workspaces/${context.workspaceId}/labour/attendance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: dateStr,
-          records: [record],
-          senderId: params.userId,
-        }),
-      });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.message || 'Failed to submit worker attendance.');
-      }
-
-      // --- VERIFICATION LAYER ---
-      // Fetch workspace again to verify the attendance records list contains the newly posted status log
-      const verifyRes = await fetch(`${BACKEND_URL}/api/project-workspaces/${context.workspaceId}`);
-      if (!verifyRes.ok) {
-        throw new Error('Verification request failed.');
-      }
-      const verifyData = await verifyRes.json();
-      const ws = verifyData.workspace;
-      const todayEntry = (ws?.labourManagement?.attendance || []).find((a: any) => a.date === dateStr);
-      const verifiedRecord = todayEntry?.records?.find((r: any) => (r.labourId?._id || r.labourId)?.toString() === context.workerId);
-
-      if (!verifiedRecord || !verifiedRecord.isMarked) {
-        throw new Error('Database audit check failed: Attendance record not verified.');
-      }
-
-      return {
-        status: 'SUCCESS',
-        data: {
-          workerName: context.workerName,
-          projectName: ws.title || context.projectName,
-          dayType: dayTypeLabel,
-          status: verifiedRecord.status,
-          hours,
-          date: dateStr,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        },
-        message: 'Verified worker attendance successfully logged to database.'
-      };
-    } catch (err: any) {
-      console.error('[SubmitWorkerAttendanceTool] error:', err);
-      // Offline fallback simulation
-      const dateStr = new Date().toISOString().split('T')[0];
-      const dayTypeLabel = context.dayType === 'overtime' ? 'Overtime (Offline)' : (context.dayType === 'half' ? 'Half Day (Offline)' : 'Full Day (Offline)');
-      return {
-        status: 'SUCCESS',
-        data: {
-          workerName: context.workerName,
-          projectName: context.projectName,
-          dayType: dayTypeLabel,
-          status: context.attendanceStatus,
-          hours: context.attendanceStatus === 'Absent' ? 0 : 8,
-          date: dateStr,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        },
-        message: '⚠️ Offline Mode: Saved Worker attendance check-in to local cache.'
-      };
-    }
-  }
-}
 
 export class GetOrCreateConversationTool {
   static async run(context: ExecutionContextState, params: { userId: string }): Promise<ToolResultContract<{ conversationId: string }>> {
@@ -606,10 +382,6 @@ export class GatherDailyProgressTool {
 
       const todayStr = new Date().toISOString().split('T')[0];
 
-      const attendanceLogs = workspace.labourManagement?.attendance || [];
-      const todayLog = attendanceLogs.find((a: any) => a.date === todayStr);
-      const todayAttendance = todayLog?.records || [];
-
       const updates = workspace.updates || [];
       const todayUpdates = updates.filter((u: any) => {
         const uDate = new Date(u.createdAt).toISOString().split('T')[0];
@@ -637,11 +409,6 @@ export class GatherDailyProgressTool {
         projectName: workspace.title,
         projectType: workspace.projectType,
         status: workspace.status,
-        attendanceCount: todayAttendance.filter((r: any) => r.status === 'Present' || r.status === 'Overtime').length,
-        attendanceDetails: todayAttendance.map((r: any) => ({
-          status: r.status,
-          hours: r.hours,
-        })),
         updatesCount: todayUpdates.length,
         updatesList: todayUpdates.map((u: any) => ({ title: u.title, desc: u.description, author: u.postedBy?.senderName })),
         mediaCount: todayMedia.length,
@@ -663,7 +430,6 @@ export class GatherDailyProgressTool {
         projectName: context.projectName || 'Active Construction Site',
         projectType: 'Civil Renovation',
         status: 'Active',
-        attendanceCount: 4,
         updatesCount: 1,
         updatesList: [{ title: 'Brickwork Layering', desc: 'Completed outer wall layering on 1st floor.', author: 'Contractor Sunil' }],
         mediaCount: 1,

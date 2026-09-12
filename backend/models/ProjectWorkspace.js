@@ -74,24 +74,6 @@ const projectWorkspaceSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
   }],
   labourManagement: {
-    attendance: [{
-      date: { type: String, required: true },
-      records: [{
-        labourId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-        status: { type: String, enum: ['Present', 'Half Day', 'Absent', 'Overtime'] },
-        hours: { type: Number, default: 0 },
-        remarks: { type: String, default: '' },
-        latitude: { type: Number },
-        longitude: { type: Number },
-        checkInTime: { type: String },
-        checkOutTime: { type: String },
-        address: { type: String },
-        distanceFromSite: { type: String },
-        googleMapsLink: { type: String },
-        isMarked: { type: Boolean, default: false }
-      }],
-      markedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
-    }],
     payments: [{
       date: { type: Date, default: Date.now },
       labourId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

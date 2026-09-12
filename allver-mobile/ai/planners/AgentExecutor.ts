@@ -7,11 +7,7 @@ import { Planner, ExecutionPlan } from './Planner';
 import {
   GetLocationTool,
   GetActiveWorkspacesTool,
-  CheckLabourAttendanceTool,
-  SubmitLabourAttendanceTool,
   ResolveWorkerTool,
-  CheckWorkerAttendanceTool,
-  SubmitWorkerAttendanceTool,
   GetOrCreateConversationTool,
   SendMessageTool,
   GatherDailyProgressTool,
@@ -36,16 +32,8 @@ export class AgentExecutor {
         return await GetLocationTool.run(executionContext);
       case 'GetActiveWorkspacesTool':
         return await GetActiveWorkspacesTool.run(executionContext, { userId: context.userId });
-      case 'CheckLabourAttendanceTool':
-        return await CheckLabourAttendanceTool.run(executionContext, { userId: context.userId });
-      case 'SubmitLabourAttendanceTool':
-        return await SubmitLabourAttendanceTool.run(executionContext, { userId: context.userId });
       case 'ResolveWorkerTool':
         return await ResolveWorkerTool.run(executionContext, { userId: context.userId });
-      case 'CheckWorkerAttendanceTool':
-        return await CheckWorkerAttendanceTool.run(executionContext, { userId: context.userId });
-      case 'SubmitWorkerAttendanceTool':
-        return await SubmitWorkerAttendanceTool.run(executionContext, { userId: context.userId });
       case 'GetOrCreateConversationTool':
         return await GetOrCreateConversationTool.run(executionContext, { userId: context.userId });
       case 'SendMessageTool':
@@ -139,12 +127,6 @@ export class AgentExecutor {
         } else if (inputLower.includes('over') || inputLower.includes('ओवरटाइम') || inputLower.includes('ओव्हरटाइम')) {
           executionContext.dayType = 'overtime';
         }
-      } else if (previousTool === 'PromptStatusTool') {
-        if (inputLower.includes('present') || inputLower.includes('हाजिर') || inputLower.includes('उपस्थित') || inputLower.includes('prasant')) {
-          executionContext.attendanceStatus = 'Present';
-        } else if (inputLower.includes('absent') || inputLower.includes('गैर') || inputLower.includes('अनुपस्थित')) {
-          executionContext.attendanceStatus = 'Absent';
-        }
       } else if (previousTool === 'PromptMessageTextTool') {
         // Verify it isn't worker choices clicks
         const isWorkerChoice = sessionState.lastWorkerChoices?.some((r: any) => inputLower.includes(r.fullName.toLowerCase()));
@@ -216,8 +198,6 @@ export class AgentExecutor {
           isComplete: true,
           requiresUserInput: false,
           responseText: plan.responseText || 'Workflow finished successfully.',
-          attendanceSuccessCard: plan.attendanceSuccessCard,
-          contractorAttendanceSuccessCard: plan.contractorAttendanceSuccessCard,
           messageSuccessCard: plan.messageSuccessCard
         };
       }
@@ -259,30 +239,7 @@ export class AgentExecutor {
         break;
       }
 
-      // Offline fallback queueing for failed/recoverable operations
-      if (toolResult.status === 'FAILED' || toolResult.status === 'RETRY') {
-        const isRecoverable = ['SubmitLabourAttendanceTool', 'SubmitWorkerAttendanceTool'].includes(toolToRun);
-        if (isRecoverable) {
-          executionContext.offlineQueue.push({
-            goal,
-            params: { ...initialParams, ...executionContext },
-            timestamp: Date.now()
-          });
 
-          toolResult = {
-            status: 'SUCCESS',
-            data: toolResult.data || {
-              projectName: executionContext.projectName || 'Offline Site',
-              checkType: 'Check-In',
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              lat: executionContext.location?.latitude || 0,
-              lng: executionContext.location?.longitude || 0,
-              address: executionContext.location?.address || 'Stored locally'
-            },
-            message: `⚠️ Offline Sync: Saved attendance locally. It will sync once internet restores.`
-          };
-        }
-      }
 
       // Save execution details
       executionContext.history.push(toolToRun);
@@ -355,16 +312,8 @@ export class AgentExecutor {
         return '🤖 Fetching GPS Location...';
       case 'GetActiveWorkspacesTool':
         return '🤖 Fetching active workspace assignments...';
-      case 'CheckLabourAttendanceTool':
-        return "🤖 Checking today's attendance status...";
-      case 'SubmitLabourAttendanceTool':
-        return '🤖 Submitting verified check-in...';
       case 'ResolveWorkerTool':
         return `🤖 Resolving worker name "${context.workerName}"...`;
-      case 'CheckWorkerAttendanceTool':
-        return `🤖 Checking today's logs for ${context.workerName}...`;
-      case 'SubmitWorkerAttendanceTool':
-        return `🤖 Submitting attendance record for ${context.workerName}...`;
       case 'GetOrCreateConversationTool':
         return `🤖 Loading chat room with ${context.workerName}...`;
       case 'SendMessageTool':
@@ -386,16 +335,8 @@ export class AgentExecutor {
         return '✅ GPS coordinates verified';
       case 'GetActiveWorkspacesTool':
         return '✅ Workspace details resolved';
-      case 'CheckLabourAttendanceTool':
-        return result.data?.alreadyCheckedIn ? '✅ Already checked in' : '✅ Verified not checked in yet';
-      case 'SubmitLabourAttendanceTool':
-        return '✅ Check-in recorded';
       case 'ResolveWorkerTool':
         return `✅ Worker "${context.workerName}" verified`;
-      case 'CheckWorkerAttendanceTool':
-        return result.data?.alreadyMarked ? '✅ Attendance already marked' : '✅ Verified not marked yet';
-      case 'SubmitWorkerAttendanceTool':
-        return '✅ Worker attendance logged';
       case 'GetOrCreateConversationTool':
         return '✅ Direct Message chat verified';
       case 'SendMessageTool':

@@ -7,6 +7,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Video, ResizeMode } from 'expo-av';
 import * as Location from 'expo-location';
+import { safeReverseGeocode } from '../utils/GeocodingService';
 import SocketService from '../utils/SocketService';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
@@ -382,19 +383,7 @@ export default function ProjectProgressScreen() {
             lonVal = loc.coords.longitude.toString();
             
             try {
-              const rev = await Location.reverseGeocodeAsync({
-                latitude: loc.coords.latitude,
-                longitude: loc.coords.longitude
-              });
-              if (rev && rev.length > 0) {
-                const addr = rev[0];
-                const parts = [
-                  addr.name,
-                  addr.city || addr.subregion,
-                  addr.region
-                ].filter(Boolean);
-                addressVal = parts.join(', ');
-              }
+              addressVal = await safeReverseGeocode(loc.coords.latitude, loc.coords.longitude);
             } catch (geocodingErr) {
               console.warn('Geocoding failed:', geocodingErr);
             }
@@ -478,19 +467,7 @@ export default function ProjectProgressScreen() {
                 lonVal = loc.coords.longitude.toString();
                 
                 try {
-                  const rev = await Location.reverseGeocodeAsync({
-                    latitude: loc.coords.latitude,
-                    longitude: loc.coords.longitude
-                  });
-                  if (rev && rev.length > 0) {
-                    const addr = rev[0];
-                    const parts = [
-                      addr.name,
-                      addr.city || addr.subregion,
-                      addr.region
-                    ].filter(Boolean);
-                    addressVal = parts.join(', ');
-                  }
+                  addressVal = await safeReverseGeocode(loc.coords.latitude, loc.coords.longitude);
                 } catch (geocodingErr) {
                   console.warn('Geocoding failed:', geocodingErr);
                 }
@@ -564,19 +541,7 @@ export default function ProjectProgressScreen() {
                 lonVal = loc.coords.longitude.toString();
                 
                 try {
-                  const rev = await Location.reverseGeocodeAsync({
-                    latitude: loc.coords.latitude,
-                    longitude: loc.coords.longitude
-                  });
-                  if (rev && rev.length > 0) {
-                    const addr = rev[0];
-                    const parts = [
-                      addr.name,
-                      addr.city || addr.subregion,
-                      addr.region
-                    ].filter(Boolean);
-                    addressVal = parts.join(', ');
-                  }
+                  addressVal = await safeReverseGeocode(loc.coords.latitude, loc.coords.longitude);
                 } catch (geocodingErr) {
                   console.warn('Geocoding failed:', geocodingErr);
                 }
@@ -741,7 +706,7 @@ export default function ProjectProgressScreen() {
     ],
     'Contractor → Labour': [
       'Skill',
-      'Attendance',
+      'Consistency',
       'Discipline',
       'Speed',
       'Quality'
@@ -773,7 +738,7 @@ export default function ProjectProgressScreen() {
     ],
     'Client → Labour': [
       'Skill & efficiency',
-      'Punctuality & attendance',
+      'Punctuality & reliability',
       'Discipline & behaviour',
       'Work Quality',
       'Overall rating'

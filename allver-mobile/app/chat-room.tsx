@@ -88,7 +88,6 @@ export default function ChatRoomScreen() {
   const [showMenu, setShowMenu] = useState(false);
   const [isImportant, setIsImportant] = useState(false);
   const [workspace, setWorkspace] = useState<any>(null);
-  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showDocsModal, setShowDocsModal] = useState(false);
   const [showPaymentsModal, setShowPaymentsModal] = useState(false);
   const [showPhotosModal, setShowPhotosModal] = useState(false);
@@ -1776,11 +1775,6 @@ export default function ChatRoomScreen() {
     }
   };
 
-  const handleViewAttendanceReport = () => {
-    setShowMenu(false);
-    setShowAttendanceModal(true);
-  };
-
   const handleViewSharedDocuments = () => {
     setShowMenu(false);
     setShowDocsModal(true);
@@ -3050,11 +3044,6 @@ export default function ChatRoomScreen() {
                   <Text style={styles.menuItemText}>Project Timeline</Text>
                 </TouchableOpacity>
                 
-                <TouchableOpacity style={styles.menuItem} onPress={handleViewAttendanceReport}>
-                  <Feather name="calendar" size={16} color={COLORS.textDark} style={styles.menuIcon} />
-                  <Text style={styles.menuItemText}>Attendance Report</Text>
-                </TouchableOpacity>
-                
                 <TouchableOpacity style={styles.menuItem} onPress={handleViewSharedDocuments}>
                   <Feather name="file-text" size={16} color={COLORS.textDark} style={styles.menuIcon} />
                   <Text style={styles.menuItemText}>Shared Documents</Text>
@@ -3115,74 +3104,6 @@ export default function ChatRoomScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* ===== ATTENDANCE REPORT MODAL ===== */}
-      <Modal visible={showAttendanceModal} transparent animationType="slide" onRequestClose={() => setShowAttendanceModal(false)}>
-        <TouchableOpacity style={styles.modalOverlayCenter} activeOpacity={1} onPress={() => setShowAttendanceModal(false)}>
-          <TouchableOpacity style={styles.infoModalCard} activeOpacity={1}>
-            <View style={styles.infoModalHeader}>
-              <Text style={styles.infoModalTitle}>Attendance Report</Text>
-              <TouchableOpacity onPress={() => setShowAttendanceModal(false)} style={styles.infoModalCloseBtn}>
-                <Feather name="x" size={20} color={COLORS.textDark} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.infoModalBody} showsVerticalScrollIndicator={false}>
-              {workspace?.labourManagement?.attendance?.length > 0 ? (
-                workspace.labourManagement.attendance.map((att: any, idx: number) => (
-                  <View key={idx} style={styles.attendanceDateGroup}>
-                    <View style={styles.attendanceDateHeader}>
-                      <Feather name="calendar" size={14} color={COLORS.textMuted} />
-                      <Text style={styles.attendanceDateText}>{att.date}</Text>
-                    </View>
-                    {att.records?.map((record: any, rIdx: number) => {
-                      const worker = workspace.labourTeam?.find((l: any) => l._id === record.labourId || l === record.labourId);
-                      const workerName = worker && typeof worker === 'object' ? worker.fullName : 'Worker';
-                      const workerRole = worker && typeof worker === 'object' ? worker.skillType : 'Labourer';
-                      
-                      let statusColor = COLORS.textMuted;
-                      if (record.status === 'Present') statusColor = COLORS.green;
-                      else if (record.status === 'Overtime') statusColor = COLORS.orange;
-                      else if (record.status === 'Absent') statusColor = '#EF4444';
-                      
-                      return (
-                        <View key={rIdx} style={styles.attendanceRecordRow}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.attendanceWorkerName}>{workerName}</Text>
-                            <Text style={styles.attendanceWorkerRole}>{workerRole}</Text>
-                            {record.latitude && record.longitude && (
-                              <TouchableOpacity 
-                                style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 4 }}
-                                onPress={() => {
-                                  const url = `https://www.google.com/maps/search/?api=1&query=${record.latitude},${record.longitude}`;
-                                  Linking.openURL(url).catch(err => console.error("Couldn't load map", err));
-                                }}
-                              >
-                                <Feather name="map-pin" size={10} color="#3B82F6" />
-                                <Text style={{ fontSize: 10, color: '#3B82F6', fontWeight: '600', textDecorationLine: 'underline' }}>
-                                  GPS Stamped
-                                </Text>
-                              </TouchableOpacity>
-                            )}
-                          </View>
-                          <View style={[styles.statusBadge, { backgroundColor: statusColor + '15' }]}>
-                            <Text style={{ color: statusColor, fontSize: 11, fontWeight: '700' }}>
-                              {record.status} {record.hours > 0 ? `(${record.hours}h)` : ''}
-                            </Text>
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </View>
-                ))
-              ) : (
-                <View style={styles.emptyModalState}>
-                  <Feather name="calendar" size={40} color={COLORS.textMuted} style={{ marginBottom: 12 }} />
-                  <Text style={styles.emptyModalText}>No attendance records marked yet.</Text>
-                </View>
-              )}
-            </ScrollView>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
 
       {/* ===== SHARED DOCUMENTS MODAL ===== */}
       <Modal visible={showDocsModal} transparent animationType="slide" onRequestClose={() => setShowDocsModal(false)}>
@@ -3965,42 +3886,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  /* Attendance Report styles */
-  attendanceDateGroup: {
-    marginBottom: 20,
-  },
-  attendanceDateHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-    backgroundColor: '#F8FAFC',
-    padding: 8,
-    borderRadius: 6,
-  },
-  attendanceDateText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textMuted,
-  },
-  attendanceRecordRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
-  },
-  attendanceWorkerName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textDark,
-  },
-  attendanceWorkerRole: {
-    fontSize: 12,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,

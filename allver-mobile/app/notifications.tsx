@@ -60,10 +60,7 @@ const parseNotificationText = (text: string) => {
   }
 
   // 2. Identify action types based on brackets or keywords
-  if (text.includes('[View Attendance]')) {
-    actionType = 'attendance';
-    body = body.replace(/\[View Attendance\]/gi, '').trim();
-  } else if (text.includes('[View Invitation]')) {
+  if (text.includes('[View Invitation]')) {
     actionType = 'invitation';
     body = body.replace(/\[View Invitation\]/gi, '').trim();
   } else if (text.includes('[View Progress]')) {
@@ -468,47 +465,11 @@ export default function NotificationsScreen() {
                         borderColor: '#A7F3D0'
                       }}>
                         <Text style={{ color: COLORS.green, fontSize: 11, fontWeight: '700', marginRight: 4 }}>
-                          {parsed.actionType === 'attendance' ? 'View Attendance' : parsed.actionType === 'invitation' ? 'View Invitation' : 'View Progress'}
+                          {parsed.actionType === 'invitation' ? 'View Invitation' : 'View Progress'}
                         </Text>
                         <Feather name="arrow-right" size={11} color={COLORS.green} />
                       </View>
                     </View>
-                  )}
-
-                  {/* Contractor approval action buttons */}
-                  {(currentUser?.role === 'Contractor' || currentUser?.role === 'Architect' || currentUser?.role === 'Professional') && item.text.includes('Labour Checked In') && (
-                    <TouchableOpacity
-                      style={{
-                        backgroundColor: item.isMarked ? '#94A3B8' : '#10B981',
-                        paddingVertical: 6,
-                        paddingHorizontal: 12,
-                        borderRadius: 6,
-                        alignItems: 'center',
-                        marginTop: 8,
-                        alignSelf: 'flex-start'
-                      }}
-                      disabled={!!item.isMarked}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        const dateMatch = item.text.match(/for date\s+(\d{4}-\d{2}-\d{2})/i);
-                        const checkInDate = dateMatch ? dateMatch[1] : '';
-                        router.push({
-                          pathname: '/labour-detail',
-                          params: {
-                            id: sender._id,
-                            name: sender.fullName,
-                            role: sender.role,
-                            avatar: resolveAvatarUrl(sender.avatarUrl),
-                            targetDate: checkInDate,
-                            autoOpen: 'true'
-                          }
-                        });
-                      }}
-                    >
-                      <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '700' }}>
-                        {item.isMarked ? '✓ Marked' : 'Mark Attendance'}
-                      </Text>
-                    </TouchableOpacity>
                   )}
 
                   {/* Direct Invitation Actions */}

@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, ScrollView, Platform, Alert, Dimensions,
+  KeyboardAvoidingView, ScrollView, Platform, Alert, Dimensions, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5 } from '@expo/vector-icons';
-import { useRouter, Link } from 'expo-router';
+import { useRouter, useLocalSearchParams, Link } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
 import { useTranslation, getLocalLanguage } from '../utils/i18n';
 import { saveToken, saveStoredUser } from '../constants/Auth';
+import { sendFirebaseOtp, verifyFirebaseOtp } from '../utils/FirebaseAuthService';
 
 const COLORS = {
   green: '#1BC47D',
@@ -23,6 +24,7 @@ const COLORS = {
   textMuted: '#9CA3AF',
   textLabel: '#374151',
   red: '#EF4444',
+  teal: '#0F4C43',
 };
 
 const ROLES = [
@@ -45,21 +47,166 @@ const showAlert = (title: string, message: string, buttons?: any[]) => {
 
 export default function SignupScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ verifiedPhone?: string; idToken?: string }>();
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState(params.verifiedPhone ? params.verifiedPhone.replace('+91', '').trim() : '');
+  const [firebaseIdToken, setFirebaseIdToken] = useState(params.idToken || '');
+  const [isPhoneVerified, setIsPhoneVerified] = useState(!!params.idToken);
+  
+  // OTP Verification States
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
+  const [resendTimer, setResendTimer] = useState(0);
+  const timerRef = useRef<any>(null);
+
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState('Client');
   const [city, setCity] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
+  // Countdown timer for OTP resend
+  useEffect(() => {
+    if (resendTimer > 0) {
+      timerRef.current = setTimeout(() => {
+        setResendTimer(prev => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [resendTimer]);
+
+  // Sync params if passed
+  useEffect(() => {
+    if (params.verifiedPhone) {
+      setPhoneNumber(params.verifiedPhone.replace('+91', '').trim());
+      setIsPhoneVerified(true);
+    }
+    if (params.idToken) {
+      setFirebaseIdToken(params.idToken);
+      setIsPhoneVerified(true);
+    }
+  }, [params.verifiedPhone, params.idToken]);
+
+  const handleSendOtp = async () => {
+    const rawDigits = phoneNumber.replace(/\D/g, '');
+    if (!rawDigits || rawDigits.length < 10) {
+      showAlert('Invalid Phone', 'Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const result = await sendFirebaseOtp(phoneNumber);
+      if (result.success && result.confirmation) {
+        setConfirmationResult(result.confirmation);
+        setOtpSent(true);
+        setResendTimer(30);
+        showAlert('OTP Sent', `A 6-digit verification code has been sent to +91 ${rawDigits.slice(-10)}`);
+      } else {
+        showAlert('OTP Error', result.message || 'Could not send verification code.');
+      }
+    } catch (err: any) {
+      console.error('[SignupScreen] Error sending OTP:', err);
+      showAlert('Error', err.message || 'Failed to send OTP.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpCode || otpCode.trim().length < 6) {
+      showAlert('Invalid OTP', 'Please enter the 6-digit code received via SMS.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const verifyRes = await verifyFirebaseOtp(confirmationResult, otpCode);
+      if (verifyRes.success && verifyRes.idToken) {
+        setFirebaseIdToken(verifyRes.idToken);
+        setIsPhoneVerified(true);
+        setOtpSent(false);
+        showAlert('Verified', 'Phone number verified successfully!');
+      } else {
+        showAlert('Verification Failed', verifyRes.message || 'Incorrect OTP code.');
+      }
+    } catch (err: any) {
+      console.error('[SignupScreen] OTP verification error:', err);
+      showAlert('Error', err.message || 'Failed to verify OTP.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleRegister = async () => {
-    if (!fullName || !email || !password || !city) {
-      showAlert('Missing Fields', 'Please fill in all required fields.');
+    if (!fullName || !city) {
+      showAlert('Missing Fields', 'Please enter your Full Name and City.');
+      return;
+    }
+
+    // If phone OTP was verified with Firebase
+    if (isPhoneVerified && firebaseIdToken) {
+      setIsLoading(true);
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/auth/firebase-phone-register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            idToken: firebaseIdToken,
+            phoneNumber: phoneNumber.trim(),
+            fullName: fullName.trim(),
+            role,
+            city: city.trim(),
+            email: email.trim().toLowerCase(),
+            language: getLocalLanguage() || 'en',
+          }),
+        });
+
+        const data = await response.json();
+        if (response.ok && data.success) {
+          const signupToken = data.token || data.user?._id;
+          if (signupToken) {
+            await saveToken(signupToken);
+            await saveStoredUser(data.user);
+            (global as any).currentUser = data.user;
+          }
+
+          showAlert('Success', 'Account created successfully!', [
+            {
+              text: 'OK',
+              onPress: () => {
+                if (data.user?.role === 'Architect') {
+                  router.replace('/architect-profile');
+                } else if (data.user?.role === 'Contractor') {
+                  router.replace('/contractor-profile');
+                } else {
+                  router.replace('/(tabs)');
+                }
+              },
+            },
+          ]);
+        } else {
+          showAlert('Registration Failed', data.message || 'Could not complete registration.');
+        }
+      } catch (err) {
+        console.error('[SignupScreen] Firebase register error:', err);
+        showAlert('Network Error', 'Could not connect to the server.');
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // Standard Email + Password Register
+    if (!email || !password) {
+      showAlert('Missing Fields', 'Please fill in Email and Password, or verify your phone number with OTP.');
       return;
     }
     if (password.length < 6) {
@@ -76,12 +223,12 @@ export default function SignupScreen() {
       const response = await fetch(`${BACKEND_URL}/api/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          fullName, 
-          email: email.trim().toLowerCase(), 
-          phoneNumber, 
-          password, 
-          role, 
+        body: JSON.stringify({
+          fullName,
+          email: email.trim().toLowerCase(),
+          phoneNumber,
+          password,
+          role,
           city,
           language: getLocalLanguage() || 'en'
         }),
@@ -90,7 +237,6 @@ export default function SignupScreen() {
       const data = await response.json();
 
       if (response.ok) {
-        // Automatically save the session token and user data on successful register
         const signupToken = data.user?._id;
         if (signupToken) {
           await saveToken(signupToken);
@@ -99,8 +245,8 @@ export default function SignupScreen() {
         }
 
         showAlert('Success', 'Account created successfully!', [
-          { 
-            text: 'OK', 
+          {
+            text: 'OK',
             onPress: () => {
               if (data.user?.role === 'Architect') {
                 router.replace('/architect-profile');
@@ -109,7 +255,7 @@ export default function SignupScreen() {
               } else {
                 router.replace('/(tabs)');
               }
-            } 
+            }
           },
         ]);
       } else {
@@ -175,12 +321,12 @@ export default function SignupScreen() {
 
               {/* Email */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t('email')} <Text style={styles.req}>*</Text></Text>
+                <Text style={styles.label}>{t('email')} {!isPhoneVerified && <Text style={styles.req}>*</Text>}</Text>
                 <View style={styles.inputWrap}>
                   <Feather name="mail" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder="you@example.com"
+                    placeholder={isPhoneVerified ? "you@example.com (Optional)" : "you@example.com"}
                     placeholderTextColor={COLORS.textMuted}
                     keyboardType="email-address"
                     autoCapitalize="none"
@@ -190,21 +336,88 @@ export default function SignupScreen() {
                 </View>
               </View>
 
-              {/* Phone (optional) */}
+              {/* Phone (with Firebase OTP Verification) */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t('phoneNumber')}</Text>
-                <View style={styles.inputWrap}>
-                  <Feather name="phone" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <Text style={styles.label}>{t('phoneNumber')} {isPhoneVerified && <Text style={{ color: COLORS.green, fontWeight: '700' }}>(Verified ✓)</Text>}</Text>
+                  {!isPhoneVerified && phoneNumber.length === 10 && !otpSent && (
+                    <TouchableOpacity onPress={handleSendOtp} disabled={isLoading}>
+                      <Text style={{ fontSize: 12, color: COLORS.green, fontWeight: '700' }}>
+                        Verify with OTP
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <View style={[styles.inputWrap, isPhoneVerified && { borderColor: COLORS.green, backgroundColor: COLORS.greenLight }]}>
+                  <View style={{ paddingLeft: 14, paddingRight: 6 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark }}>+91</Text>
+                  </View>
                   <TextInput
                     style={styles.input}
-                    placeholder="+91 XXXXX XXXXX"
+                    placeholder="10-digit mobile number"
                     placeholderTextColor={COLORS.textMuted}
                     keyboardType="phone-pad"
+                    maxLength={10}
                     value={phoneNumber}
-                    onChangeText={setPhoneNumber}
+                    editable={!isPhoneVerified && !isLoading}
+                    onChangeText={(txt) => {
+                      setPhoneNumber(txt.replace(/\D/g, ''));
+                      setIsPhoneVerified(false);
+                      setOtpSent(false);
+                    }}
                   />
+                  {isPhoneVerified ? (
+                    <Feather name="check-circle" size={18} color={COLORS.green} style={styles.inputIcon} />
+                  ) : null}
                 </View>
               </View>
+
+              {/* Inline OTP Input when OTP is sent */}
+              {otpSent && !isPhoneVerified && (
+                <View style={styles.inputGroup}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={styles.label}>Enter 6-digit OTP <Text style={styles.req}>*</Text></Text>
+                    {resendTimer > 0 ? (
+                      <Text style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: '600' }}>
+                        Resend in {resendTimer}s
+                      </Text>
+                    ) : (
+                      <TouchableOpacity onPress={handleSendOtp} disabled={isLoading}>
+                        <Text style={{ fontSize: 12, color: COLORS.green, fontWeight: '700' }}>
+                          Resend OTP
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <View style={[styles.inputWrap, { flex: 1 }]}>
+                      <Feather name="shield" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+                      <TextInput
+                        style={[styles.input, { letterSpacing: 4, fontWeight: '700' }]}
+                        placeholder="••••••"
+                        placeholderTextColor={COLORS.textMuted}
+                        keyboardType="numeric"
+                        maxLength={6}
+                        value={otpCode}
+                        onChangeText={setOtpCode}
+                      />
+                    </View>
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: COLORS.green,
+                        borderRadius: 14,
+                        paddingHorizontal: 16,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      }}
+                      onPress={handleVerifyOtp}
+                      disabled={isLoading}
+                    >
+                      <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>Verify</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
 
               {/* City */}
               <View style={styles.inputGroup}>
@@ -258,12 +471,12 @@ export default function SignupScreen() {
 
               {/* Password */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t('password')} <Text style={styles.req}>*</Text></Text>
+                <Text style={styles.label}>{t('password')} {!isPhoneVerified && <Text style={styles.req}>*</Text>}</Text>
                 <View style={styles.inputWrap}>
                   <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder="Min 6 characters"
+                    placeholder={isPhoneVerified ? "Optional (Min 6 characters)" : "Min 6 characters"}
                     placeholderTextColor={COLORS.textMuted}
                     secureTextEntry={!showPassword}
                     value={password}
@@ -277,12 +490,12 @@ export default function SignupScreen() {
 
               {/* Confirm Password */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t('confirmPassword')} <Text style={styles.req}>*</Text></Text>
+                <Text style={styles.label}>{t('confirmPassword')} {!isPhoneVerified && <Text style={styles.req}>*</Text>}</Text>
                 <View style={styles.inputWrap}>
                   <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder="Re-enter password"
+                    placeholder={isPhoneVerified ? "Re-enter password (if provided)" : "Re-enter password"}
                     placeholderTextColor={COLORS.textMuted}
                     secureTextEntry
                     value={confirmPassword}

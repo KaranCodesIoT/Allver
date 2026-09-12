@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking, Modal, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, Platform, Share, Linking, Modal, TextInput, Alert, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import { Feather, FontAwesome5, MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -80,7 +80,7 @@ export default function ProfileScreen() {
   const [liveFollowersCount, setLiveFollowersCount] = useState(0);
   const [liveFollowingCount, setLiveFollowingCount] = useState(0);
   const [reviewsList, setReviewsList] = useState<any[]>([]);
-  const [portfolioProjects, setPortfolioProjects] = useState<any[]>([]);
+
   const [allWorkspaces, setAllWorkspaces] = useState<any[]>([]);
   const [userUploadedPosts, setUserUploadedPosts] = useState<any[]>([]);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
@@ -96,10 +96,73 @@ export default function ProfileScreen() {
     projectUpdates: true,
     contracts: true,
     payments: true,
-    attendance: true,
     marketing: true,
     systemAlerts: true
   });
+
+  // ===== Labour-specific states =====
+  const [isAvailableForWork, setIsAvailableForWork] = useState(true);
+  const [workArea, setWorkArea] = useState('');
+  const [workAreaRadius, setWorkAreaRadius] = useState(15);
+  const [showWorkAreaModal, setShowWorkAreaModal] = useState(false);
+  const [workAreaInput, setWorkAreaInput] = useState('');
+  const [workAreaRadiusInput, setWorkAreaRadiusInput] = useState('15');
+  const [savingAvailability, setSavingAvailability] = useState(false);
+  const [labourWorkSubTab, setLabourWorkSubTab] = useState<'Active' | 'Completed'>('Active');
+
+  const DEFAULT_LABOUR_JOBS = [
+    {
+      id: 'lj-1',
+      title: 'Residential Construction',
+      location: 'Andheri, Mumbai',
+      date: '12 Sep 2026',
+      status: 'In Progress',
+      image: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=400&q=80',
+    },
+    {
+      id: 'lj-2',
+      title: 'Home Renovation',
+      location: 'Bandra, Mumbai',
+      date: '18 Sep 2026',
+      status: 'Accepted',
+      image: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=400&q=80',
+    },
+    {
+      id: 'lj-3',
+      title: 'Plumbing Repair',
+      location: 'Dadar, Mumbai',
+      date: '20 Sep 2026',
+      status: 'Pending',
+      image: 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?auto=format&fit=crop&w=400&q=80',
+    },
+    {
+      id: 'lj-4',
+      title: 'Painting Work',
+      location: 'Worli, Mumbai',
+      date: '22 Sep 2026',
+      status: 'Pending',
+      image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=400&q=80',
+    },
+  ];
+
+  const DEFAULT_LABOUR_COMPLETED_JOBS = [
+    {
+      id: 'lj-c1',
+      title: 'Electrical Wiring & Setup',
+      location: 'Powai, Mumbai',
+      date: '02 Aug 2026',
+      status: 'Completed',
+      image: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=400&q=80',
+    },
+    {
+      id: 'lj-c2',
+      title: 'Interior Wall Finishing',
+      location: 'Goregaon, Mumbai',
+      date: '24 Jul 2026',
+      status: 'Completed',
+      image: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=400&q=80',
+    },
+  ];
 
   // Listen for real-time profile updates
   useEffect(() => {
@@ -141,7 +204,6 @@ export default function ProfileScreen() {
           projectUpdates: data.notificationSettings.projectUpdates !== false,
           contracts: data.notificationSettings.contracts !== false,
           payments: data.notificationSettings.payments !== false,
-          attendance: data.notificationSettings.attendance !== false,
           marketing: data.notificationSettings.marketing !== false,
           systemAlerts: data.notificationSettings.systemAlerts !== false,
         });
@@ -168,14 +230,7 @@ export default function ProfileScreen() {
     }
   }, [allWorkspaces]);
 
-  // Add Portfolio Highlight states
-  const [showAddHighlightModal, setShowAddHighlightModal] = useState(false);
-  const [highlightTitle, setHighlightTitle] = useState('');
-  const [highlightDesc, setHighlightDesc] = useState('');
-  const [formMediaUrls, setFormMediaUrls] = useState<string[]>([]);
-  const [formMediaType, setFormMediaType] = useState<'image' | 'video' | null>(null);
-  const [uploadingMedia, setUploadingMedia] = useState(false);
-  const [submittingHighlight, setSubmittingHighlight] = useState(false);
+
 
   const fetchReviews = async (userId: string) => {
     try {
@@ -270,120 +325,7 @@ export default function ProfileScreen() {
     return null;
   };
 
-  const pickHighlightMedia = async (type: 'image' | 'video') => {
-    if (type === 'image' && formMediaUrls.length >= 3) {
-      Alert.alert('Limit Reached', 'You can select a maximum of 3 photos.');
-      return;
-    }
 
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission Denied', 'Please grant library permissions to upload media.');
-      return;
-    }
-
-    const maxRemaining = type === 'image' ? 3 - formMediaUrls.length : 1;
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: type === 'image' ? ImagePicker.MediaTypeOptions.Images : ImagePicker.MediaTypeOptions.Videos,
-      allowsMultipleSelection: type === 'image',
-      selectionLimit: type === 'image' ? maxRemaining : 1,
-      allowsEditing: type === 'video',
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      if (type === 'image') {
-        const toUpload = result.assets.slice(0, maxRemaining);
-        const currentUrls = formMediaType === 'image' ? [...formMediaUrls] : [];
-        
-        setUploadingMedia(true);
-        try {
-          const uploadedUrls: string[] = [];
-          for (const asset of toUpload) {
-            const uploadedUrl = await uploadMediaFile(asset.uri, 'image', asset.mimeType, asset.fileName);
-            if (uploadedUrl) {
-              uploadedUrls.push(uploadedUrl);
-            }
-          }
-          if (uploadedUrls.length > 0) {
-            setFormMediaUrls([...currentUrls, ...uploadedUrls]);
-            setFormMediaType('image');
-            Alert.alert('Success', `${uploadedUrls.length} photo(s) uploaded successfully!`);
-          }
-        } catch (err) {
-          console.error(err);
-          Alert.alert('Error', 'Failed to upload one or more photos.');
-        } finally {
-          setUploadingMedia(false);
-        }
-      } else {
-        setUploadingMedia(true);
-        try {
-          const uploadedUrl = await uploadMediaFile(result.assets[0].uri, 'video', result.assets[0].mimeType, result.assets[0].fileName);
-          if (uploadedUrl) {
-            setFormMediaUrls([uploadedUrl]);
-            setFormMediaType('video');
-            Alert.alert('Success', 'Video uploaded successfully!');
-          }
-        } catch (err) {
-          console.error(err);
-          Alert.alert('Error', 'Failed to upload video.');
-        } finally {
-          setUploadingMedia(false);
-        }
-      }
-    }
-  };
-
-  const handleSubmitHighlight = async () => {
-    if (!highlightTitle.trim()) {
-      Alert.alert('Error', 'Please enter a title.');
-      return;
-    }
-    if (formMediaUrls.length === 0) {
-      Alert.alert('Error', 'Please select and upload at least one image or video.');
-      return;
-    }
-    if (formMediaType === 'image' && formMediaUrls.length > 3) {
-      Alert.alert('Limit Exceeded', 'You can select a maximum of 3 photos.');
-      return;
-    }
-    if (!currentUser?._id) return;
-
-    setSubmittingHighlight(true);
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/professional/${currentUser._id}/portfolio-highlights`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: highlightTitle.trim(),
-          description: highlightDesc.trim(),
-          mediaUrls: formMediaUrls,
-          projectType: 'General',
-          location: currentUser.city || 'Mumbai',
-        }),
-      });
-
-      if (res.ok) {
-        Alert.alert('Success', 'Highlight uploaded successfully!');
-        setShowAddHighlightModal(false);
-        setHighlightTitle('');
-        setHighlightDesc('');
-        setFormMediaUrls([]);
-        setFormMediaType(null);
-        loadUserData();
-      } else {
-        const err = await res.json();
-        Alert.alert('Error', err.message || 'Failed to submit portfolio highlight.');
-      }
-    } catch (err) {
-      console.error(err);
-      Alert.alert('Error', 'Network error. Failed to submit.');
-    } finally {
-      setSubmittingHighlight(false);
-    }
-  };
 
   // Client Projects States
   const [clientProjects, setClientProjects] = useState<any[]>([]);
@@ -515,15 +457,6 @@ export default function ProfileScreen() {
     return latestUpdateTime > lastViewed;
   };
 
-  // Attendance Board States
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
-  const [days, setDays] = useState<any[]>([]);
-  const [selectedDay, setSelectedDay] = useState<any | null>(null);
-  
-  const [showMonthPicker, setShowMonthPicker] = useState(false);
-  const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
-
   // Portfolio Video Modal States
   const [selectedVideoUrl, setSelectedVideoUrl] = useState<string | null>(null);
   const [selectedVideoTitle, setSelectedVideoTitle] = useState<string>('');
@@ -558,96 +491,6 @@ export default function ProfileScreen() {
       'July', 'August', 'September', 'October', 'November', 'December'
     ];
     return months[monthIdx];
-  };
-
-  const handlePrevMonth = () => {
-    if (currentMonth === 0) {
-      setCurrentMonth(11);
-      setCurrentYear(prev => prev - 1);
-    } else {
-      setCurrentMonth(prev => prev - 1);
-    }
-  };
-
-  const handleNextMonth = () => {
-    if (currentMonth === 11) {
-      setCurrentMonth(0);
-      setCurrentYear(prev => prev + 1);
-    } else {
-      setCurrentMonth(prev => prev + 1);
-    }
-  };
-
-  const handleOpenMonthPicker = () => {
-    setPickerYear(currentYear);
-    setShowMonthPicker(true);
-  };
-
-  const handlePrevPickerYear = () => {
-    setPickerYear(prev => prev - 1);
-  };
-
-  const handleNextPickerYear = () => {
-    setPickerYear(prev => prev + 1);
-  };
-
-  const handleSelectMonth = (monthIdx: number) => {
-    setCurrentMonth(monthIdx);
-    setCurrentYear(pickerYear);
-    setShowMonthPicker(false);
-  };
-
-  const handleDayPress = (dayObj: any) => {
-    if (!dayObj.isCurrentMonth) return;
-    setSelectedDay(dayObj);
-  };
-
-  const generateCalendar = (year: number, month: number) => {
-    const totalDays = new Date(year, month + 1, 0).getDate();
-    let firstDayIndex = new Date(year, month, 1).getDay(); // 0 is Sun, 1 is Mon
-    const paddingDays = firstDayIndex === 0 ? 6 : firstDayIndex - 1;
-
-    const prevMonthDays = new Date(year, month, 0).getDate();
-    const daysList: any[] = [];
-
-    // Prev month padding
-    for (let i = paddingDays - 1; i >= 0; i--) {
-      daysList.push({ day: prevMonthDays - i, isCurrentMonth: false });
-    }
-
-    // Current month days
-    for (let i = 1; i <= totalDays; i++) {
-      const d = new Date(year, month, i);
-      const dayOfWeek = d.getDay();
-      let status: 'Present' | 'Half Day' | 'Absent' | 'Overtime' | undefined = undefined;
-      let hours = undefined;
-
-      const compToday = new Date();
-      compToday.setHours(0, 0, 0, 0);
-      const cellDate = new Date(year, month, i);
-      cellDate.setHours(0, 0, 0, 0);
-
-      // Past and today days start with no status — only real marked attendance is shown
-      // (status and hours remain undefined until explicitly set by contractor/labour)
-
-      daysList.push({
-        day: i,
-        isCurrentMonth: true,
-        status,
-        hours,
-        advance: 0,
-        remarks: '-'
-      });
-    }
-
-    // Next month padding
-    const totalCells = daysList.length > 35 ? 42 : 35;
-    const nextMonthPadding = totalCells - daysList.length;
-    for (let i = 1; i <= nextMonthPadding; i++) {
-      daysList.push({ day: i, isCurrentMonth: false });
-    }
-
-    return daysList;
   };
 
   // Team Management State
@@ -888,21 +731,12 @@ export default function ProfileScreen() {
               projectUpdates: parsed.notificationSettings.projectUpdates !== false,
               contracts: parsed.notificationSettings.contracts !== false,
               payments: parsed.notificationSettings.payments !== false,
-              attendance: parsed.notificationSettings.attendance !== false,
               marketing: parsed.notificationSettings.marketing !== false,
               systemAlerts: parsed.notificationSettings.systemAlerts !== false,
             });
           }
 
           if (parsed.role !== 'Client') {
-            fetch(`${BACKEND_URL}/api/professional/${parsed._id}/portfolio-highlights`)
-              .then(res => res.json())
-              .then(data => {
-                if (data.portfolioHighlights) {
-                  setPortfolioProjects(data.portfolioHighlights);
-                }
-              })
-              .catch(err => console.error("Error fetching my portfolio highlights:", err));
 
             // Fetch user uploaded posts (discover + design)
             fetch(`${BACKEND_URL}/api/posts/user/${parsed._id}`)
@@ -965,6 +799,15 @@ export default function ProfileScreen() {
             phone: parsed.phoneNumber || parsed.phone || '',
             teamSize: parsed.teamSize?.toString() || '0',
           });
+
+          // Initialize Labour-specific states
+          if (parsed.role === 'Labour') {
+            setIsAvailableForWork(parsed.availability !== 'Not Available');
+            setWorkArea(parsed.workArea || parsed.city || '');
+            setWorkAreaRadius(parsed.workAreaRadius || 15);
+            setWorkAreaInput(parsed.workArea || parsed.city || '');
+            setWorkAreaRadiusInput(String(parsed.workAreaRadius || 15));
+          }
         }
       } catch (e) {
         console.error('Error parsing stored user:', e);
@@ -1115,104 +958,6 @@ export default function ProfileScreen() {
     return `${y}-${monthStr < 10 ? '0' + monthStr : monthStr}-${d < 10 ? '0' + d : d}`;
   };
 
-  const mergeAttendanceData = (calendarDays: any[], workspacesList: any[], y: number, m: number, userId: string) => {
-    return calendarDays.map(dObj => {
-      if (!dObj.isCurrentMonth) return dObj;
-      
-      const dateStr = formatDateString(y, m, dObj.day);
-      let foundStatus: any;
-      let foundHours: number | undefined;
-      let foundLatitude: number | undefined;
-      let foundLongitude: number | undefined;
-      let foundCheckInTime: string | undefined;
-      let foundCheckOutTime: string | undefined;
-      let foundAddress: string | undefined;
-      let foundDistanceFromSite: string | undefined;
-      let foundGoogleMapsLink: string | undefined;
-      let foundAdvance = 0;
-      let foundRemarks = '-';
-
-      workspacesList.forEach((w: any) => {
-        const attRecord = w.labourManagement?.attendance?.find((a: any) => a.date === dateStr);
-        if (attRecord) {
-          const matchingRecord = attRecord.records?.find(
-            (r: any) => (r.labourId?._id || r.labourId)?.toString() === userId.toString()
-          );
-          if (matchingRecord) {
-            foundStatus = matchingRecord.status;
-            foundHours = matchingRecord.hours;
-            foundLatitude = matchingRecord.latitude;
-            foundLongitude = matchingRecord.longitude;
-            foundCheckInTime = matchingRecord.checkInTime;
-            foundCheckOutTime = matchingRecord.checkOutTime;
-            foundAddress = matchingRecord.address;
-            foundDistanceFromSite = matchingRecord.distanceFromSite;
-            foundGoogleMapsLink = matchingRecord.googleMapsLink;
-            foundRemarks = matchingRecord.remarks || '-';
-          }
-        }
-
-        w.labourManagement?.payments?.forEach((p: any) => {
-          const pDate = new Date(p.date);
-          const pYear = pDate.getFullYear();
-          const pMonth = pDate.getMonth();
-          const pDay = pDate.getDate();
-          if (pYear === y && pMonth === m && pDay === dObj.day && (p.labourId?._id || p.labourId)?.toString() === userId.toString()) {
-            if (p.type === 'Advance') {
-              foundAdvance += p.amount || 0;
-            }
-          }
-        });
-      });
-
-      return {
-        ...dObj,
-        status: foundStatus || dObj.status,
-        hours: foundHours !== undefined ? foundHours : dObj.hours,
-        advance: foundAdvance || dObj.advance,
-        remarks: foundRemarks,
-        latitude: foundLatitude,
-        longitude: foundLongitude,
-        checkInTime: foundCheckInTime,
-        checkOutTime: foundCheckOutTime,
-        address: foundAddress,
-        distanceFromSite: foundDistanceFromSite,
-        googleMapsLink: foundGoogleMapsLink
-      };
-    });
-  };
-
-  // Purge ALL legacy attendance cache keys on mount/focus and whenever month/year changes
-  // This ensures new users never see stale mock/dummy data
-  useEffect(() => {
-    if (!currentUser || currentUser.role !== 'Labour') return;
-
-    // Clear any old-format keys from localStorage
-    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-      const keysToRemove: string[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && (k.startsWith('attendance_') || k.startsWith('att_v2_'))) {
-          keysToRemove.push(k);
-        }
-      }
-      keysToRemove.forEach(k => localStorage.removeItem(k));
-    }
-
-    // Clear any old-format keys from global memory
-    const globalObj = global as any;
-    Object.keys(globalObj).forEach(k => {
-      if (k.startsWith('attendance_') || k.startsWith('att_v2_')) {
-        delete globalObj[k];
-      }
-    });
-
-    // Always start fresh — blank calendar with no status on any day
-    const initialDays = generateCalendar(currentYear, currentMonth);
-    const populated = mergeAttendanceData(initialDays, allWorkspaces, currentYear, currentMonth, currentUser._id);
-    setDays(populated);
-  }, [currentUser, currentYear, currentMonth, allWorkspaces]);
-
   const handleShare = async () => {
     try {
       if (!currentUser?._id) return;
@@ -1280,151 +1025,6 @@ export default function ProfileScreen() {
     router.replace('/login');
   };
 
-function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371e3; // metres
-  const phi1 = lat1 * Math.PI/180;
-  const phi2 = lat2 * Math.PI/180;
-  const deltaPhi = (lat2-lat1) * Math.PI/180;
-  const deltaLambda = (lon2-lon1) * Math.PI/180;
-
-  const a = Math.sin(deltaPhi/2) * Math.sin(deltaPhi/2) +
-            Math.cos(phi1) * Math.cos(phi2) *
-            Math.sin(deltaLambda/2) * Math.sin(deltaLambda/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-  return Math.round(R * c);
-}
-
-  const handleLabourCheckIn = async () => {
-    if (!selectedDay || !currentUser?._id) return;
-
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required for GPS check-in.');
-        return;
-      }
-
-      let loc;
-      try {
-        loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      } catch (err) {
-        console.warn('[GPS Fallback] getCurrentPositionAsync failed, trying getLastKnownPositionAsync...', err);
-        try {
-          loc = await Location.getLastKnownPositionAsync();
-        } catch (err2) {
-          console.warn('[GPS Fallback] getLastKnownPositionAsync failed too...', err2);
-        }
-      }
-
-      if (!loc) {
-        console.log('[GPS Fallback] Using mock coordinates (Mumbai)');
-        loc = {
-          coords: {
-            latitude: 19.0760,
-            longitude: 72.8777
-          }
-        };
-      }
-
-      const lat = loc.coords.latitude;
-      const lng = loc.coords.longitude;
-
-      let targetWorkspaceId = '';
-      if (allWorkspaces.length > 0) {
-        targetWorkspaceId = allWorkspaces[0]._id;
-      }
-
-      if (!targetWorkspaceId) {
-        Alert.alert('Error', 'No active project workspace found to check in.');
-        return;
-      }
-
-      // Reverse geocode current coordinates to get address
-      let readableAddress = 'Unknown Location';
-      try {
-        const reverseGeocode = await Location.reverseGeocodeAsync({
-          latitude: lat,
-          longitude: lng
-        });
-        if (reverseGeocode && reverseGeocode.length > 0) {
-          const addr = reverseGeocode[0];
-          const addressParts = [
-            addr.name || addr.streetNumber,
-            addr.street,
-            addr.district || addr.city,
-            addr.region
-          ].filter(Boolean);
-          readableAddress = addressParts.join(', ');
-        }
-      } catch (revErr) {
-        console.error('Reverse geocode failed:', revErr);
-      }
-
-      // Calculate distance from site
-      let distanceFromSite = 'Unknown';
-      const currentWorkspace = allWorkspaces.find((w: any) => w._id === targetWorkspaceId);
-      if (currentWorkspace?.location) {
-        try {
-          const geocoded = await Location.geocodeAsync(currentWorkspace.location);
-          if (geocoded && geocoded.length > 0) {
-            const projectLat = geocoded[0].latitude;
-            const projectLng = geocoded[0].longitude;
-            const dist = getDistanceInMeters(lat, lng, projectLat, projectLng);
-            distanceFromSite = `${dist} meters`;
-          }
-        } catch (geoErr) {
-          console.error('Geocoding project location failed:', geoErr);
-        }
-      }
-
-      // Format current time and maps link
-      const now = new Date();
-      const checkInTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
-      const mapsLink = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-
-      const formatDateString = (y: number, m: number, d: number) => {
-        const monthStr = m + 1;
-        return `${y}-${monthStr < 10 ? '0' + monthStr : monthStr}-${d < 10 ? '0' + d : d}`;
-      };
-      const dateStr = formatDateString(currentYear, currentMonth, selectedDay.day);
-
-      const response = await fetch(`${BACKEND_URL}/api/project-workspaces/${targetWorkspaceId}/labour/attendance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: dateStr,
-          records: [{
-            labourId: currentUser._id,
-            status: selectedDay.status || 'Present',
-            hours: selectedDay.hours || 0,
-            latitude: lat,
-            longitude: lng,
-            checkInTime: checkInTimeStr,
-            address: readableAddress,
-            distanceFromSite,
-            googleMapsLink: mapsLink
-          }],
-          senderId: currentUser._id
-        })
-      });
-
-      if (!response.ok) {
-        const errData = await response.json();
-        Alert.alert('Error', errData.message || 'Failed to check in.');
-        return;
-      }
-
-      fetchClientProjects(currentUser._id, currentUser.role);
-      Alert.alert('Success', 'Checked in successfully! GPS location and address details stamped.');
-      setSelectedDay(null);
-
-    } catch (err) {
-      console.error('Error during labour check-in:', err);
-      Alert.alert('Error', 'Failed to check in due to a network or GPS error.');
-    }
-  };
-
   const performDeleteAccount = async () => {
     if (!currentUser?._id) return;
     try {
@@ -1489,6 +1089,42 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
     router.push('/edit-profile');
   };
 
+  const handleToggleAvailability = async (newValue: boolean) => {
+    if (!currentUser?._id) return;
+    setIsAvailableForWork(newValue);
+    setSavingAvailability(true);
+    try {
+      await fetch(`${BACKEND_URL}/api/user/profile/${currentUser._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ availability: newValue ? 'Available' : 'Not Available' })
+      });
+    } catch (err) {
+      console.error('Error saving availability:', err);
+      setIsAvailableForWork(!newValue); // rollback
+    } finally {
+      setSavingAvailability(false);
+    }
+  };
+
+  const handleSaveWorkArea = async () => {
+    if (!currentUser?._id || !workAreaInput.trim()) return;
+    const radius = parseInt(workAreaRadiusInput) || 15;
+    try {
+      await fetch(`${BACKEND_URL}/api/user/profile/${currentUser._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workArea: workAreaInput.trim(), workAreaRadius: radius })
+      });
+      setWorkArea(workAreaInput.trim());
+      setWorkAreaRadius(radius);
+      setShowWorkAreaModal(false);
+    } catch (err) {
+      console.error('Error saving work area:', err);
+      Alert.alert('Error', 'Failed to save work area');
+    }
+  };
+
   const cityOnly = user.location.split(',')[0]?.trim() || 'Location';
 
   // Experience display: ensure it has "Exp" suffix style
@@ -1496,57 +1132,13 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
     ? user.experience 
     : `${user.experience} Exp`;
 
-  const presentCount = days.filter(d => d.isCurrentMonth && d.status === 'Present').length;
-  const halfCount = days.filter(d => d.isCurrentMonth && d.status === 'Half Day').length;
-  const absentCount = days.filter(d => d.isCurrentMonth && d.status === 'Absent').length;
-  const overtimeCount = days.filter(d => d.isCurrentMonth && d.status === 'Overtime').length;
-
-  // Build Recent Activity dynamically from all workspaces (all months) for current user
+  // Build Recent Activity dynamically from all workspaces for current user
   const getRecentActivity = () => {
     if (!currentUser?._id) return [];
     const activities: any[] = [];
 
     allWorkspaces.forEach((w: any) => {
-      // 1. Gather Attendance Records
-      if (w.labourManagement?.attendance) {
-        w.labourManagement.attendance.forEach((att: any) => {
-          const match = att.records?.find(
-            (r: any) => (r.labourId?._id || r.labourId)?.toString() === currentUser._id.toString()
-          );
-          if (match && match.status) {
-            activities.push({
-              dateRaw: new Date(att.date),
-              hours: `${match.hours?.toFixed(1) || '0.0'} Hours`,
-              status: match.status,
-              advance: 0,
-              latitude: match.latitude,
-              longitude: match.longitude,
-              checkInTime: match.checkInTime,
-              checkOutTime: match.checkOutTime,
-              address: match.address,
-              distanceFromSite: match.distanceFromSite,
-              googleMapsLink: match.googleMapsLink,
-              rawDay: {
-                day: new Date(att.date).getDate(),
-                isCurrentMonth: new Date(att.date).getMonth() === currentMonth && new Date(att.date).getFullYear() === currentYear,
-                status: match.status,
-                hours: match.hours,
-                advance: 0,
-                remarks: match.remarks || '-',
-                latitude: match.latitude,
-                longitude: match.longitude,
-                checkInTime: match.checkInTime,
-                checkOutTime: match.checkOutTime,
-                address: match.address,
-                distanceFromSite: match.distanceFromSite,
-                googleMapsLink: match.googleMapsLink
-              }
-            });
-          }
-        });
-      }
-
-      // 2. Gather Payments/Advances
+      // Gather Payments/Advances
       if (w.labourManagement?.payments) {
         w.labourManagement.payments.forEach((p: any) => {
           if ((p.labourId?._id || p.labourId)?.toString() === currentUser._id.toString()) {
@@ -1618,20 +1210,7 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
     }
   });
 
-  const realVideos = portfolioProjects.flatMap(project => 
-    (project.mediaUrls || [])
-      .filter((url: string) => {
-        if (!url) return false;
-        return /\.(mp4|mov|m4v|3gp|avi|webm|mkv)/i.test(url) || url.includes('/video/') || url.includes('video') || url.includes('mp4');
-      })
-      .map((url: string, index: number) => ({
-        id: `${project._id || project.id}-video-${index}`,
-        title: project.title,
-        duration: '0:15', // Default duration
-        image: PROJECT_TYPE_IMAGES[project.projectType] || PROJECT_TYPE_IMAGES['General'], // Fallback thumbnail
-        videoUrl: url
-      }))
-  );
+
 
   const getCombinedMedia = () => {
     const list: { 
@@ -1675,19 +1254,6 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
       });
     }
 
-    // Keep highlight videos if they exist and are unique
-    realVideos.forEach((vid: any) => {
-      if (!list.some(item => item.url === vid.videoUrl)) {
-        list.push({
-          id: vid.id,
-          type: 'video',
-          url: vid.videoUrl,
-          title: vid.title,
-          duration: vid.duration,
-          image: vid.image
-        });
-      }
-    });
 
     return list;
   };
@@ -1727,7 +1293,7 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
               </View>
             </View>
           </View>
-        ) : (
+        ) : currentUser?.role === 'Labour' ? null : (
           <View style={[styles.coverContainer, !user.coverImage && { backgroundColor: '#CBD5E1' }]}>
             {user.coverImage ? (
               <Image source={{ uri: user.coverImage }} style={styles.coverImage} contentFit="cover" />
@@ -1748,7 +1314,124 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
         )}
 
         {/* ===== PROFILE INFO ===== */}
-        <View style={[styles.profileSection, currentUser?.role === 'Client' && { marginTop: 10 }]}>
+        {currentUser?.role === 'Labour' ? (
+          /* =================== LABOUR PROFILE UI =================== */
+          <View style={styles.labourProfileContainer}>
+            {/* Avatar Section */}
+            <View style={styles.labourAvatarSection}>
+              <TouchableOpacity onPress={handleEditProfile} activeOpacity={0.9} style={styles.labourAvatarTouchable}>
+                {user.avatar ? (
+                  <Image source={{ uri: user.avatar }} style={styles.labourAvatarImage} contentFit="cover" />
+                ) : (
+                  <View style={[styles.labourAvatarImage, { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }]}>
+                    <Feather name="user" size={44} color="#94A3B8" />
+                  </View>
+                )}
+                <View style={styles.labourCameraOverlay}>
+                  <Feather name="camera" size={14} color={COLORS.white} />
+                </View>
+              </TouchableOpacity>
+            </View>
+
+            {/* Name + Verified */}
+            <View style={styles.labourNameRow}>
+              <Text style={styles.labourName} numberOfLines={1}>{user.name || currentUser?.fullName || 'My Name'}</Text>
+              {currentUser?.isVerified && (
+                <View style={styles.labourVerifiedBadge}>
+                  <Feather name="check" size={11} color={COLORS.white} />
+                  <Text style={styles.labourVerifiedText}>Verified</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Premium Worker Badge */}
+            {currentUser?.isPremium && (
+              <View style={styles.premiumBadgeRow}>
+                <FontAwesome5 name="crown" size={12} color="#D97706" style={{ marginRight: 5 }} />
+                <Text style={styles.premiumBadgeText}>Premium Worker</Text>
+              </View>
+            )}
+
+            {/* Skills */}
+            <Text style={styles.labourSkillsText} numberOfLines={2}>
+              {(Array.isArray(user.specializations) && user.specializations.length > 0
+                ? user.specializations
+                : ['Mason', 'Electrician', 'Plumber', 'Painter']
+              ).join(' • ')}
+            </Text>
+
+            {/* Worker ID */}
+            {currentUser?._id && (
+              <Text style={styles.labourIdText}>ID: ALV-WS-{currentUser._id.toString().slice(-5).toUpperCase()}</Text>
+            )}
+
+            {/* Edit Profile Button */}
+            <TouchableOpacity style={styles.labourEditProfileBtn} onPress={handleEditProfile} activeOpacity={0.85}>
+              <Feather name="edit-2" size={14} color={COLORS.textDark} style={{ marginRight: 6 }} />
+              <Text style={styles.labourEditProfileBtnText}>Edit Profile</Text>
+            </TouchableOpacity>
+
+            {/* Available for Work Toggle */}
+            <View style={styles.labourAvailabilityCard}>
+              <View style={styles.labourAvailabilityRow}>
+                <View style={[styles.availabilityDot, { backgroundColor: isAvailableForWork ? COLORS.green : COLORS.textLight }]} />
+                <Text style={styles.availabilityLabel}>Available for Work</Text>
+                <Switch
+                  value={isAvailableForWork}
+                  onValueChange={handleToggleAvailability}
+                  trackColor={{ false: '#CBD5E1', true: '#86EFAC' }}
+                  thumbColor={isAvailableForWork ? COLORS.green : '#f4f3f4'}
+                  disabled={savingAvailability}
+                  style={{ marginLeft: 'auto' }}
+                />
+              </View>
+              <Text style={styles.availabilitySubText}>You will receive job requests nearby</Text>
+            </View>
+
+            {/* Work Area */}
+            <View style={styles.labourWorkAreaCard}>
+              <Ionicons name="location" size={20} color={COLORS.red} style={{ marginRight: 10, marginTop: 2 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.workAreaLabel}>Work Area</Text>
+                <Text style={styles.workAreaCity}>{workArea || cityOnly}</Text>
+                <Text style={styles.workAreaRadius}>(Within {workAreaRadius} km)</Text>
+              </View>
+              <TouchableOpacity onPress={() => { setWorkAreaInput(workArea || cityOnly); setWorkAreaRadiusInput(String(workAreaRadius)); setShowWorkAreaModal(true); }}>
+                <Text style={styles.workAreaChangeBtn}>Change</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Networks */}
+            {currentUser?._id && (
+              <TouchableOpacity
+                style={styles.labourNetworksRow}
+                onPress={() => router.push({ pathname: '/followers-list', params: { userId: currentUser._id, type: 'followers', userName: 'My' } })}
+                activeOpacity={0.75}
+              >
+                <Feather name="users" size={18} color={COLORS.textDark} style={{ marginRight: 10 }} />
+                <Text style={styles.labourNetworksText}>{liveFollowersCount} Networks</Text>
+                <Feather name="chevron-right" size={16} color={COLORS.textMuted} style={{ marginLeft: 'auto' }} />
+              </TouchableOpacity>
+            )}
+
+            {/* Stats Row */}
+            <View style={styles.labourStatsRow}>
+              <View style={styles.labourStatCard}>
+                <Feather name="briefcase" size={18} color={COLORS.textDark} style={{ marginBottom: 4 }} />
+                <Text style={styles.labourStatNumber}>
+                  {clientProjects.filter(p => p.status === 'Completed').length}
+                </Text>
+                <Text style={styles.labourStatLabel}>Jobs Completed</Text>
+              </View>
+              <View style={[styles.labourStatCard, { borderLeftWidth: 1, borderLeftColor: COLORS.border }]}>
+                <FontAwesome5 name="star" size={18} color={COLORS.gold} style={{ marginBottom: 4 }} />
+                <Text style={styles.labourStatNumber}>{averageRating}</Text>
+                <Text style={styles.labourStatLabel}>Rating</Text>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={[styles.profileSection, currentUser?.role === 'Client' && { marginTop: 10 }]}>
           {currentUser?.role === 'Client' ? (
             <View style={{ alignItems: 'center', marginBottom: 10 }}>
               {/* Name */}
@@ -1860,8 +1543,6 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
             </>
           )}
 
-
-
           {/* ===== SPECIALIZATION ===== */}
           {currentUser?.role !== 'Client' && (
             <View style={styles.specializationSection}>
@@ -1875,446 +1556,34 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
                           ? ['General Contracting', 'Civil Construction', 'Renovation']
                           : ['Residential Design', 'Commercial Design', 'Interior Design', 'Landscape Design']))).map((spec, index) => (
                   <View key={index} style={styles.specTag}>
-                    <View style={styles.specDot} />
                     <Text style={styles.specTagText}>{t(spec.toLowerCase().replace(/\s+/g, '')) || spec}</Text>
                   </View>
                 ))}
               </ScrollView>
             </View>
           )}
+          </View>
+        )}
 
-          {/* ===== PORTFOLIO HIGHLIGHTS ===== */}
-          {currentUser?.role !== 'Client' && (
-            <View style={styles.portfolioSection}>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionHeaderTitle}>{t('portfolioHighlights') || 'Portfolio Highlights'}</Text>
-                {portfolioProjects.length > 0 && (
-                  <TouchableOpacity onPress={() => router.push('/portfolio-highlights')}>
-                    <Text style={styles.viewAllText}>{t('viewAll') || 'View All'} ›</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              {portfolioProjects.length > 0 ? (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.highlightsScrollWrapper}>
-                  {/* First item is Add Highlight button */}
-                  <View style={styles.highlightItemContainer}>
-                    <TouchableOpacity 
-                      style={[styles.storyHighlightSquare, styles.storyHighlightAddBtn]}
-                      onPress={() => setShowAddHighlightModal(true)}
-                      activeOpacity={0.85}
-                    >
-                      <Feather name="plus" size={24} color={COLORS.primary} />
-                    </TouchableOpacity>
-                    <Text style={styles.storyHighlightTitle} numberOfLines={1}>{t('add') || 'Add'}</Text>
-                  </View>
 
-                  {portfolioProjects.map((item, index) => {
-                    const mediaUrl = (item.mediaUrls && item.mediaUrls.length > 0) ? item.mediaUrls[0] : '';
-                    const isVideo = isVideoUrl(mediaUrl);
-                    const image = mediaUrl || (PROJECT_TYPE_IMAGES[item.projectType] || PROJECT_TYPE_IMAGES['General']);
-                    const mediaCount = (item.mediaUrls && item.mediaUrls.length) || 0;
-                    return (
-                      <View key={item._id || index} style={styles.highlightItemContainer}>
-                        <TouchableOpacity 
-                          style={styles.storyHighlightSquare}
-                          onPress={() => {
-                            if (mediaCount > 1) {
-                              router.push('/portfolio-highlights');
-                            } else if (isVideo) {
-                              handleOpenVideo(mediaUrl, item.title);
-                            } else {
-                              handleOpenPhoto(image, item.title);
-                            }
-                          }}
-                          activeOpacity={0.85}
-                        >
-                          {isVideo ? (
-                            <Video 
-                              source={{ uri: mediaUrl }}
-                              style={styles.storyHighlightImage}
-                              resizeMode={ResizeMode.COVER}
-                              shouldPlay={false}
-                              useNativeControls={false}
-                            />
-                          ) : (
-                            <Image source={{ uri: image }} style={styles.storyHighlightImage} contentFit="cover" />
-                          )}
-                          {isVideo && (
-                            <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.15)', justifyContent: 'center', alignItems: 'center', borderRadius: 10 }}>
-                              <Feather name="play" size={14} color={COLORS.white} />
-                            </View>
-                          )}
-                          {mediaCount > 1 && (
-                            <View style={{
-                              position: 'absolute', bottom: 3, right: 3,
-                              backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 8,
-                              paddingHorizontal: 5, paddingVertical: 2,
-                              flexDirection: 'row', alignItems: 'center', gap: 2,
-                            }}>
-                              <Feather name="image" size={8} color={COLORS.white} />
-                              <Text style={{ fontSize: 8, color: COLORS.white, fontWeight: '700' }}>{mediaCount}</Text>
-                            </View>
-                          )}
-                        </TouchableOpacity>
-                        <Text style={styles.storyHighlightTitle} numberOfLines={1}>{item.title}</Text>
-                      </View>
-                    );
-                  })}
-                </ScrollView>
-              ) : (
-                <View style={styles.emptyPortfolioContainer}>
-                  <Feather name="image" size={24} color={COLORS.textMuted} style={{ marginBottom: 6 }} />
-                  <Text style={styles.emptyPortfolioText}>No portfolio highlights uploaded yet.</Text>
-                  <TouchableOpacity 
-                    style={styles.addPortfolioBtn}
-                    onPress={() => setShowAddHighlightModal(true)}
-                  >
-                    <Text style={styles.addPortfolioBtnText}>Add Highlights</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* ===== LABOUR ATTENDANCE BOARD ===== */}
-          {currentUser?.role === 'Labour' && (
-            <View style={styles.attendanceSection}>
-              <Text style={styles.sectionHeaderTitle}>My Attendance Board</Text>
-              
-              {(() => {
-                const visibleWorkspaces = allWorkspaces.filter((w: any) => {
-                  return w.status !== 'Completed' && w.status !== 'Cancelled';
-                });
-
-                if (visibleWorkspaces.length === 0) {
-                  return (
-                    <View style={{ paddingVertical: 30, alignItems: 'center' }}>
-                      <Feather name="calendar" size={32} color={COLORS.textMuted} />
-                      <Text style={{ color: COLORS.textMuted, fontSize: 13, marginTop: 8 }}>No active team membership or attendance records found.</Text>
-                    </View>
-                  );
-                }
-
-                return visibleWorkspaces.map((ws: any, wsIdx: number) => {
-                  const wsDays = mergeAttendanceData(generateCalendar(currentYear, currentMonth), [ws], currentYear, currentMonth, currentUser._id);
-                  const wsPresent = wsDays.filter(d => d.isCurrentMonth && d.status === 'Present').length;
-                  const wsHalf = wsDays.filter(d => d.isCurrentMonth && d.status === 'Half Day').length;
-                  const wsAbsent = wsDays.filter(d => d.isCurrentMonth && d.status === 'Absent').length;
-                  const wsOvertime = wsDays.filter(d => d.isCurrentMonth && d.status === 'Overtime').length;
-
-                  const wsContractorName = ws.contractor?.fullName || ws.contractorName || 'BuildWell Contractors';
-
-                  return (
-                    <View key={ws._id || wsIdx} style={{ marginBottom: 20 }}>
-                      {/* Contractor Header Card */}
-                      <View style={{
-                        backgroundColor: '#F0FDF4',
-                        borderWidth: 1,
-                        borderColor: '#BBF7D0',
-                        borderRadius: 12,
-                        padding: 12,
-                        marginBottom: 10,
-                      }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                          <Feather name="user" size={12} color="#059669" style={{ marginRight: 6 }} />
-                          <Text style={{ fontSize: 12, fontWeight: '600', color: '#047857' }}>Contractor: {wsContractorName}</Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <Feather name="clock" size={12} color="#059669" style={{ marginRight: 6 }} />
-                          <Text style={{ fontSize: 11, fontWeight: '500', color: '#059669' }}>Timeline: Ongoing</Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.calendarCard}>
-                        
-                        {/* Calendar Left Section */}
-                        <View style={styles.calendarLeft}>
-                          {/* Header Month Selector */}
-                          <View style={styles.calendarHeader}>
-                            <TouchableOpacity style={styles.monthSelector} onPress={handleOpenMonthPicker} activeOpacity={0.7}>
-                              <Feather name="calendar" size={16} color={COLORS.textDark} style={{ marginRight: 6 }} />
-                              <Text style={styles.monthText}>{`${getMonthName(currentMonth)} ${currentYear}`}</Text>
-                              <Feather name="chevron-down" size={14} color={COLORS.textDark} style={{ marginLeft: 4 }} />
-                            </TouchableOpacity>
-                            <View style={styles.arrowControls}>
-                              <TouchableOpacity style={styles.arrowBtn} onPress={handlePrevMonth}>
-                                <Feather name="chevron-left" size={16} color={COLORS.textDark} />
-                              </TouchableOpacity>
-                              <TouchableOpacity style={styles.arrowBtn} onPress={handleNextMonth}>
-                                <Feather name="chevron-right" size={16} color={COLORS.textDark} />
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-
-                          {/* Days of Week Row */}
-                          <View style={styles.weekdaysRow}>
-                            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => (
-                              <Text key={w} style={styles.weekdayText}>{w}</Text>
-                            ))}
-                          </View>
-
-                          {/* Days Grid */}
-                          <View style={styles.daysGrid}>
-                            {wsDays.map((d, idx) => {
-                              const todayDate = new Date();
-                              const isToday = todayDate.getFullYear() === currentYear && 
-                                              todayDate.getMonth() === currentMonth && 
-                                              d.day === todayDate.getDate() && 
-                                              d.isCurrentMonth;
-                              
-                              const cellDate = new Date(currentYear, currentMonth, d.day);
-                              cellDate.setHours(0, 0, 0, 0);
-                              const compToday = new Date();
-                              compToday.setHours(0, 0, 0, 0);
-                              const isFuture = d.isCurrentMonth && cellDate > compToday;
-
-                              return (
-                                <TouchableOpacity 
-                                  key={idx} 
-                                  style={[
-                                    styles.dayCell, 
-                                    d.isCurrentMonth && isToday && styles.dayCellEditable,
-                                    d.isCurrentMonth && !isToday && !isFuture && styles.dayCellLocked,
-                                    isFuture && styles.dayCellFuture
-                                  ]}
-                                  onPress={() => handleDayPress(d)}
-                                  disabled={!d.isCurrentMonth || isFuture}
-                                  activeOpacity={0.6}
-                                >
-                                  <Text style={[
-                                    styles.dayText, 
-                                    !d.isCurrentMonth && styles.dayTextPrevNext,
-                                    isToday && styles.todayText
-                                  ]}>
-                                    {d.day < 10 ? `0${d.day}` : d.day}
-                                  </Text>
-                                  
-                                  {/* Dot indicator */}
-                                  {d.isCurrentMonth && d.status && (
-                                    <View style={[
-                                      styles.statusDot, 
-                                      d.status === 'Present' ? styles.dotPresent : d.status === 'Half Day' ? styles.dotHalf : d.status === 'Overtime' ? styles.dotOvertime : styles.dotAbsent
-                                    ]} />
-                                  )}
-                                </TouchableOpacity>
-                              );
-                            })}
-                          </View>
-
-                          {/* Legend Row */}
-                          <View style={styles.legendRow}>
-                            <View style={styles.legendItem}>
-                              <View style={[styles.statusDot, styles.dotPresent, { position: 'relative', marginRight: 5 }]} />
-                              <Text style={styles.legendText}>Present</Text>
-                            </View>
-                            <View style={styles.legendItem}>
-                              <View style={[styles.statusDot, styles.dotHalf, { position: 'relative', marginRight: 5 }]} />
-                              <Text style={styles.legendText}>Half Day</Text>
-                            </View>
-                            <View style={styles.legendItem}>
-                              <View style={[styles.statusDot, styles.dotOvertime, { position: 'relative', marginRight: 5 }]} />
-                              <Text style={styles.legendText}>Overtime</Text>
-                            </View>
-                            <View style={styles.legendItem}>
-                              <View style={[styles.statusDot, styles.dotAbsent, { position: 'relative', marginRight: 5 }]} />
-                              <Text style={styles.legendText}>Absent</Text>
-                            </View>
-                          </View>
-
-                        </View>
-
-                        {/* Summary Sidebar Right Section */}
-                        <View style={styles.summarySidebar}>
-                          <View style={styles.sidebarIconBox}>
-                            <MaterialCommunityIcons name="finance" size={18} color="#059669" />
-                          </View>
-                          
-                          <Text style={styles.sidebarSectionTitle}>Attendance Summary</Text>
-                          
-                          <View style={styles.summaryStatItem}>
-                            <Text style={styles.summaryStatLabel}>Present Days</Text>
-                            <Text style={[styles.summaryStatValue, { color: '#059669' }]}>{wsPresent}</Text>
-                          </View>
-
-                          <View style={styles.summaryStatItem}>
-                            <Text style={styles.summaryStatLabel}>Half Days</Text>
-                            <Text style={[styles.summaryStatValue, { color: COLORS.primary }]}>{wsHalf}</Text>
-                          </View>
-
-                          <View style={styles.summaryStatItem}>
-                            <Text style={styles.summaryStatLabel}>Overtime Days</Text>
-                            <Text style={[styles.summaryStatValue, { color: COLORS.blue }]}>{wsOvertime}</Text>
-                          </View>
-
-                          <View style={styles.summaryStatItem}>
-                            <Text style={styles.summaryStatLabel}>Absent Days</Text>
-                            <Text style={[styles.summaryStatValue, { color: COLORS.red }]}>{wsAbsent}</Text>
-                          </View>
-                        </View>
-
-                      </View>
-                    </View>
-                  );
-                });
-              })()}
-
-              {/* ================= RECENT ACTIVITY TIMELINE ================= */}
-              <View style={styles.activityCard}>
-                <View style={styles.activityHeader}>
-                  <Text style={styles.activityTitle}>Recent Activity</Text>
-                </View>
-
-                <View style={styles.timelineWrapper}>
-                  {/* Vertical Line */}
-                  <View style={styles.timelineLine} />
-
-                  {getRecentActivity().map((act, idx) => {
-                    return (
-                      <View key={idx} style={styles.timelineItem}>
-                        
-                        {/* Timeline Icon Node */}
-                        <View style={styles.timelineNode}>
-                          {act.status === 'Present' && (
-                            <View style={[styles.nodeCircle, styles.nodePresent]}>
-                              <Feather name="check" size={12} color="#059669" />
-                            </View>
-                          )}
-                          {act.status === 'Half Day' && (
-                            <View style={[styles.nodeCircle, styles.nodeHalf]}>
-                              <Feather name="clock" size={12} color={COLORS.orange} />
-                            </View>
-                          )}
-                          {act.status === 'Overtime' && (
-                            <View style={[styles.nodeCircle, styles.nodeOvertime]}>
-                              <Feather name="clock" size={12} color={COLORS.blue} />
-                            </View>
-                          )}
-                          {act.status === 'Absent' && (
-                            <View style={[styles.nodeCircle, styles.nodeAbsent]}>
-                              <Feather name="x" size={12} color={COLORS.red} />
-                            </View>
-                          )}
-                        </View>
-
-                        {/* Content Row */}
-                        <TouchableOpacity 
-                          style={styles.timelineContentCard}
-                          onPress={() => handleDayPress(act.rawDay)}
-                          activeOpacity={0.7}
-                        >
-                          <View style={{ flex: 1 }}>
-                            {/* Top row: Date and Status Badge */}
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                              <Text style={styles.timelineDate}>{act.date}</Text>
-                              <View style={[
-                                styles.statusBadge,
-                                act.status === 'Present' ? styles.badgePresent : act.status === 'Half Day' ? styles.badgeHalf : act.status === 'Overtime' ? styles.badgeOvertime : styles.badgeAbsent
-                              ]}>
-                                <Text style={[
-                                    styles.statusBadgeText,
-                                    act.status === 'Present' ? { color: COLORS.green } : act.status === 'Half Day' ? { color: COLORS.orange } : act.status === 'Overtime' ? { color: COLORS.blue } : { color: COLORS.red }
-                                ]}>{act.status}</Text>
-                              </View>
-                            </View>
-
-                            {/* Middle row: Hours & GPS Stamp / Rich Proof */}
-                            <View style={{ marginTop: 2, width: '100%' }}>
-                              {act.latitude && act.longitude ? (
-                                <View style={styles.proofContainer}>
-                                  {/* Time Details */}
-                                  <View style={styles.proofTimeRow}>
-                                    <Text style={styles.proofTimeLabel}>Check-in: <Text style={styles.proofTimeValue}>{act.checkInTime || '--'}</Text></Text>
-                                    <Text style={styles.proofTimeSeparator}>|</Text>
-                                    <Text style={styles.proofTimeLabel}>Check-out: <Text style={styles.proofTimeValue}>{act.checkOutTime || '--'}</Text></Text>
-                                  </View>
-
-                                  {/* Readable Address */}
-                                  <View style={styles.proofLocRow}>
-                                    <Feather name="map-pin" size={11} color="#10B981" style={{ marginTop: 1, marginRight: 4 }} />
-                                    <Text style={styles.proofAddressText}>
-                                      {act.address && act.address !== 'Unknown Location' && !/^\s*-?\d+\.\d+\s*,\s*-?\d+\.\d+\s*$/.test(act.address) ? (
-                                        act.address
-                                      ) : (
-                                        "Address Unavailable\nExact GPS location captured successfully."
-                                      )}
-                                    </Text>
-                                  </View>
-
-                                  {/* Distance and Maps Link */}
-                                  <View style={styles.proofFooterRow}>
-                                    {act.distanceFromSite ? (
-                                      <View style={styles.proofDistanceBadge}>
-                                        <Text style={styles.proofDistanceText}>
-                                          Distance from Site: {act.distanceFromSite}
-                                        </Text>
-                                        {parseInt(act.distanceFromSite) <= 200 ? (
-                                          <Text style={{ fontSize: 9, marginLeft: 2 }}>✅</Text>
-                                        ) : (
-                                          <Text style={{ fontSize: 9, marginLeft: 2 }}>⚠️</Text>
-                                        )}
-                                      </View>
-                                    ) : null}
-
-                                    <TouchableOpacity
-                                      style={styles.mapsLinkBtn}
-                                      onPress={() => {
-                                        const url = act.googleMapsLink || `https://www.google.com/maps/search/?api=1&query=${act.latitude},${act.longitude}`;
-                                        Linking.openURL(url).catch(err => console.error("Couldn't load maps url", err));
-                                      }}
-                                    >
-                                      <Text style={styles.mapsLinkText}>View on Google Maps ↗</Text>
-                                    </TouchableOpacity>
-                                  </View>
-                                </View>
-                              ) : (
-                                <Text style={styles.timelineHours}>{act.hours}</Text>
-                              )}
-                            </View>
-                          </View>
-
-                          <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 12 }}>
-                            {act.advance > 0 && (
-                              <View style={{ alignItems: 'flex-end', marginRight: 4 }}>
-                                <Text style={styles.advanceLabel}>Advance</Text>
-                                <Text style={styles.advanceValue}>₹{act.advance}</Text>
-                              </View>
-                            )}
-                            <Feather name="chevron-right" size={16} color={COLORS.textMuted} />
-                          </View>
-                        </TouchableOpacity>
-
-                      </View>
-                    );
-                  })}
-
-                  {getRecentActivity().length === 0 && (
-                    <View style={{ paddingVertical: 20, alignItems: 'center' }}>
-                      <Text style={{ color: COLORS.textMuted, fontSize: 12 }}>No attendance marked yet</Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-
-            </View>
-          )}
+        {/* ===== TABS + TAB CONTENT (all roles) ===== */}
+        <View style={{ paddingHorizontal: 20 }}>
           {/* ===== TABS ===== */}
           <View style={styles.tabSegmentContainer}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScrollRow}>
               {(currentUser?.role === 'Client'
-                ? ['projects', 'your contracts']
+                ? ['projects']
                 : currentUser?.role === 'Labour'
-                  ? ['projects', 'reviews']
+                  ? ['my work', 'reviews']
                   : ['projects', 'media', 'team', 'reviews']
               ).map((tab) => (
                 <TouchableOpacity 
                   key={tab} 
-                  style={[styles.tabButton, activeTab === tab && styles.activeTabButton]}
+                  style={[styles.tabButton, (activeTab === tab || (tab === 'my work' && activeTab === 'projects')) && styles.activeTabButton]}
                   onPress={() => setActiveTab(tab)}
                 >
-                  <Text style={[styles.tabButtonText, activeTab === tab && styles.activeTabButtonText]}>
-                    {tab === 'your contracts' 
-                      ? t('yourContracts') || 'Your contracts' 
-                      : t(tab) || tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  <Text style={[styles.tabButtonText, (activeTab === tab || (tab === 'my work' && activeTab === 'projects')) && styles.activeTabButtonText]}>
+                    {tab === 'my work' ? 'My Work' : t(tab) || tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -2323,73 +1592,225 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
 
           {/* ===== TAB CONTENT ===== */}
           <View style={styles.tabContentArea}>
-            {activeTab === 'projects' && (
-              <View style={styles.projectsListCol}>
-                {clientProjects
-                  .filter((item) => currentUser?.role !== 'Client' || item.status !== 'Hiring')
-                  .map((item, idx) => (
+            {(activeTab === 'projects' || activeTab === 'my work') && (
+              currentUser?.role === 'Labour' ? (
+                /* ===== LABOUR MY WORK (Active Jobs / Completed) ===== */
+                <View style={styles.labourWorkSection}>
+                  {/* Sub-Tabs: Active Jobs | Completed */}
+                  <View style={styles.labourWorkSubTabsRow}>
                     <TouchableOpacity
-                      key={item.id || idx}
                       style={[
-                        styles.clientProjectCard,
-                        item.status === 'Completed' && styles.completedProjectCard,
-                        item.status === 'Cancelled' && styles.cancelledProjectCard
+                        styles.labourWorkSubTabBtn,
+                        labourWorkSubTab === 'Active' && styles.labourWorkSubTabBtnActive
                       ]}
-                      activeOpacity={currentUser?.role === 'Labour' ? 1.0 : 0.7}
-                      disabled={currentUser?.role === 'Labour'}
-                      onPress={() => {
-                        router.push({
-                          pathname: '/project-progress',
-                          params: {
-                            name: item.title,
-                            location: item.location,
-                            status: item.status,
-                            progress: (item.status === 'Completed' ? '100' : '60'),
-                            workspaceId: item.workspaceId || ''
-                          }
-                        });
-                      }}
+                      onPress={() => setLabourWorkSubTab('Active')}
+                      activeOpacity={0.8}
                     >
-                      {/* NEW UPDATE BADGE */}
-                      {checkNewUpdates(item.workspaceId, item.updates) && (
-                        <View style={styles.newUpdateBadge}>
-                          <View style={styles.newUpdateDot} />
-                          <Text style={styles.newUpdateText}>New Update</Text>
-                        </View>
-                      )}
-
-                      <Text style={styles.clientProjectCardName}>{item.title}</Text>
-                      <Text style={styles.clientProjectCardLoc}>{item.location}</Text>
-                      <View style={styles.projectStatusRow}>
-                        <View style={[styles.projectStatusDot, { 
-                          backgroundColor: item.status === 'Completed' 
-                            ? COLORS.green 
-                            : item.status === 'Cancelled'
-                              ? COLORS.red
-                              : item.status === 'In Progress' 
-                                ? COLORS.blue 
-                                : '#F59E0B' 
-                        }]} />
-                        <Text style={[styles.projectStatusText, { 
-                          color: item.status === 'Completed' 
-                            ? COLORS.green 
-                            : item.status === 'Cancelled'
-                              ? COLORS.red
-                              : item.status === 'In Progress' 
-                                ? COLORS.blue 
-                                : '#F59E0B' 
-                        }]}>{item.status}</Text>
-                      </View>
+                      <Text style={[
+                        styles.labourWorkSubTabText,
+                        labourWorkSubTab === 'Active' && styles.labourWorkSubTabTextActive
+                      ]}>
+                        Active Jobs
+                      </Text>
+                      {labourWorkSubTab === 'Active' && <View style={styles.labourWorkSubTabIndicator} />}
                     </TouchableOpacity>
-                  ))}
-                {clientProjects.filter((item) => currentUser?.role !== 'Client' || item.status !== 'Hiring').length === 0 && (
-                  <View style={{ padding: 30, alignItems: 'center' }}>
-                    <Text style={{ color: COLORS.textMuted, fontSize: 14 }}>
-                      {currentUser?.role === 'Client' ? 'No projects in progress' : 'No projects assigned yet'}
-                    </Text>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.labourWorkSubTabBtn,
+                        labourWorkSubTab === 'Completed' && styles.labourWorkSubTabBtnActive
+                      ]}
+                      onPress={() => setLabourWorkSubTab('Completed')}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[
+                        styles.labourWorkSubTabText,
+                        labourWorkSubTab === 'Completed' && styles.labourWorkSubTabTextActive
+                      ]}>
+                        Completed
+                      </Text>
+                      {labourWorkSubTab === 'Completed' && <View style={styles.labourWorkSubTabIndicator} />}
+                    </TouchableOpacity>
                   </View>
-                )}
-              </View>
+
+                  {/* Jobs List */}
+                  <View style={styles.labourJobsList}>
+                    {(() => {
+                      let allJobs = clientProjects.length > 0
+                        ? clientProjects.map((item, idx) => ({
+                            id: item.id || item.workspaceId || `lj-${idx}`,
+                            title: item.title || 'General Construction',
+                            location: item.location || 'Mumbai, Maharashtra',
+                            date: item.timeline && item.timeline.includes('202') ? item.timeline : `${12 + idx * 3} Sep 2026`,
+                            status: item.status === 'Completed' ? 'Completed' : (idx === 0 ? 'In Progress' : idx === 1 ? 'Accepted' : 'Pending'),
+                            image: (idx === 0
+                              ? 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=400&q=80'
+                              : idx === 1
+                                ? 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=400&q=80'
+                                : idx === 2
+                                  ? 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?auto=format&fit=crop&w=400&q=80'
+                                  : 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=400&q=80'),
+                            workspaceId: item.workspaceId
+                          }))
+                        : DEFAULT_LABOUR_JOBS;
+
+                      let filteredJobs = allJobs.filter((job: any) =>
+                        labourWorkSubTab === 'Active'
+                          ? job.status !== 'Completed' && job.status !== 'Cancelled'
+                          : job.status === 'Completed'
+                      );
+
+                      if (labourWorkSubTab === 'Completed' && filteredJobs.length === 0 && clientProjects.length === 0) {
+                        filteredJobs = DEFAULT_LABOUR_COMPLETED_JOBS;
+                      }
+
+                      if (filteredJobs.length === 0) {
+                        return (
+                          <View style={styles.labourJobsEmptyBox}>
+                            <Feather name="briefcase" size={36} color="#CBD5E1" style={{ marginBottom: 10 }} />
+                            <Text style={styles.labourJobsEmptyTitle}>
+                              {labourWorkSubTab === 'Active' ? 'No active jobs right now' : 'No completed jobs yet'}
+                            </Text>
+                            <Text style={styles.labourJobsEmptySub}>
+                              {labourWorkSubTab === 'Active'
+                                ? 'New project assignments and accepted work will appear here.'
+                                : 'Completed projects and contracts will be listed here.'}
+                            </Text>
+                          </View>
+                        );
+                      }
+
+                      return filteredJobs.map((job: any) => {
+                        let badgeBg = '#FEF3C7';
+                        let badgeColor = '#D97706';
+                        if (job.status === 'In Progress') {
+                          badgeBg = '#ECFDF5';
+                          badgeColor = '#10B981';
+                        } else if (job.status === 'Accepted') {
+                          badgeBg = '#EFF6FF';
+                          badgeColor = '#2563EB';
+                        } else if (job.status === 'Completed') {
+                          badgeBg = '#ECFDF5';
+                          badgeColor = '#10B981';
+                        }
+
+                        return (
+                          <TouchableOpacity
+                            key={job.id}
+                            style={styles.labourJobCard}
+                            activeOpacity={0.85}
+                            onPress={() => {
+                              if (job.workspaceId) {
+                                router.push({
+                                  pathname: '/project-progress',
+                                  params: {
+                                    name: job.title,
+                                    location: job.location,
+                                    status: job.status,
+                                    progress: job.status === 'Completed' ? '100' : '60',
+                                    workspaceId: job.workspaceId
+                                  }
+                                });
+                              }
+                            }}
+                          >
+                            {/* Thumbnail Image */}
+                            <Image source={{ uri: job.image }} style={styles.labourJobThumbnail} contentFit="cover" />
+
+                            {/* Details Col */}
+                            <View style={styles.labourJobDetailsCol}>
+                              <Text style={styles.labourJobTitle} numberOfLines={1}>{job.title}</Text>
+                              
+                              <View style={styles.labourJobMetaRow}>
+                                <Ionicons name="location-sharp" size={13} color="#2563EB" style={{ marginRight: 4 }} />
+                                <Text style={styles.labourJobMetaText} numberOfLines={1}>{job.location}</Text>
+                              </View>
+
+                              <View style={styles.labourJobMetaRow}>
+                                <Ionicons name="calendar-outline" size={13} color="#2563EB" style={{ marginRight: 4 }} />
+                                <Text style={styles.labourJobMetaText}>{job.date}</Text>
+                              </View>
+
+                              <View style={[styles.labourJobStatusBadge, { backgroundColor: badgeBg }]}>
+                                <Text style={[styles.labourJobStatusText, { color: badgeColor }]}>{job.status}</Text>
+                              </View>
+                            </View>
+
+                            {/* Chevron Arrow */}
+                            <Feather name="chevron-right" size={18} color="#94A3B8" style={{ marginLeft: 6 }} />
+                          </TouchableOpacity>
+                        );
+                      });
+                    })()}
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.projectsListCol}>
+                  {clientProjects
+                    .filter((item) => currentUser?.role !== 'Client' || item.status !== 'Hiring')
+                    .map((item, idx) => (
+                      <TouchableOpacity
+                        key={item.id || idx}
+                        style={[
+                          styles.clientProjectCard,
+                          item.status === 'Completed' && styles.completedProjectCard,
+                          item.status === 'Cancelled' && styles.cancelledProjectCard
+                        ]}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          router.push({
+                            pathname: '/project-progress',
+                            params: {
+                              name: item.title,
+                              location: item.location,
+                              status: item.status,
+                              progress: (item.status === 'Completed' ? '100' : '60'),
+                              workspaceId: item.workspaceId || ''
+                            }
+                          });
+                        }}
+                      >
+                        {/* NEW UPDATE BADGE */}
+                        {checkNewUpdates(item.workspaceId, item.updates) && (
+                          <View style={styles.newUpdateBadge}>
+                            <View style={styles.newUpdateDot} />
+                            <Text style={styles.newUpdateText}>New Update</Text>
+                          </View>
+                        )}
+
+                        <Text style={styles.clientProjectCardName}>{item.title}</Text>
+                        <Text style={styles.clientProjectCardLoc}>{item.location}</Text>
+                        <View style={styles.projectStatusRow}>
+                          <View style={[styles.projectStatusDot, { 
+                            backgroundColor: item.status === 'Completed' 
+                              ? COLORS.green 
+                              : item.status === 'Cancelled'
+                                ? COLORS.red
+                                : item.status === 'In Progress' 
+                                  ? COLORS.blue 
+                                  : '#F59E0B' 
+                          }]} />
+                          <Text style={[styles.projectStatusText, { 
+                            color: item.status === 'Completed' 
+                              ? COLORS.green 
+                              : item.status === 'Cancelled'
+                                ? COLORS.red
+                                : item.status === 'In Progress' 
+                                  ? COLORS.blue 
+                                  : '#F59E0B' 
+                          }]}>{item.status}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  {clientProjects.filter((item) => currentUser?.role !== 'Client' || item.status !== 'Hiring').length === 0 && (
+                    <View style={{ padding: 30, alignItems: 'center' }}>
+                      <Text style={{ color: COLORS.textMuted, fontSize: 14 }}>
+                        {currentUser?.role === 'Client' ? 'No projects in progress' : 'No projects assigned yet'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )
             )}
 
             {activeTab === 'your contracts' && (
@@ -3063,150 +2484,6 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
         </View>
       </Modal>
 
-      {/* ================= VIEW MODAL OVERLAY (READ ONLY) ================= */}
-      <Modal
-        visible={!!selectedDay}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setSelectedDay(null)}
-      >
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' }}>
-          <View style={styles.attendanceModalCard}>
-            {/* Modal Header */}
-            <View style={styles.attendanceModalHeader}>
-              <Text style={styles.attendanceModalTitle}>Attendance Record - {getMonthName(currentMonth)} {selectedDay?.day}</Text>
-              <TouchableOpacity onPress={() => setSelectedDay(null)}>
-                <Feather name="x" size={20} color={COLORS.textDark} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Status Information */}
-            <Text style={styles.attendanceInputLabel}>Attendance Status</Text>
-            <View style={[styles.attendanceStatusSelectBtn, { borderColor: selectedDay?.status === 'Present' ? '#059669' : selectedDay?.status === 'Half Day' ? COLORS.primary : selectedDay?.status === 'Overtime' ? COLORS.blue : COLORS.red, backgroundColor: 'rgba(0,0,0,0.03)', alignSelf: 'flex-start', marginVertical: 8, paddingHorizontal: 12 }]}>
-              <View style={[
-                styles.statusDot, 
-                { position: 'relative', marginTop: 0, marginRight: 6 },
-                selectedDay?.status === 'Present' ? styles.dotPresent : selectedDay?.status === 'Half Day' ? styles.dotHalf : selectedDay?.status === 'Overtime' ? styles.dotOvertime : selectedDay?.status === 'Absent' ? styles.dotAbsent : null
-              ]} />
-              <Text style={[styles.attendanceStatusSelectText, { color: selectedDay?.status === 'Present' ? '#059669' : selectedDay?.status === 'Half Day' ? COLORS.primary : selectedDay?.status === 'Overtime' ? COLORS.blue : COLORS.red, fontWeight: '800' }]}>
-                {selectedDay?.status || 'No Record'}
-              </Text>
-            </View>
-
-            {/* Hours and Advance Row */}
-            <View style={styles.attendanceFormRow}>
-              <View style={styles.attendanceFormCol}>
-                <Text style={styles.attendanceInputLabel}>Hours Worked</Text>
-                <View style={[styles.attendanceInputWrapper, { backgroundColor: '#F1F5F9' }]}>
-                  <Text style={{ color: COLORS.textDark, fontSize: 13, paddingHorizontal: 8 }}>{selectedDay?.hours !== undefined ? `${selectedDay.hours.toFixed(1)} Hours` : '-'}</Text>
-                </View>
-              </View>
-
-              <View style={styles.attendanceFormCol}>
-                <Text style={styles.attendanceInputLabel}>Advance Given</Text>
-                <View style={[styles.attendanceInputWrapper, { backgroundColor: '#F1F5F9' }]}>
-                  <Text style={{ color: COLORS.textDark, fontSize: 13, paddingHorizontal: 8 }}>{selectedDay?.advance !== undefined ? `₹ ${selectedDay.advance}` : '-'}</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Remarks */}
-            <Text style={styles.attendanceInputLabel}>Remarks</Text>
-            <View style={[styles.attendanceInputWrapper, { height: 40, backgroundColor: '#F1F5F9', justifyContent: 'center' }]}>
-              <Text style={{ color: COLORS.textDark, fontSize: 13, paddingHorizontal: 8 }} numberOfLines={1}>{selectedDay?.remarks || '-'}</Text>
-            </View>
-
-            {/* GPS Stamping Indicator / Display */}
-            {selectedDay?.latitude && selectedDay?.longitude ? (
-              <View style={{ marginTop: 12, padding: 12, backgroundColor: '#F0FDF4', borderRadius: 8, borderWidth: 1, borderColor: '#DCFCE7' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                  <Feather name="map-pin" size={14} color="#16A34A" />
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#16A34A' }}>📍 GPS Attendance Stamp</Text>
-                </View>
-                
-                {/* Time Details */}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <Text style={{ fontSize: 12, color: COLORS.textMuted }}>Check-in: <Text style={{ color: COLORS.textDark, fontWeight: '600' }}>{selectedDay.checkInTime || '--'}</Text></Text>
-                  <Text style={{ fontSize: 12, color: COLORS.textMuted }}>Check-out: <Text style={{ color: COLORS.textDark, fontWeight: '600' }}>{selectedDay.checkOutTime || '--'}</Text></Text>
-                </View>
-
-                {/* Readable Address */}
-                <Text style={{ fontSize: 12, color: COLORS.textDark, marginBottom: 8, lineHeight: 16 }}>
-                  <Text style={{ fontWeight: '600', color: COLORS.textMuted }}>Address: </Text>
-                  {selectedDay.address && selectedDay.address !== 'Unknown Location' && !/^\s*-?\d+\.\d+\s*,\s*-?\d+\.\d+\s*$/.test(selectedDay.address) ? (
-                    selectedDay.address
-                  ) : (
-                    "Address Unavailable\nExact GPS location captured successfully."
-                  )}
-                </Text>
-
-                {/* Distance and Google Maps Link Row */}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                  {selectedDay.distanceFromSite ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#E2E8F0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
-                      <Text style={{ fontSize: 11, color: COLORS.textDark, fontWeight: '600' }}>
-                        Site Distance: {selectedDay.distanceFromSite}
-                      </Text>
-                      {parseInt(selectedDay.distanceFromSite) <= 200 ? (
-                        <Text style={{ fontSize: 10, marginLeft: 3 }}>✅</Text>
-                      ) : (
-                        <Text style={{ fontSize: 10, marginLeft: 3 }}>⚠️</Text>
-                      )}
-                    </View>
-                  ) : <View />}
-
-                  <TouchableOpacity 
-                    style={{
-                      backgroundColor: '#16A34A',
-                      paddingVertical: 5,
-                      paddingHorizontal: 10,
-                      borderRadius: 6,
-                      alignItems: 'center'
-                    }}
-                    onPress={() => {
-                      const url = selectedDay.googleMapsLink || `https://www.google.com/maps/search/?api=1&query=${selectedDay.latitude},${selectedDay.longitude}`;
-                      Linking.openURL(url).catch(err => console.error("Couldn't load map", err));
-                    }}
-                  >
-                    <Text style={{ color: COLORS.white, fontSize: 11, fontWeight: '700' }}>View on Maps ↗</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : null}
-
-            {/* Close Button */}
-            <View style={styles.attendanceModalButtons}>
-              <View style={{ flexDirection: 'row', gap: 10, flex: 1 }}>
-                <TouchableOpacity 
-                  style={{ flex: 1, backgroundColor: '#E2E8F0', paddingVertical: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }} 
-                  onPress={() => setSelectedDay(null)}
-                >
-                  <Text style={{ color: '#1E293B', fontWeight: '700', fontSize: 13 }}>Close</Text>
-                </TouchableOpacity>
-                {(() => {
-                  if (!selectedDay) return null;
-                  const todayDate = new Date();
-                  todayDate.setHours(0, 0, 0, 0);
-                  const cellDate = new Date(currentYear, currentMonth, selectedDay.day);
-                  cellDate.setHours(0, 0, 0, 0);
-                  const isPastOrToday = cellDate <= todayDate;
-                  
-                  return isPastOrToday && !selectedDay?.latitude ? (
-                    <TouchableOpacity 
-                      style={{ flex: 1.5, backgroundColor: '#10B981', paddingVertical: 10, borderRadius: 8, alignItems: 'center', justifyContent: 'center' }} 
-                      onPress={handleLabourCheckIn}
-                    >
-                      <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 13 }}>Check In (GPS)</Text>
-                    </TouchableOpacity>
-                  ) : null;
-                })()}
-              </View>
-            </View>
-
-          </View>
-        </View>
-      </Modal>
-
       {/* ===== NOTIFICATION SETTINGS MODAL ===== */}
       <Modal
         visible={showSettingsModal}
@@ -3274,7 +2551,6 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
                 { key: 'projectUpdates', label: 'Project Updates', desc: 'Bid selections, applications, invites', icon: 'briefcase' },
                 { key: 'contracts', label: 'Contracts', desc: 'Contract assignment notifications', icon: 'file-text' },
                 { key: 'payments', label: 'Payments', desc: 'Milestone and payout notifications', icon: 'dollar-sign' },
-                { key: 'attendance', label: 'Attendance', desc: 'Check-in and check-out logs', icon: 'clock' },
                 { key: 'marketing', label: 'Marketing', desc: 'News, tips, and AI recommendations', icon: 'gift' },
                 { key: 'systemAlerts', label: 'System Alerts', desc: 'Maintenance and official announcements', icon: 'bell' },
               ].map((item) => {
@@ -3498,62 +2774,6 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
         </TouchableOpacity>
       </Modal>
 
-      {/* Month/Year Picker Modal */}
-      <Modal
-        visible={showMonthPicker}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowMonthPicker(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContainer, { width: width * 0.85, padding: 20 }]}>
-            {/* Year Selector Row */}
-            <View style={styles.pickerYearRow}>
-              <TouchableOpacity onPress={handlePrevPickerYear} style={styles.pickerArrowBtn} activeOpacity={0.7}>
-                <Feather name="chevron-left" size={20} color={COLORS.textDark} />
-              </TouchableOpacity>
-              <Text style={styles.pickerYearText}>{pickerYear}</Text>
-              <TouchableOpacity onPress={handleNextPickerYear} style={styles.pickerArrowBtn} activeOpacity={0.7}>
-                <Feather name="chevron-right" size={20} color={COLORS.textDark} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Months Grid */}
-            <View style={styles.pickerMonthsGrid}>
-              {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((mName, index) => {
-                const isSelected = index === currentMonth && pickerYear === currentYear;
-                return (
-                  <TouchableOpacity
-                    key={index}
-                    style={[
-                      styles.pickerMonthCell,
-                      isSelected && styles.pickerMonthCellActive
-                    ]}
-                    onPress={() => handleSelectMonth(index)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[
-                      styles.pickerMonthText,
-                      isSelected && styles.pickerMonthTextActive
-                    ]}>
-                      {mName}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Close Button */}
-            <TouchableOpacity 
-              style={styles.pickerCloseBtn}
-              onPress={() => setShowMonthPicker(false)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.pickerCloseBtnText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
       {/* ================= PORTFOLIO VIDEO MODAL ================= */}
       <Modal
         visible={!!selectedVideoUrl}
@@ -3606,158 +2826,54 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
           </View>
         </View>
       </Modal>
-      {/* ================= ADD PORTFOLIO HIGHLIGHT MODAL ================= */}
-      <Modal
-        visible={showAddHighlightModal}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setShowAddHighlightModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { width: width * 0.9, padding: 20 }]}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.navy }}>Add Portfolio Highlight</Text>
-              <TouchableOpacity onPress={() => setShowAddHighlightModal(false)} style={{ padding: 4 }}>
-                <Feather name="x" size={20} color={COLORS.textDark} />
+      {/* ================= WORK AREA MODAL (LABOUR) ================= */}
+      <Modal visible={showWorkAreaModal} transparent animationType="slide" onRequestClose={() => setShowWorkAreaModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <Text style={{ fontSize: 17, fontWeight: '800', color: COLORS.navy }}>Work Area</Text>
+              <TouchableOpacity onPress={() => setShowWorkAreaModal(false)}>
+                <Feather name="x" size={22} color={COLORS.textDark} />
               </TouchableOpacity>
             </View>
 
-            {/* Highlight Title */}
-            <Text style={styles.inputLabel}>Title</Text>
+            <Text style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 6, fontWeight: '600' }}>City / Area Name</Text>
             <TextInput
-              style={[styles.textInput, { marginBottom: 14 }]}
-              placeholder="E.g. Brick Work, Modern Villa Layout"
+              style={{ borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 12, fontSize: 14, color: COLORS.textDark, marginBottom: 16, backgroundColor: COLORS.bgLight }}
+              placeholder="E.g. Dadar, Mumbai"
               placeholderTextColor={COLORS.textLight}
-              value={highlightTitle}
-              onChangeText={setHighlightTitle}
+              value={workAreaInput}
+              onChangeText={setWorkAreaInput}
             />
 
-            {/* Description (Optional) */}
-            <Text style={styles.inputLabel}>Description (Optional)</Text>
-            <TextInput
-              style={[styles.textInput, { height: 60, marginBottom: 14, paddingTop: 8 }]}
-              placeholder="Describe this highlight..."
-              placeholderTextColor={COLORS.textLight}
-              value={highlightDesc}
-              onChangeText={setHighlightDesc}
-              multiline
-              numberOfLines={3}
-            />
-
-            {/* Media Upload Buttons */}
-            <Text style={styles.inputLabel}>
-              Upload Media {formMediaType === 'image' && `(${formMediaUrls.length}/3 photos)`}
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: COLORS.bgLight,
-                  borderWidth: 1,
-                  borderColor: COLORS.border,
-                  borderRadius: 8,
-                  paddingVertical: 10,
-                  gap: 6,
-                  opacity: formMediaType === 'video' || (formMediaType === 'image' && formMediaUrls.length >= 3) ? 0.5 : 1
-                }}
-                disabled={formMediaType === 'video' || (formMediaType === 'image' && formMediaUrls.length >= 3)}
-                onPress={() => pickHighlightMedia('image')}
-              >
-                <Feather name="image" size={16} color={COLORS.textDark} />
-                <Text style={{ fontSize: 12, fontWeight: '600', color: COLORS.textDark }}>Upload Photo</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  backgroundColor: COLORS.bgLight,
-                  borderWidth: 1,
-                  borderColor: COLORS.border,
-                  borderRadius: 8,
-                  paddingVertical: 10,
-                  gap: 6,
-                  opacity: formMediaType === 'image' || (formMediaType === 'video' && formMediaUrls.length >= 1) ? 0.5 : 1
-                }}
-                disabled={formMediaType === 'image' || (formMediaType === 'video' && formMediaUrls.length >= 1)}
-                onPress={() => pickHighlightMedia('video')}
-              >
-                <Feather name="video" size={16} color={COLORS.textDark} />
-                <Text style={{ fontSize: 12, fontWeight: '600', color: COLORS.textDark }}>Upload Video</Text>
-              </TouchableOpacity>
+            <Text style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 6, fontWeight: '600' }}>Radius (km)</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 24, flexWrap: 'wrap' }}>
+              {[5, 10, 15, 25, 50].map(r => (
+                <TouchableOpacity
+                  key={r}
+                  onPress={() => setWorkAreaRadiusInput(String(r))}
+                  style={{
+                    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20,
+                    borderWidth: 1.5,
+                    borderColor: workAreaRadiusInput === String(r) ? COLORS.green : COLORS.border,
+                    backgroundColor: workAreaRadiusInput === String(r) ? COLORS.greenLight : COLORS.white,
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: workAreaRadiusInput === String(r) ? COLORS.greenDark : COLORS.textMuted }}>{r} km</Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            {/* Uploading indicator */}
-            {uploadingMedia && (
-              <Text style={{ fontSize: 12, color: COLORS.primary, fontWeight: '600', marginBottom: 14, textAlign: 'center' }}>
-                Uploading media file...
-              </Text>
-            )}
-
-            {/* Uploaded media previews */}
-            {formMediaUrls.length > 0 && !uploadingMedia && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-                {formMediaUrls.map((url, idx) => (
-                  <View key={idx} style={{ width: 60, height: 60, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-                    {formMediaType === 'video' ? (
-                      <Video 
-                        source={{ uri: url }}
-                        style={{ width: '100%', height: '100%' }}
-                        resizeMode={ResizeMode.COVER}
-                        shouldPlay={false}
-                      />
-                    ) : (
-                      <Image source={{ uri: url }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
-                    )}
-                    <TouchableOpacity 
-                      style={{ 
-                        position: 'absolute', 
-                        top: 2, 
-                        right: 2, 
-                        backgroundColor: 'rgba(0,0,0,0.6)', 
-                        borderRadius: 10, 
-                        width: 18, 
-                        height: 18, 
-                        justifyContent: 'center', 
-                        alignItems: 'center' 
-                      }}
-                      onPress={() => {
-                        const newUrls = formMediaUrls.filter((_, i) => i !== idx);
-                        setFormMediaUrls(newUrls);
-                        if (newUrls.length === 0) setFormMediaType(null);
-                      }}
-                    >
-                      <Feather name="x" size={10} color={COLORS.white} />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {/* Submit Button */}
             <TouchableOpacity
-              style={{
-                backgroundColor: submittingHighlight ? COLORS.textLight : COLORS.primary,
-                borderRadius: 10,
-                height: 44,
-                justifyContent: 'center',
-                alignItems: 'center'
-              }}
-              onPress={handleSubmitHighlight}
-              disabled={submittingHighlight || uploadingMedia}
+              style={{ backgroundColor: COLORS.green, borderRadius: 12, paddingVertical: 14, alignItems: 'center' }}
+              onPress={handleSaveWorkArea}
             >
-              <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>
-                {submittingHighlight ? 'Uploading Highlight...' : 'Add Highlight'}
-              </Text>
+              <Text style={{ color: COLORS.white, fontWeight: '800', fontSize: 15 }}>Save Work Area</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
     </SafeAreaView>
   );
 }
@@ -3765,6 +2881,328 @@ function getDistanceInMeters(lat1: number, lon1: number, lat2: number, lon2: num
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
+
+  // ===== LABOUR PROFILE STYLES =====
+  labourProfileContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+    backgroundColor: COLORS.white,
+  },
+  labourAvatarSection: {
+    alignItems: 'center',
+    paddingTop: 16,
+    paddingBottom: 16,
+    backgroundColor: COLORS.white,
+    marginBottom: 16,
+  },
+  labourAvatarTouchable: {
+    position: 'relative',
+  },
+  labourAvatarImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 3,
+    borderColor: COLORS.white,
+  },
+  labourCameraOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.textDark,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.white,
+  },
+  labourNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  labourName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.navy,
+    flexShrink: 1,
+  },
+  labourVerifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.green,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    gap: 3,
+  },
+  labourVerifiedText: {
+    fontSize: 11,
+    color: COLORS.white,
+    fontWeight: '700',
+  },
+  premiumBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  premiumBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#D97706',
+  },
+  labourSkillsText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+    marginBottom: 4,
+    lineHeight: 20,
+  },
+  labourIdText: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginBottom: 16,
+    fontWeight: '600',
+  },
+  labourEditProfileBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  labourEditProfileBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textDark,
+  },
+  labourAvailabilityCard: {
+    backgroundColor: COLORS.greenLight,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  labourAvailabilityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  availabilityDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
+  },
+  availabilityLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    flex: 1,
+  },
+  availabilitySubText: {
+    fontSize: 12,
+    color: COLORS.greenDark,
+    marginTop: 2,
+  },
+  labourWorkAreaCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.bgLight,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  workAreaLabel: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  workAreaCity: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 1,
+  },
+  workAreaRadius: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+  },
+  workAreaChangeBtn: {
+    fontSize: 13,
+    color: COLORS.blue,
+    fontWeight: '700',
+  },
+  labourNetworksRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.bgLight,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  labourNetworksText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textDark,
+  },
+  labourStatsRow: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.bgLight,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 20,
+  },
+  labourStatCard: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 18,
+    paddingHorizontal: 8,
+  },
+  labourStatNumber: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.navy,
+  },
+  labourStatLabel: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    fontWeight: '600',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+
+  // ===== LABOUR MY WORK STYLES =====
+  labourWorkSection: {
+    marginTop: 4,
+  },
+  labourWorkSubTabsRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    marginBottom: 16,
+    gap: 24,
+  },
+  labourWorkSubTabBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    position: 'relative',
+    alignItems: 'center',
+  },
+  labourWorkSubTabBtnActive: {},
+  labourWorkSubTabText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  labourWorkSubTabTextActive: {
+    color: '#16A34A',
+    fontWeight: '700',
+  },
+  labourWorkSubTabIndicator: {
+    position: 'absolute',
+    bottom: -1,
+    left: 0,
+    right: 0,
+    height: 2.5,
+    backgroundColor: '#16A34A',
+    borderRadius: 2,
+  },
+  labourJobsList: {
+    gap: 12,
+  },
+  labourJobCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  labourJobThumbnail: {
+    width: 76,
+    height: 76,
+    borderRadius: 10,
+    marginRight: 12,
+    backgroundColor: '#F1F5F9',
+  },
+  labourJobDetailsCol: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  labourJobTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  labourJobMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+  labourJobMetaText: {
+    fontSize: 12,
+    color: '#4B5563',
+    fontWeight: '500',
+  },
+  labourJobStatusBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  labourJobStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  labourJobsEmptyBox: {
+    paddingVertical: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  labourJobsEmptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  labourJobsEmptySub: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  // ===== END LABOUR STYLES =====
+
   navHeader: {
     height: 52,
     flexDirection: 'row',
@@ -3977,222 +3415,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   specTagText: { fontSize: 12, color: COLORS.textDark, fontWeight: '500' },
-  portfolioSection: { marginBottom: 24 },
-  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  viewAllText: { fontSize: 13, color: COLORS.primary, fontWeight: '700' },
-  highlightsScrollWrapper: {
-    paddingLeft: 4,
-    paddingRight: 20,
-    flexDirection: 'row',
-    gap: 12,
-  },
-  highlightItemContainer: {
-    alignItems: 'center',
-    width: 74,
-    marginRight: 4,
-  },
-  storyHighlightSquare: {
-    width: 74,
-    height: 74,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-    marginBottom: 6,
-  },
-  storyHighlightAddBtn: {
-    borderStyle: 'dashed',
-    borderColor: '#CBD5E1',
-    backgroundColor: '#F8FAFC',
-  },
-  storyHighlightTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textDark,
-    textAlign: 'center',
-    width: 78,
-  },
-  storyHighlightImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 14,
-  },
-  emptyPortfolioContainer: {
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    marginTop: 8,
-  },
-  emptyPortfolioText: {
-    fontSize: 13,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  addPortfolioBtn: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  addPortfolioBtnText: {
-    color: COLORS.white,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  attendanceSection: {
-    marginBottom: 24,
-    paddingHorizontal: 0,
-  },
-  calendarCard: {
-    flexDirection: 'row',
-    marginHorizontal: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 16,
-    backgroundColor: COLORS.white,
-    overflow: 'hidden',
-    padding: 12,
-  },
-  calendarLeft: {
-    flex: 1.8,
-    paddingRight: 12,
-    borderRightWidth: 1,
-    borderRightColor: '#F1F5F9',
-  },
-  calendarHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  monthSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  monthText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: COLORS.textDark,
-  },
-  arrowControls: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  arrowBtn: {
-    padding: 2,
-  },
-  weekdaysRow: {
-    flexDirection: 'row',
-    marginBottom: 6,
-  },
-  weekdayText: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 10,
-    fontWeight: '700',
-    color: COLORS.textMuted,
-  },
-  daysGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 0,
-  },
-  dayCell: {
-    width: `${100 / 7}%`,
-    height: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 1,
-    borderRadius: 8,
-  },
-  dayCellEditable: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1.5,
-    borderColor: COLORS.blue,
-    borderRadius: 8,
-  },
-  dayCellLocked: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 0.5,
-    borderColor: '#F1F5F9',
-  },
-  dayCellFuture: {
-    backgroundColor: COLORS.white,
-    opacity: 0.4,
-  },
-  dayText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: COLORS.textDark,
-  },
-  dayTextPrevNext: {
-    color: '#CBD5E1',
-  },
-  todayText: {
-    color: COLORS.green,
-    fontWeight: '800',
-  },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  dotPresent: {
-    backgroundColor: '#059669',
-  },
-  dotHalf: {
-    backgroundColor: COLORS.orange,
-  },
-  dotOvertime: {
-    backgroundColor: COLORS.blue,
-  },
-  dotAbsent: {
-    backgroundColor: COLORS.red,
-  },
-  legendRow: {
-    flexDirection: 'row',
-    marginTop: 12,
-    justifyContent: 'flex-start',
-    gap: 16,
-    paddingLeft: 4,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  legendText: {
-    fontSize: 9,
-    color: COLORS.textMuted,
-    fontWeight: '600',
-  },
-  summarySidebar: {
-    width: 115,
-    backgroundColor: '#F0FDF4',
-    borderRadius: 12,
-    padding: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sidebarIconBox: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#DCFCE7',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  sidebarSectionTitle: {
-    fontSize: 11,
-    color: COLORS.textDark,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
+
   summaryStatItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -4207,133 +3430,6 @@ const styles = StyleSheet.create({
   summaryStatValue: {
     fontSize: 11,
     fontWeight: '800',
-  },
-  activityCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 16,
-    backgroundColor: COLORS.white,
-    padding: 14,
-  },
-  activityHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  activityTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: COLORS.textDark,
-  },
-  timelineWrapper: {
-    position: 'relative',
-  },
-  timelineLine: {
-    position: 'absolute',
-    left: 17,
-    top: 20,
-    bottom: 20,
-    width: 1.5,
-    backgroundColor: '#E2E8F0',
-  },
-  timelineItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 12,
-    paddingLeft: 36,
-    position: 'relative',
-  },
-  timelineNode: {
-    position: 'absolute',
-    left: 8,
-    top: 10,
-    width: 20,
-    height: 20,
-    zIndex: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  nodeCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.white,
-  },
-  nodePresent: {
-    borderColor: '#059669',
-    backgroundColor: '#ECFDF5',
-  },
-  nodeHalf: {
-    borderColor: COLORS.orange,
-    backgroundColor: '#FFFBEB',
-  },
-  nodeOvertime: {
-    borderColor: COLORS.blue,
-    backgroundColor: '#EFF6FF',
-  },
-  nodeAbsent: {
-    borderColor: COLORS.red,
-    backgroundColor: '#FEF2F2',
-  },
-  timelineContentCard: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  timelineMainInfo: {
-    flex: 1.5,
-  },
-  timelineDate: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: COLORS.textDark,
-  },
-  timelineHours: {
-    fontSize: 10,
-    color: COLORS.textMuted,
-    marginTop: 1,
-  },
-  statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  badgePresent: {
-    backgroundColor: '#ECFDF5',
-  },
-  badgeHalf: {
-    backgroundColor: '#FFFBEB',
-  },
-  badgeOvertime: {
-    backgroundColor: '#EFF6FF',
-  },
-  badgeAbsent: {
-    backgroundColor: '#FEF2F2',
-  },
-  statusBadgeText: { fontSize: 10, fontWeight: '700' },
-  timelineRightInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    flex: 1,
-  },
-  advanceLabel: {
-    fontSize: 9,
-    color: COLORS.textMuted,
-    fontWeight: '600',
-  },
-  advanceValue: {
-    fontSize: 11,
-    color: COLORS.red,
-    fontWeight: '700',
-  },
-  noAdvanceText: {
-    fontSize: 11,
-    color: COLORS.textMuted,
-    fontWeight: '600',
   },
   tabSegmentContainer: { borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 16 },
   tabScrollRow: { gap: 24, paddingBottom: 0 },
@@ -4760,79 +3856,6 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontSize: 14,
     padding: 0,
-  },
-  attendanceOverlayContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  attendanceOverlayBg: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  attendanceModalCard: {
-    width: width * 0.9,
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  attendanceModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  attendanceModalTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.textDark,
-  },
-  attendanceInputLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: COLORS.textDark,
-    marginBottom: 6,
-    marginTop: 12,
-  },
-  attendanceStatusSelectBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 10,
-    padding: 12,
-    backgroundColor: '#F8FAFC',
-  },
-  attendanceStatusSelectText: {
-    fontSize: 13,
-    color: COLORS.textDark,
-    fontWeight: '500',
-  },
-  attendanceFormRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  attendanceFormCol: {
-    flex: 1,
-  },
-  attendanceInputWrapper: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 10,
-    padding: 12,
-    backgroundColor: '#F8FAFC',
-  },
-  attendanceModalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
   },
   modalContainer: {
     width: width * 0.85,

@@ -1,6 +1,6 @@
 import { Tabs, router } from 'expo-router';
 import React, { useState, useEffect, useRef } from 'react';
-import { Feather, FontAwesome5 } from '@expo/vector-icons';
+import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Platform, View, Text, TouchableOpacity, AppState, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from '../../utils/i18n';
@@ -8,7 +8,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { BACKEND_URL } from '../../constants/Config';
-import { getToken, saveStoredUser, removeToken, removeStoredUser } from '../../constants/Auth';
+import { getToken, saveStoredUser, removeToken, removeStoredUser, getStoredUser } from '../../constants/Auth';
 import CallKeepService from '../../utils/CallKeepService';
 
 const COLORS = {
@@ -83,16 +83,21 @@ export default function TabLayout() {
   const responseListener = useRef<any>();
 
   useEffect(() => {
-    let user = (global as any).currentUser;
-    if (!user && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-      const stored = localStorage.getItem('currentUser');
-      if (stored) {
-        try { user = JSON.parse(stored); } catch (e) {}
+    const initRole = async () => {
+      let user = (global as any).currentUser;
+      if (!user) {
+        const stored = await getStoredUser();
+        if (stored) {
+          try {
+            user = typeof stored === 'string' ? JSON.parse(stored) : stored;
+          } catch (e) {}
+        }
       }
-    }
-    if (user?.role) {
-      setUserRole(user.role);
-    }
+      if (user?.role) {
+        setUserRole(user.role);
+      }
+    };
+    initRole();
   }, []);
 
   // POC: Listen to CallIntent actions from our custom native IncomingCallActivity
@@ -198,6 +203,9 @@ export default function TabLayout() {
               console.log('[BOOT] [TabLayout] validateSession: user data fresh, saving to storage...');
               await saveStoredUser(data.user);
               (global as any).currentUser = data.user;
+              if (data.user.role) {
+                setUserRole(data.user.role);
+              }
               console.log('[BOOT] [TabLayout] validateSession: user data saved.');
             }
           } else if (res.status === 404 || res.status === 401) {
@@ -302,8 +310,8 @@ export default function TabLayout() {
             } else {
               console.warn('[BOOT] [TabLayout Warning] Backend FCM token registration failed.');
             }
-          } catch (fcmErr) {
-            console.error('[BOOT] [TabLayout Error] Error retrieving/registering FCM Token:', fcmErr);
+          } catch (fcmErr: any) {
+            console.warn('[BOOT] [TabLayout Warning] FCM token registration skipped (Google Play Services or network not reachable):', fcmErr?.message || fcmErr);
           }
         } else {
           console.log('[BOOT] [TabLayout Warning] Physical device not detected, skipping push token lookup.');
@@ -346,7 +354,7 @@ export default function TabLayout() {
             avatar: data.senderAvatar || ''
           }
         });
-      } else if (category === 'contracts' || category === 'payments' || category === 'attendance' || data.workspaceId) {
+      } else if (category === 'contracts' || category === 'payments' || data.workspaceId) {
         router.push({
           pathname: '/project-progress',
           params: { workspaceId: data.workspaceId }
@@ -387,7 +395,7 @@ export default function TabLayout() {
     };
   }, []);
 
-  const postLabel = userRole === 'Labour' ? t('addWork') : userRole === 'Client' ? 'Post Contract' : t('postProject');
+  const postLabel = userRole === 'Labour' ? t('addWork') : t('postProject');
 
   // Calculate dynamic bottom padding and height based on system safe area bottom insets
   const bottomPadding = insets.bottom > 0 ? insets.bottom : 8;
@@ -431,9 +439,30 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="post-project"
+        options={
+          userRole === 'Client' || userRole === 'Labour'
+            ? {
+                href: null,
+              }
+            : {
+                title: postLabel,
+                tabBarButton: (props) => <CustomPostButton {...props} label={postLabel} />,
+              }
+        }
+      />
+      <Tabs.Screen
+        name="design"
         options={{
-          title: postLabel,
-          tabBarButton: (props) => <CustomPostButton {...props} label={postLabel} />,
+          title: t('design'),
+          tabBarIcon: ({ color }) => <FontAwesome5 name="pencil-ruler" size={20} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="earnings"
+        options={{
+          title: t('earnings') || 'Earnings',
+          tabBarIcon: ({ color }) => <MaterialCommunityIcons name="wallet-outline" size={22} color={color} />,
+          href: userRole === 'Labour' ? undefined : null,
         }}
       />
       <Tabs.Screen
@@ -442,13 +471,6 @@ export default function TabLayout() {
           title: t('explore'),
           tabBarIcon: ({ color }) => <Feather name="globe" size={22} color={color} />,
           href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="design"
-        options={{
-          title: t('design'),
-          tabBarIcon: ({ color }) => <FontAwesome5 name="pencil-ruler" size={20} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -464,6 +486,7 @@ export default function TabLayout() {
         options={{
           title: t('profile'),
           tabBarIcon: ({ color }) => <Feather name="user" size={22} color={color} />,
+          href: userRole === 'Labour' ? null : undefined,
         }}
       />
     </Tabs>

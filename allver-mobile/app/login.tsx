@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet, View, Text, TextInput, TouchableOpacity,
   KeyboardAvoidingView, ScrollView, Platform, Alert,
-  Dimensions, Image, Modal,
+  Dimensions, Image, Modal, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
@@ -10,7 +10,7 @@ import { Link, useRouter } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import { saveToken, saveStoredUser } from '../constants/Auth';
-// Removed MSG91 SendOTP Import
+import { sendFirebaseOtp, verifyFirebaseOtp, formatIndianPhoneNumber } from '../utils/FirebaseAuthService';
 
 const { width, height } = Dimensions.get('window');
 
@@ -66,70 +66,137 @@ export default function LoginScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
 
-  React.useEffect(() => {
-    console.log('[BOOT] [LoginScreen] component mounted.');
-    return () => {
-      console.log('[BOOT] [LoginScreen] component unmounted.');
-    };
-  }, []);
+  // Mode: 'phone' (default OTP) or 'email' (legacy fallback)
+  const [authMode, setAuthMode] = useState<'phone' | 'email'>('phone');
 
-  console.log('[BOOT] [LoginScreen] component rendered.');
+  // Phone OTP States
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
+  const [resendTimer, setResendTimer] = useState(0);
+  const timerRef = useRef<any>(null);
 
+  // Email States
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
 
+  // Focus & Loading States
+  const [isLoading, setIsLoading] = useState(false);
+  const [isPhoneFocused, setIsPhoneFocused] = useState(false);
+  const [isOtpFocused, setIsOtpFocused] = useState(false);
   const [isEmailFocused, setIsEmailFocused] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
+
+  // Forgot Password Modal
   const [resetModalVisible, setResetModalVisible] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetNewPassword, setResetNewPassword] = useState('');
   const [isResetting, setIsResetting] = useState(false);
 
-  const handleLogin = async () => {
-    console.log('[BOOT] [LoginScreen] handleLogin called. Email:', email);
-    if (!email || !password) {
-      console.log('[BOOT] [LoginScreen] missing credentials.');
-      Alert.alert('Missing Fields', 'Please enter both email and password.');
+  // Timer countdown
+  useEffect(() => {
+    if (resendTimer > 0) {
+      timerRef.current = setTimeout(() => {
+        setResendTimer(prev => prev - 1);
+      }, 1000);
+    }
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [resendTimer]);
+
+  const handleSendOtp = async () => {
+    const rawDigits = phoneNumber.replace(/\D/g, '');
+    if (!rawDigits || rawDigits.length < 10) {
+      showAlert('Invalid Phone', 'Please enter a valid 10-digit mobile number.');
       return;
     }
 
     setIsLoading(true);
     try {
-      console.log('[BOOT] [LoginScreen] sending login POST request to:', `${BACKEND_URL}/api/login`);
-      const response = await fetch(`${BACKEND_URL}/api/login`, {
+      const result = await sendFirebaseOtp(phoneNumber);
+      if (result.success && result.confirmation) {
+        setConfirmationResult(result.confirmation);
+        setOtpSent(true);
+        setResendTimer(30);
+        showAlert('OTP Sent', `A 6-digit verification code has been sent to +91 ${rawDigits.slice(-10)}`);
+      } else {
+        showAlert('OTP Error', result.message || 'Could not send verification code.');
+      }
+    } catch (err: any) {
+      console.error('[LoginScreen] Error sending OTP:', err);
+      showAlert('Error', err.message || 'Failed to send OTP.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOtpAndLogin = async () => {
+    if (!otpCode || otpCode.trim().length < 6) {
+      showAlert('Invalid OTP', 'Please enter the 6-digit code received via SMS.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const verifyRes = await verifyFirebaseOtp(confirmationResult, otpCode);
+      if (!verifyRes.success || !verifyRes.idToken) {
+        showAlert('Verification Failed', verifyRes.message || 'Incorrect OTP.');
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('[LoginScreen] Firebase verification passed. Verifying with backend...');
+      const response = await fetch(`${BACKEND_URL}/api/auth/firebase-phone-login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+        body: JSON.stringify({
+          idToken: verifyRes.idToken,
+          phoneNumber: verifyRes.phoneNumber || phoneNumber
+        }),
       });
 
-      console.log('[BOOT] [LoginScreen] login POST response status:', response.status);
       const data = await response.json();
-      console.log('[BOOT] [LoginScreen] login POST response data parsed.');
+      console.log('[LoginScreen] Backend phone login response:', data);
 
-      if (response.ok) {
-        console.log('[BOOT] [LoginScreen] login successful. Saving token and user...');
+      if (response.ok && data.success) {
+        if (data.isNewUser) {
+          // Unregistered user -> direct to signup with verified credentials
+          showAlert('New User', 'Your phone number is verified! Please complete your registration details.', [
+            {
+              text: 'Complete Signup',
+              onPress: () => {
+                router.push({
+                  pathname: '/signup',
+                  params: {
+                    verifiedPhone: data.phoneNumber || phoneNumber,
+                    idToken: verifyRes.idToken
+                  }
+                });
+              }
+            }
+          ]);
+          return;
+        }
+
+        // Existing user login success
         await saveToken(data.token);
         await saveStoredUser(data.user);
         (global as any).currentUser = data.user;
 
-        // Apply profile language
         if (data.user?.language) {
-          console.log('[BOOT] [LoginScreen] applying user language:', data.user.language);
           i18n.changeLanguage(data.user.language);
         }
 
-        console.log('[BOOT] [LoginScreen] redirecting based on user role:', data.user?.role);
         if (data.user?.role === 'Architect') {
           const done =
             data.user.experience ||
             data.user.firmName ||
             (data.user.specialization?.length > 0) ||
             (data.user.portfolioImages?.length > 0);
-          const target = done ? '/(tabs)' : '/architect-profile';
-          console.log('[BOOT] [LoginScreen] replacing route with target:', target);
-          router.replace(target as any);
+          router.replace(done ? '/(tabs)' : '/architect-profile' as any);
         } else if (data.user?.role === 'Contractor') {
           const done =
             data.user.contractorType ||
@@ -137,27 +204,72 @@ export default function LoginScreen() {
             (data.user.workCategory?.length > 0) ||
             (data.user.serviceLocation?.length > 0) ||
             data.user.experience;
-          const target = done ? '/(tabs)' : '/contractor-profile';
-          console.log('[BOOT] [LoginScreen] replacing route with target:', target);
-          router.replace(target as any);
+          router.replace(done ? '/(tabs)' : '/contractor-profile' as any);
         } else {
-          console.log('[BOOT] [LoginScreen] replacing route with target: /(tabs)');
           router.replace('/(tabs)');
         }
       } else {
-        console.warn('[BOOT] [LoginScreen] login failed on server:', data.message);
-        Alert.alert('Login Failed', data.message || 'Please try again.');
+        showAlert('Login Failed', data.message || 'Unable to authenticate user on server.');
       }
-    } catch (err) {
-      console.error('[BOOT] [LoginScreen Error] login exception:', err);
-      Alert.alert('Network Error', 'Could not connect to the server.');
+    } catch (err: any) {
+      console.error('[LoginScreen] Phone verification error:', err);
+      showAlert('Network Error', 'Could not complete login. Please try again.');
     } finally {
       setIsLoading(false);
-      console.log('[BOOT] [LoginScreen] handleLogin finished.');
     }
   };
 
+  const handleEmailLogin = async () => {
+    if (!email || !password) {
+      showAlert('Missing Fields', 'Please enter both email and password.');
+      return;
+    }
 
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        await saveToken(data.token);
+        await saveStoredUser(data.user);
+        (global as any).currentUser = data.user;
+
+        if (data.user?.language) {
+          i18n.changeLanguage(data.user.language);
+        }
+
+        if (data.user?.role === 'Architect') {
+          const done =
+            data.user.experience ||
+            data.user.firmName ||
+            (data.user.specialization?.length > 0) ||
+            (data.user.portfolioImages?.length > 0);
+          router.replace(done ? '/(tabs)' : '/architect-profile' as any);
+        } else if (data.user?.role === 'Contractor') {
+          const done =
+            data.user.contractorType ||
+            data.user.teamSize ||
+            (data.user.workCategory?.length > 0) ||
+            (data.user.serviceLocation?.length > 0) ||
+            data.user.experience;
+          router.replace(done ? '/(tabs)' : '/contractor-profile' as any);
+        } else {
+          router.replace('/(tabs)');
+        }
+      } else {
+        showAlert('Login Failed', data.message || 'Please try again.');
+      }
+    } catch (err) {
+      showAlert('Network Error', 'Could not connect to the server.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <View style={styles.outerWrap}>
@@ -184,12 +296,9 @@ export default function LoginScreen() {
                 {/* Back button */}
                 <TouchableOpacity
                   onPress={() => {
-                    console.log('[BOOT] [LoginScreen] back button pressed.');
                     if (router.canGoBack()) {
-                      console.log('[BOOT] [LoginScreen] going back...');
                       router.back();
                     } else {
-                      console.log('[BOOT] [LoginScreen] replacing route with /...');
                       router.replace('/');
                     }
                   }}
@@ -207,7 +316,114 @@ export default function LoginScreen() {
 
             {/* ─── FORM CARD ─── */}
             <View style={styles.formCard}>
+              {authMode === 'phone' ? (
+                /* ================= PHONE NUMBER + OTP FLOW ================= */
+                <>
+                  {/* Phone Number Input */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Mobile Number <Text style={styles.req}>*</Text></Text>
+                    <View style={[
+                      styles.inputWrap,
+                      isPhoneFocused ? styles.inputWrapActive : styles.inputWrapInactive
+                    ]}>
+                      <View style={styles.countryCodeBadge}>
+                        <Text style={styles.countryCodeText}>🇮🇳 +91</Text>
+                      </View>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Enter 10-digit mobile number"
+                        placeholderTextColor={COLORS.textMuted}
+                        keyboardType="phone-pad"
+                        maxLength={10}
+                        value={phoneNumber}
+                        onChangeText={(txt) => {
+                          setPhoneNumber(txt.replace(/\D/g, ''));
+                          if (otpSent) setOtpSent(false);
+                        }}
+                        onFocus={() => setIsPhoneFocused(true)}
+                        onBlur={() => setIsPhoneFocused(false)}
+                        editable={!isLoading}
+                      />
+                      {phoneNumber.length === 10 && !otpSent && (
+                        <Feather name="check-circle" size={18} color="#16A34A" style={{ marginRight: 12 }} />
+                      )}
+                    </View>
+                  </View>
 
+                  {/* OTP Input Field (Shows after OTP is sent) */}
+                  {otpSent && (
+                    <View style={styles.inputGroup}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={styles.label}>Enter 6-digit OTP <Text style={styles.req}>*</Text></Text>
+                        {resendTimer > 0 ? (
+                          <Text style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: '600' }}>
+                            Resend in {resendTimer}s
+                          </Text>
+                        ) : (
+                          <TouchableOpacity onPress={handleSendOtp} disabled={isLoading}>
+                            <Text style={{ fontSize: 12, color: COLORS.teal, fontWeight: '700' }}>
+                              Resend OTP
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                      <View style={[
+                        styles.inputWrap,
+                        isOtpFocused ? styles.inputWrapActive : styles.inputWrapInactive
+                      ]}>
+                        <Feather name="shield" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+                        <TextInput
+                          style={[styles.input, { letterSpacing: 4, fontSize: 16, fontWeight: '700' }]}
+                          placeholder="••••••"
+                          placeholderTextColor={COLORS.textMuted}
+                          keyboardType="numeric"
+                          maxLength={6}
+                          value={otpCode}
+                          onChangeText={setOtpCode}
+                          onFocus={() => setIsOtpFocused(true)}
+                          onBlur={() => setIsOtpFocused(false)}
+                          editable={!isLoading}
+                        />
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Submit Action Button */}
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, isLoading && { opacity: 0.7 }]}
+                    onPress={otpSent ? handleVerifyOtpAndLogin : handleSendOtp}
+                    disabled={isLoading}
+                    activeOpacity={0.85}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator size="small" color={COLORS.white} />
+                    ) : (
+                      <>
+                        <Text style={styles.primaryBtnText}>
+                          {otpSent ? 'Verify & Log In' : 'Get OTP on SMS'}
+                        </Text>
+                        <View style={styles.arrowCircle}>
+                          <Feather name="arrow-right" size={16} color={COLORS.gold} />
+                        </View>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Toggle Mode Link */}
+                  <TouchableOpacity
+                    style={{ alignSelf: 'center', marginTop: 16 }}
+                    onPress={() => setAuthMode('email')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ fontSize: 12, color: COLORS.textMuted, fontWeight: '600' }}>
+                      Or log in with <Text style={{ color: COLORS.teal, fontWeight: '700' }}>Email & Password</Text>
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                /* ================= EMAIL + PASSWORD FLOW ================= */
+                <>
                   {/* Email */}
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>{t('email') || 'Email'} <Text style={styles.req}>*</Text></Text>
@@ -262,7 +478,7 @@ export default function LoginScreen() {
                   {/* Login Button */}
                   <TouchableOpacity
                     style={[styles.primaryBtn, isLoading && { opacity: 0.7 }]}
-                    onPress={handleLogin}
+                    onPress={handleEmailLogin}
                     disabled={isLoading}
                     activeOpacity={0.85}
                   >
@@ -276,6 +492,18 @@ export default function LoginScreen() {
                     )}
                   </TouchableOpacity>
 
+                  {/* Toggle Mode Link */}
+                  <TouchableOpacity
+                    style={{ alignSelf: 'center', marginTop: 16 }}
+                    onPress={() => setAuthMode('phone')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ fontSize: 12, color: COLORS.textMuted, fontWeight: '600' }}>
+                      Log in with <Text style={{ color: COLORS.teal, fontWeight: '700' }}>Phone OTP SMS</Text>
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
 
             {/* Footer */}
@@ -286,6 +514,30 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </Link>
             </View>
+
+            {/* Legal & Info Links */}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 18, marginBottom: 8 }}>
+              <TouchableOpacity onPress={() => router.push('/about')}>
+                <Text style={{ fontSize: 11, color: COLORS.textMuted }}>About</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 10, color: '#CBD5E1' }}>•</Text>
+              <TouchableOpacity onPress={() => router.push('/contact')}>
+                <Text style={{ fontSize: 11, color: COLORS.textMuted }}>Contact</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 10, color: '#CBD5E1' }}>•</Text>
+              <TouchableOpacity onPress={() => router.push('/privacy-policy')}>
+                <Text style={{ fontSize: 11, color: COLORS.textMuted }}>Privacy</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 10, color: '#CBD5E1' }}>•</Text>
+              <TouchableOpacity onPress={() => router.push('/terms')}>
+                <Text style={{ fontSize: 11, color: COLORS.textMuted }}>Terms</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Hidden recaptcha container for web */}
+            {Platform.OS === 'web' && (
+              <View id="recaptcha-container" style={{ display: 'none' }} />
+            )}
 
             {/* ================= RESET PASSWORD MODAL ================= */}
             <Modal
@@ -299,119 +551,119 @@ export default function LoginScreen() {
                 backgroundColor: 'rgba(0, 0, 0, 0.5)',
                 justifyContent: 'center',
                 alignItems: 'center',
+                padding: 20
               }}>
                 <View style={{
-                  width: '85%',
                   backgroundColor: COLORS.white,
                   borderRadius: 16,
                   padding: 24,
+                  width: '100%',
+                  maxWidth: 380,
                   shadowColor: '#000',
                   shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.15,
-                  shadowRadius: 10,
-                  elevation: 5,
+                  shadowOpacity: 0.2,
+                  shadowRadius: 8,
+                  elevation: 8
                 }}>
-                  <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.textDark, marginBottom: 8 }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>
                     Reset Password
                   </Text>
-                  <Text style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 16 }}>
-                    Enter your registered email and your new password.
+                  <Text style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 16, lineHeight: 18 }}>
+                    Enter your registered email address and new password.
                   </Text>
 
-                  <TextInput
-                    style={{
-                      borderWidth: 1,
-                      borderColor: COLORS.border,
-                      borderRadius: 8,
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      fontSize: 14,
-                      color: COLORS.textDark,
-                      backgroundColor: '#F9FAFB',
-                      marginBottom: 12,
-                    }}
-                    placeholder="Enter your email"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    value={resetEmail}
-                    onChangeText={setResetEmail}
-                  />
-
-                  <TextInput
-                    style={{
-                      borderWidth: 1,
-                      borderColor: COLORS.border,
-                      borderRadius: 8,
-                      paddingHorizontal: 12,
-                      paddingVertical: 10,
-                      fontSize: 14,
-                      color: COLORS.textDark,
-                      backgroundColor: '#F9FAFB',
-                      marginBottom: 20,
-                    }}
-                    placeholder="Enter new password"
-                    placeholderTextColor="#9CA3AF"
-                    secureTextEntry={true}
-                    value={resetNewPassword}
-                    onChangeText={setResetNewPassword}
-                  />
-
-                  <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'flex-end' }}>
-                    <TouchableOpacity
+                  <View style={{ marginBottom: 14 }}>
+                    <Text style={styles.label}>Email Address</Text>
+                    <TextInput
                       style={{
-                        paddingHorizontal: 16,
+                        backgroundColor: COLORS.inputBg,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: COLORS.inputBorder,
+                        paddingHorizontal: 12,
                         paddingVertical: 10,
-                        borderRadius: 8,
-                        backgroundColor: '#F3F4F6',
+                        fontSize: 14,
+                        color: COLORS.textDark
                       }}
-                      disabled={isResetting}
+                      placeholder="Enter your email"
+                      placeholderTextColor={COLORS.textMuted}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      value={resetEmail}
+                      onChangeText={setResetEmail}
+                    />
+                  </View>
+
+                  <View style={{ marginBottom: 20 }}>
+                    <Text style={styles.label}>New Password</Text>
+                    <TextInput
+                      style={{
+                        backgroundColor: COLORS.inputBg,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: COLORS.inputBorder,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        fontSize: 14,
+                        color: COLORS.textDark
+                      }}
+                      placeholder="Enter new password"
+                      placeholderTextColor={COLORS.textMuted}
+                      secureTextEntry
+                      value={resetNewPassword}
+                      onChangeText={setResetNewPassword}
+                    />
+                  </View>
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
+                    <TouchableOpacity
+                      style={{ paddingVertical: 10, paddingHorizontal: 16 }}
                       onPress={() => setResetModalVisible(false)}
                     >
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textMuted }}>
-                        Cancel
-                      </Text>
+                      <Text style={{ fontSize: 14, color: COLORS.textMuted, fontWeight: '600' }}>Cancel</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={{
-                        paddingHorizontal: 16,
-                        paddingVertical: 10,
-                        borderRadius: 8,
                         backgroundColor: COLORS.teal,
+                        paddingVertical: 10,
+                        paddingHorizontal: 20,
+                        borderRadius: 8
                       }}
-                      disabled={isResetting}
                       onPress={async () => {
-                        if (!resetEmail.trim() || !resetNewPassword.trim()) {
-                          Alert.alert('Error', 'Please fill in both email and new password fields.');
+                        if (!resetEmail || !resetNewPassword) {
+                          showAlert('Missing Fields', 'Please fill in both email and new password.');
                           return;
                         }
                         setIsResetting(true);
                         try {
-                          const res = await fetch(`${BACKEND_URL}/api/reset-password`, {
+                          const res = await fetch(`${BACKEND_URL}/api/user/reset-password`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: resetEmail.trim().toLowerCase(), newPassword: resetNewPassword.trim() })
+                            body: JSON.stringify({
+                              email: resetEmail.trim().toLowerCase(),
+                              newPassword: resetNewPassword
+                            })
                           });
-                          const data = await res.json();
+                          const resData = await res.json();
                           if (res.ok) {
-                            Alert.alert('Success', 'Password reset successfully! You can now log in.');
+                            showAlert('Success', 'Password has been updated. You can now log in.');
                             setResetModalVisible(false);
                             setResetEmail('');
                             setResetNewPassword('');
                           } else {
-                            Alert.alert('Error', data.message || 'Failed to reset password.');
+                            showAlert('Failed', resData.message || 'Error resetting password.');
                           }
-                        } catch (err) {
-                          console.error('Password reset error:', err);
-                          Alert.alert('Error', 'Network error. Failed to reset password.');
+                        } catch (e) {
+                          showAlert('Error', 'Could not connect to server.');
                         } finally {
                           setIsResetting(false);
                         }
                       }}
+                      disabled={isResetting}
                     >
-                      <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.white }}>
-                        {isResetting ? 'Saving...' : 'Reset'}
+                      <Text style={{ fontSize: 14, color: COLORS.white, fontWeight: '700' }}>
+                        {isResetting ? 'Saving...' : 'Update Password'}
                       </Text>
                     </TouchableOpacity>
                   </View>

@@ -39,8 +39,7 @@ const getPlannerForRole = (role: string) => {
 };
 
 const isPlannerGoal = (goal: any, role: string) => {
-  return (goal === 'MARK_ATTENDANCE' && (role === 'Labour' || role === 'Contractor')) ||
-         (goal === 'SEND_MESSAGE_TO_WORKER') ||
+  return (goal === 'SEND_MESSAGE_TO_WORKER') ||
          (goal === 'GET_DAILY_PROGRESS') ||
          (goal === 'SEARCH_WORKERS');
 };
@@ -239,8 +238,6 @@ export default function AIAssistantFloatingButton({ userRole = 'Client', userNam
           content: result.responseText,
           timestamp: new Date(),
           action: result.suggestions ? { type: 'AMBIGUOUS' as any, suggestions: result.suggestions } : result.action,
-          attendanceSuccessCard: result.attendanceSuccessCard,
-          contractorAttendanceSuccessCard: result.contractorAttendanceSuccessCard,
           jobPostSuccessCard: result.jobPostSuccessCard,
           messageSuccessCard: result.messageSuccessCard,
         };
@@ -355,8 +352,6 @@ export default function AIAssistantFloatingButton({ userRole = 'Client', userNam
           content: result.responseText,
           timestamp: new Date(),
           action: result.suggestions ? { type: 'AMBIGUOUS' as any, suggestions: result.suggestions } : (result.action || reply.action),
-          attendanceSuccessCard: result.attendanceSuccessCard,
-          contractorAttendanceSuccessCard: result.contractorAttendanceSuccessCard,
           jobPostSuccessCard: result.jobPostSuccessCard,
           messageSuccessCard: result.messageSuccessCard,
         };
@@ -562,91 +557,7 @@ export default function AIAssistantFloatingButton({ userRole = 'Client', userNam
                         </View>
                       )}
 
-                      {/* Attendance Success Card */}
-                      {item.attendanceSuccessCard && (
-                        <View style={{
-                          backgroundColor: '#F0FDF4',
-                          borderColor: '#DCFCE7',
-                          borderWidth: 1,
-                          borderRadius: 12,
-                          padding: 10,
-                          marginTop: 8,
-                          minWidth: width * 0.65,
-                        }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                            <Ionicons name="checkmark-circle" size={18} color="#16A34A" />
-                            <Text style={{ fontSize: 11, fontWeight: '800', color: '#14532D' }}>
-                              {item.attendanceSuccessCard.checkType.toUpperCase()} SUCCESSFUL
-                            </Text>
-                          </View>
-                          
-                          <View style={{ gap: 4 }}>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                              <Text style={{ fontSize: 10, color: '#166534', fontWeight: '500' }}>Site:</Text>
-                              <Text style={{ fontSize: 10, color: '#14532D', fontWeight: '700' }}>{item.attendanceSuccessCard.projectName}</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                              <Text style={{ fontSize: 10, color: '#166534', fontWeight: '500' }}>Time:</Text>
-                              <Text style={{ fontSize: 10, color: '#14532D', fontWeight: '700' }}>{item.attendanceSuccessCard.time}</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                              <Text style={{ fontSize: 10, color: '#166534', fontWeight: '500' }}>Coordinates:</Text>
-                              <Text style={{ fontSize: 9, color: '#14532D', fontWeight: '700' }}>
-                                {item.attendanceSuccessCard.lat.toFixed(4)}, {item.attendanceSuccessCard.lng.toFixed(4)}
-                              </Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                              <Text style={{ fontSize: 10, color: '#166534', fontWeight: '500' }}>Address:</Text>
-                              <Text style={{ fontSize: 9, color: '#14532D', fontWeight: '700', flex: 1, textAlign: 'right', marginLeft: 8 }} numberOfLines={1}>
-                                {item.attendanceSuccessCard.address}
-                              </Text>
-                            </View>
-                          </View>
-                        </View>
-                      )}
 
-                      {/* Contractor Attendance Success Card */}
-                      {item.contractorAttendanceSuccessCard && (
-                        <View style={{
-                          backgroundColor: '#F0FDF4',
-                          borderColor: '#DCFCE7',
-                          borderWidth: 1,
-                          borderRadius: 12,
-                          padding: 10,
-                          marginTop: 8,
-                          minWidth: width * 0.65,
-                        }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                            <Ionicons name="checkmark-circle" size={18} color="#16A34A" />
-                            <Text style={{ fontSize: 11, fontWeight: '800', color: '#14532D' }}>
-                              ATTENDANCE LOGGED
-                            </Text>
-                          </View>
-                          
-                          <View style={{ gap: 4 }}>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                              <Text style={{ fontSize: 10, color: '#166534', fontWeight: '500' }}>Worker:</Text>
-                              <Text style={{ fontSize: 10, color: '#14532D', fontWeight: '700' }}>{item.contractorAttendanceSuccessCard.workerName}</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                              <Text style={{ fontSize: 10, color: '#166534', fontWeight: '500' }}>Site:</Text>
-                              <Text style={{ fontSize: 10, color: '#14532D', fontWeight: '700' }}>{item.contractorAttendanceSuccessCard.projectName}</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                              <Text style={{ fontSize: 10, color: '#166534', fontWeight: '500' }}>Type:</Text>
-                              <Text style={{ fontSize: 10, color: '#14532D', fontWeight: '700' }}>{item.contractorAttendanceSuccessCard.dayType}</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                              <Text style={{ fontSize: 10, color: '#166534', fontWeight: '500' }}>Status:</Text>
-                              <Text style={{ fontSize: 10, color: '#14532D', fontWeight: '700' }}>{item.contractorAttendanceSuccessCard.status}</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                              <Text style={{ fontSize: 10, color: '#166534', fontWeight: '500' }}>Hours Logged:</Text>
-                              <Text style={{ fontSize: 10, color: '#14532D', fontWeight: '700' }}>{item.contractorAttendanceSuccessCard.hours} hrs</Text>
-                            </View>
-                          </View>
-                        </View>
-                      )}
 
                       {/* Job Post Success Card */}
                       {item.jobPostSuccessCard && (

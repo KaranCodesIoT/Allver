@@ -36,11 +36,9 @@ export class PromptBuilder {
         return [
           ActionType.VIEW_PROJECTS,
           ActionType.UPDATE_PORTFOLIO,
-          ActionType.MARK_ATTENDANCE,
           ActionType.VIEW_DESIGNS,
           ActionType.OPEN_CHAT,
           ActionType.OPEN_NOTIFICATIONS,
-          ActionType.OPEN_ATTENDANCE,
           ActionType.OPEN_PAYMENTS,
           ActionType.OPEN_TIMELINE,
           ActionType.OPEN_PROFILE,
@@ -53,10 +51,8 @@ export class PromptBuilder {
         return [
           ActionType.VIEW_PROJECTS,
           ActionType.UPDATE_PORTFOLIO,
-          ActionType.MARK_ATTENDANCE,
           ActionType.OPEN_CHAT,
           ActionType.OPEN_NOTIFICATIONS,
-          ActionType.OPEN_ATTENDANCE,
           ActionType.OPEN_PAYMENTS,
           ActionType.OPEN_PROFILE,
           ActionType.NAVIGATE_TO,
@@ -122,9 +118,6 @@ ALLOWED ACTIONS for "${role}":`;
         case ActionType.UPDATE_PORTFOLIO:
           prompt += `\n- UPDATE_PORTFOLIO: Manage/upload portfolio work.`;
           break;
-        case ActionType.MARK_ATTENDANCE:
-          prompt += `\n- MARK_ATTENDANCE: Check-in attendance. Params: { "checkType": "check-in", "projectName": string }`;
-          break;
         case ActionType.POST_JOB:
           prompt += `\n- POST_JOB: Post new construction job. Params: { "title": string, "budget": number, "workers": number, "location": string, "profession": string }`;
           break;
@@ -133,9 +126,6 @@ ALLOWED ACTIONS for "${role}":`;
           break;
         case ActionType.OPEN_NOTIFICATIONS:
           prompt += `\n- OPEN_NOTIFICATIONS: Navigate to notifications.`;
-          break;
-        case ActionType.OPEN_ATTENDANCE:
-          prompt += `\n- OPEN_ATTENDANCE: Navigate to attendance logs.`;
           break;
         case ActionType.OPEN_PAYMENTS:
           prompt += `\n- OPEN_PAYMENTS: Navigate to payments/transactions.`;

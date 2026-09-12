@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, TextInput, TouchableOpacity, ScrollView, Dimensions, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, FontAwesome5 } from '@expo/vector-icons';
+import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import NotificationBell from '../components/NotificationBell';
-
+import { Fonts } from '../constants/theme';
 
 const { width } = Dimensions.get('window');
 
@@ -22,28 +22,44 @@ const COLORS = {
   bgLight: '#F9FAFB',
 };
 
-const PREDEFINED_SKILLS = [
-  'Mason',
-  'Electrician',
-  'Plumber',
-  'Painter',
-  'Carpenter',
-  'Welder',
-  'Tile Fitter',
-  'Helper'
+const WORKFORCE_SERVICES = [
+  { id: 'Painting', name: 'Painting', icon: 'paint-roller', lib: 'FontAwesome5', filterKey: 'Painter' },
+  { id: 'Masonry', name: 'Masonry', icon: 'wall', lib: 'MaterialCommunityIcons', filterKey: 'Mason' },
+  { id: 'Electrical', name: 'Electrical', icon: 'zap', lib: 'Feather', filterKey: 'Electrician' },
+  { id: 'Plumbing', name: 'Plumbing', icon: 'faucet', lib: 'FontAwesome5', filterKey: 'Plumber' },
+  { id: 'Carpentry', name: 'Carpentry', icon: 'hammer', lib: 'FontAwesome5', filterKey: 'Carpenter' },
+  { id: 'Tiling', name: 'Tiling', icon: 'grid', lib: 'MaterialCommunityIcons', filterKey: 'Tile' },
+  { id: 'Cleaning', name: 'Cleaning', icon: 'broom', lib: 'MaterialCommunityIcons', filterKey: 'Cleaner' },
+  { id: 'Other', name: 'Other', icon: 'more-horizontal', lib: 'Feather', filterKey: 'Helper' },
 ];
+
+const renderCategoryIcon = (service: typeof WORKFORCE_SERVICES[0], isSelected: boolean) => {
+  const color = isSelected ? '#EA580C' : '#475569';
+  const size = 28;
+  if (service.lib === 'Feather') {
+    return <Feather name={service.icon as any} size={size} color={color} />;
+  }
+  if (service.lib === 'MaterialCommunityIcons') {
+    return <MaterialCommunityIcons name={service.icon as any} size={30} color={color} />;
+  }
+  return <FontAwesome5 name={service.icon as any} size={size} color={color} />;
+};
 
 export default function LaboursScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState((params.searchQuery as string) || '');
-
-  const [locationQuery, setLocationQuery] = useState('');
-  const [availabilityFilter, setAvailabilityFilter] = useState('');
   const [selectedSkill, setSelectedSkill] = useState('');
+  const [activeTier, setActiveTier] = useState((params.type as string) || '');
   const [labours, setLabours] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (params.type) {
+      setActiveTier(params.type as string);
+    }
+  }, [params.type]);
 
   useEffect(() => {
     const fetchLabours = async () => {
@@ -61,6 +77,12 @@ export default function LaboursScreen() {
     };
     fetchLabours();
   }, []);
+
+  // Filter categories based on search query
+  const filteredServices = WORKFORCE_SERVICES.filter((s) => {
+    if (!searchQuery.trim()) return true;
+    return s.name.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   // Filter labours
   const filteredLabours = labours.filter((item) => {
@@ -80,23 +102,21 @@ export default function LaboursScreen() {
                           workCat.includes(searchQuery.toLowerCase()) ||
                           skills.includes(searchQuery.toLowerCase());
     
-    const location = (item.city || '').toLowerCase();
-    const matchesLocation = location.includes(locationQuery.toLowerCase());
-    
-    const matchesAvailability = availabilityFilter 
-      ? (item.availability || '').toLowerCase() === availabilityFilter.toLowerCase() 
-      : true;
-      
     const matchesSkill = selectedSkill
       ? skill.includes(selectedSkill.toLowerCase()) ||
         workCat.includes(selectedSkill.toLowerCase()) ||
         skills.includes(selectedSkill.toLowerCase())
       : true;
+
+    const isPremium = (item.rating && item.rating >= 4) || (item.experience && parseInt(item.experience) >= 3) || item.isVerified || item.badge === 'Premium' || item.tier === 'Premium';
+    const matchesTier = activeTier === 'Premium' 
+      ? isPremium 
+      : activeTier === 'General' 
+        ? !isPremium 
+        : true;
     
-    return matchesSearch && matchesLocation && matchesAvailability && matchesSkill;
+    return matchesSearch && matchesSkill && matchesTier;
   });
-
-
 
   const navigateToDetail = (labour: any) => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -125,88 +145,111 @@ export default function LaboursScreen() {
         style={{ flex: 1 }} 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* Header Row */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        {/* Top Back Row */}
+        <View style={styles.topHeaderRow}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.topBackButton}>
             <Feather name="arrow-left" size={24} color={COLORS.textDark} />
           </TouchableOpacity>
-          <View style={styles.headerTextCol}>
-            <Text style={styles.headerTitle}>{t('labourers')}</Text>
-            <Text style={styles.headerSubtitle}>{t('findLabourDesc')}</Text>
-          </View>
-          <NotificationBell size={22} color={COLORS.textDark} style={styles.notificationBtn} />
         </View>
 
-        {/* Search & Filter Bar */}
-        <View style={styles.filterSection}>
-          <View style={styles.filterRow}>
-            <View style={[styles.searchBox, { flex: 1 }]}>
-              <Feather name="search" size={14} color={COLORS.textMuted} style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder={t('nameOrSkill')}
-                placeholderTextColor={COLORS.textMuted}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-            </View>
-            <View style={[styles.searchBox, { flex: 1 }]}>
-              <Feather name="map-pin" size={14} color={COLORS.textMuted} style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder={t('location')}
-                placeholderTextColor={COLORS.textMuted}
-                value={locationQuery}
-                onChangeText={setLocationQuery}
-              />
-            </View>
+        {/* Hero Title Header with Circle Badge */}
+        <View style={styles.heroHeaderSection}>
+          <View style={[
+            styles.heroBadgeCircle,
+            { backgroundColor: activeTier === 'Premium' ? '#FEF3C7' : activeTier === 'General' ? '#EFF6FF' : '#FFF7ED' }
+          ]}>
+            {activeTier === 'Premium' ? (
+              <FontAwesome5 name="crown" size={22} color="#F59E0B" />
+            ) : activeTier === 'General' ? (
+              <FontAwesome5 name="users" size={20} color="#2563EB" />
+            ) : (
+              <FontAwesome5 name="users" size={20} color="#F97316" />
+            )}
           </View>
 
-          {/* Skill Chips */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll} contentContainerStyle={styles.pillRow}>
-            <TouchableOpacity
-              style={[styles.pill, selectedSkill === '' && styles.pillActive]}
-              onPress={() => setSelectedSkill('')}
-            >
-              <Text style={[styles.pillText, selectedSkill === '' && styles.pillTextActive]}>{t('allSkills')}</Text>
-            </TouchableOpacity>
-            {PREDEFINED_SKILLS.map((skill) => (
-              <TouchableOpacity
-                key={skill}
-                style={[styles.pill, selectedSkill === skill && styles.pillActive]}
-                onPress={() => setSelectedSkill(skill)}
-              >
-                <Text style={[styles.pillText, selectedSkill === skill && styles.pillTextActive]}>{skill}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* Availability Pills */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.pillScroll} contentContainerStyle={styles.pillRow}>
-            {[
-              { label: t('all'), value: '' },
-              { label: `✅ ${t('available')}`, value: 'Available' },
-              { label: t('busy'), value: 'Not Available' },
-            ].map((r) => (
-              <TouchableOpacity
-                key={r.value}
-                style={[styles.pill, availabilityFilter === r.value && styles.pillActive]}
-                onPress={() => setAvailabilityFilter(r.value)}
-              >
-                <Text style={[styles.pillText, availabilityFilter === r.value && styles.pillTextActive]}>{r.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          <View style={styles.heroTitleCol}>
+            <Text style={styles.heroTitleText}>
+              {activeTier ? `${activeTier} Workers` : 'Skilled Workforce'}
+            </Text>
+            <Text style={styles.heroSubtitleText}>
+              {activeTier === 'Premium' 
+                ? 'High quality. Verified. Trusted.' 
+                : activeTier === 'General' 
+                  ? 'Reliable. Affordable. Everyday work.' 
+                  : 'Find top verified workers for your project'}
+            </Text>
+          </View>
         </View>
 
-        {/* Labour List */}
-        {isLoading ? (
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <ActivityIndicator size="large" color={COLORS.orange} />
+        {/* Search Bar */}
+        <View style={styles.searchBarContainer}>
+          <View style={styles.searchBarBox}>
+            <Feather name="search" size={18} color="#9CA3AF" style={styles.searchIconLeft} />
+            <TextInput
+              style={styles.searchInputField}
+              placeholder="Search for a service..."
+              placeholderTextColor="#9CA3AF"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery !== '' && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Feather name="x" size={16} color="#9CA3AF" />
+              </TouchableOpacity>
+            )}
           </View>
-        ) : (
-          <ScrollView bounces={true} contentContainerStyle={styles.scrollContent}>
-            {filteredLabours.map((item) => {
+        </View>
+
+        <ScrollView bounces={true} contentContainerStyle={styles.mainScrollContent}>
+          {/* 2-Column Category Grid */}
+          <View style={styles.categoryGrid}>
+            {filteredServices.map((service) => {
+              const isSelected = selectedSkill === service.filterKey || selectedSkill === service.name;
+              return (
+                <TouchableOpacity
+                  key={service.id}
+                  style={[
+                    styles.serviceCardBox,
+                    isSelected && styles.serviceCardBoxSelected
+                  ]}
+                  activeOpacity={0.8}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/book-worker',
+                      params: { service: service.name, type: activeTier }
+                    });
+                  }}
+                >
+                  <View style={styles.serviceIconWrap}>
+                    {renderCategoryIcon(service, isSelected)}
+                  </View>
+                  <Text style={[styles.serviceTitle, isSelected && styles.serviceTitleSelected]}>
+                    {service.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Section Divider & Title for Worker Profiles */}
+          <View style={styles.workersSectionHeader}>
+            <Text style={styles.workersSectionTitle}>
+              {selectedSkill ? `${selectedSkill} Profiles` : 'Available Profiles'}
+            </Text>
+            {selectedSkill !== '' && (
+              <TouchableOpacity onPress={() => setSelectedSkill('')}>
+                <Text style={styles.clearFilterText}>Clear Selection</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Labour List */}
+          {isLoading ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+              <ActivityIndicator size="large" color={COLORS.orange} />
+            </View>
+          ) : (
+            filteredLabours.map((item) => {
               const avatar = resolveAvatarUrl(item.avatarUrl) || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=200&auto=format&fit=crop';
               const isAvailable = (item.availability || '').toLowerCase() === 'available';
               return (
@@ -254,16 +297,16 @@ export default function LaboursScreen() {
                   </View>
                 </View>
               );
-            })}
+            })
+          )}
 
-            {filteredLabours.length === 0 && (
-              <View style={styles.emptyContainer}>
-                <Feather name="alert-circle" size={48} color={COLORS.textMuted} style={{ marginBottom: 15 }} />
-                <Text style={styles.emptyText}>{t('noLaboursFound')}</Text>
-              </View>
-            )}
-          </ScrollView>
-        )}
+          {!isLoading && filteredLabours.length === 0 && (
+            <View style={styles.emptyContainer}>
+              <Feather name="alert-circle" size={44} color={COLORS.textMuted} style={{ marginBottom: 12 }} />
+              <Text style={styles.emptyText}>{t('noLaboursFound')}</Text>
+            </View>
+          )}
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -271,31 +314,137 @@ export default function LaboursScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  mainScrollContent: { paddingBottom: 40 },
 
   /* HEADER */
-  headerRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  backButton: { marginRight: 15 },
-  headerTextCol: { flex: 1 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textDark, marginBottom: 4 },
-  headerSubtitle: { fontSize: 13, color: COLORS.textMuted },
-  notificationBtn: { position: 'relative', padding: 5 },
+  topHeaderRow: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  topBackButton: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroHeaderSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
+  heroBadgeCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  heroTitleCol: {
+    flex: 1,
+  },
+  heroTitleText: {
+    fontFamily: Fonts.sans,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  heroSubtitleText: {
+    fontFamily: Fonts.sans,
+    fontSize: 13,
+    color: '#6B7280',
+  },
 
-  /* FILTERS */
-  filterSection: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4, gap: 8 },
-  filterRow: { flexDirection: 'row', gap: 8 },
-  searchBox: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, paddingHorizontal: 10, height: 38, backgroundColor: COLORS.bgLight },
-  searchIcon: { marginRight: 6 },
-  searchInput: { flex: 1, fontSize: 13, color: COLORS.textDark, height: '100%' },
-  pillScroll: { flexGrow: 0 },
-  pillRow: { flexDirection: 'row', gap: 8, paddingBottom: 2 },
-  pill: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: COLORS.bgLight, borderWidth: 1, borderColor: COLORS.border },
-  pillActive: { backgroundColor: COLORS.orangeLight, borderColor: COLORS.orange },
-  pillText: { fontSize: 12, color: COLORS.textMuted, fontWeight: '500' },
-  pillTextActive: { color: COLORS.orange, fontWeight: '700' },
+  /* SEARCH BAR */
+  searchBarContainer: {
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  searchBarBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 14,
+    height: 46,
+    paddingHorizontal: 14,
+  },
+  searchIconLeft: {
+    marginRight: 8,
+  },
+  searchInputField: {
+    flex: 1,
+    fontSize: 14,
+    color: '#111827',
+    height: '100%',
+  },
+
+  /* CATEGORY GRID */
+  categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 24,
+    gap: 12,
+  },
+  serviceCardBox: {
+    width: (width - 52) / 2,
+    height: 110,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1.5,
+    borderColor: '#F3F4F6',
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 12,
+  },
+  serviceCardBoxSelected: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#F97316',
+  },
+  serviceIconWrap: {
+    height: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  serviceTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#334155',
+    textAlign: 'center',
+  },
+  serviceTitleSelected: {
+    color: '#111827',
+  },
+
+  /* WORKERS LIST */
+  workersSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 14,
+  },
+  workersSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  clearFilterText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#F97316',
+  },
 
   /* LABOUR CARDS */
-  labourCard: { backgroundColor: COLORS.white, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, padding: 15, marginBottom: 15, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
+  labourCard: { backgroundColor: COLORS.white, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, padding: 15, marginHorizontal: 20, marginBottom: 15, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
   cardTopRow: { flexDirection: 'row' },
   avatarImage: { width: 65, height: 65, borderRadius: 32.5 },
   cardDetailsCol: { flex: 1, marginLeft: 12 },

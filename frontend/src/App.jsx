@@ -1,6 +1,10 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Home from './Home';
+import AboutPage from './AboutPage';
+import ContactPage from './ContactPage';
+import PrivacyPolicyPage from './PrivacyPolicyPage';
+import TermsPage from './TermsPage';
 import Register from './Register';
 import Login from './Login';
 import ClientProfileSetup from './ClientProfileSetup';
@@ -22,6 +26,10 @@ const App = () => {
     <Router>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/contact" element={<ContactPage />} />
+        <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+        <Route path="/terms" element={<TermsPage />} />
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<Login />} />
         <Route path="/profile-setup/client" element={<ClientProfileSetup />} />

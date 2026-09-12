@@ -20,6 +20,7 @@ import { UnreadActivityProvider } from '../context/UnreadActivityContext';
 import { CallProvider } from '../context/CallContext';
 import CallKeepService from '../utils/CallKeepService';
 import AIAssistantFloatingButton from '../components/AIAssistantFloatingButton';
+import IncomingJobModal from '../components/IncomingJobModal';
 
 // Ignore specific warning logs in Expo Go / Development
 LogBox.ignoreLogs([
@@ -235,7 +236,9 @@ export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS === 'web') return;
     try {
-      const notifee = require('@notifee/react-native').default;
+      const notifeeModule = require('@notifee/react-native');
+      const notifee = notifeeModule?.default || notifeeModule;
+      if (!notifee || typeof notifee.getInitialNotification !== 'function') return;
       
       // Handle Initial Notification on App Launch (Tapped while app was killed)
       notifee.getInitialNotification().then((initialNotification: any) => {
@@ -250,7 +253,7 @@ export default function RootLayout() {
             router.push('/labours');
           }
         }
-      });
+      }).catch(() => {});
 
       // Handle Foreground Notification Events (Tapped while app is active)
       const unsubscribe = notifee.onForegroundEvent(({ type, detail }: any) => {
@@ -270,9 +273,11 @@ export default function RootLayout() {
         }
       });
 
-      return () => unsubscribe();
+      return () => {
+        if (typeof unsubscribe === 'function') unsubscribe();
+      };
     } catch (e) {
-      console.log('[Notifee Foreground Listener Setup]', e);
+      // Notifee native module not available in current environment (e.g. Expo Go)
     }
   }, []);
 
@@ -312,11 +317,17 @@ export default function RootLayout() {
             <Stack.Screen name="contractor-detail" options={{ headerShown: false }} />
             <Stack.Screen name="labour-detail" options={{ headerShown: false }} />
             <Stack.Screen name="labours" options={{ headerShown: false }} />
+            <Stack.Screen name="book-worker" options={{ headerShown: false }} />
+            <Stack.Screen name="booking-flow" options={{ headerShown: false }} />
             <Stack.Screen name="project-detail" options={{ headerShown: false }} />
             <Stack.Screen name="project-applications" options={{ headerShown: false }} />
             <Stack.Screen name="project-compare" options={{ headerShown: false }} />
             <Stack.Screen name="project-progress" options={{ headerShown: false }} />
             <Stack.Screen name="notifications" options={{ headerShown: false }} />
+            <Stack.Screen name="about" options={{ headerShown: false }} />
+            <Stack.Screen name="contact" options={{ headerShown: false }} />
+            <Stack.Screen name="privacy-policy" options={{ headerShown: false }} />
+            <Stack.Screen name="terms" options={{ headerShown: false }} />
             <Stack.Screen name="jobs" options={{ headerShown: false, title: 'Opportunity' }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
@@ -330,6 +341,12 @@ export default function RootLayout() {
               userId={currentUser?._id}
             />
           )}
+
+          {/* Real-time Worker Incoming Job Request Modal */}
+          <IncomingJobModal
+            currentUserId={currentUser?._id}
+            currentUserRole={currentUser?.role}
+          />
 
           {/* Loading Spinner Overlay */}
           {stage === 'ready' && checkingLocation && (

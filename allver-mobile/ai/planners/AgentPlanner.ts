@@ -20,22 +20,6 @@ export interface PlanResult {
   responseText: string;
   suggestions?: string[];
   action?: AIAction;
-  attendanceSuccessCard?: {
-    projectName: string;
-    checkType: string;
-    time: string;
-    lat: number;
-    lng: number;
-    address: string;
-  };
-  contractorAttendanceSuccessCard?: {
-    workerName: string;
-    projectName: string;
-    dayType: string;
-    status: string;
-    hours: number;
-    date: string;
-  };
   jobPostSuccessCard?: {
     title: string;
     projectType: string;

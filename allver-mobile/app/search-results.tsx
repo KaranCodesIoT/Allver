@@ -163,7 +163,6 @@ export default function SearchResultsScreen() {
           name: item.fullName,
           role: item.skillType || 'Mason',
           avatar: resolveAvatarUrl(item.avatarUrl, item.updatedAt) || '',
-          coverImage: resolveAvatarUrl(item.cover, item.updatedAt) || '',
           rating: (item.rating || 4.6).toString(),
           reviews: (item.reviews || 0).toString(),
           location: item.city,

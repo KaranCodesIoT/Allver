@@ -80,34 +80,7 @@ export class ActionRouter {
           );
           return true;
 
-        case ActionType.MARK_ATTENDANCE: {
-          const checkType = action.parameters?.checkType === 'check-out' ? 'Check-Out' : 'Check-In';
-          const project = action.parameters?.projectName || 'Active Site';
-          const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-          // State-changing action: Request detailed context-rich confirmation
-          Alert.alert(
-            'Confirm Attendance Log',
-            `Project:\n  ${project}\n\nAction:\n  ${checkType}\n\nTime:\n  ${time}`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Confirm & Log',
-                onPress: () => {
-                  console.log(`[ActionRouter] Simulated attendance: ${checkType} logged.`);
-                  Alert.alert(
-                    'Success',
-                    `Attendance recorded: Your ${checkType} has been successfully logged.`,
-                    [{ text: 'OK' }]
-                  );
-                },
-              },
-            ]
-          );
-          return true;
-        }
-
-        case ActionType.POST_JOB: {
+        case ActionType.POST_JOB:
           const title = action.parameters?.title || 'New Construction Request';
           const budget = action.parameters?.budget ? `Rs. ${Number(action.parameters.budget).toLocaleString()}` : 'Not specified';
           const workers = action.parameters?.workers || 1;
@@ -139,7 +112,6 @@ export class ActionRouter {
             ]
           );
           return true;
-        }
 
         // Navigation shortcuts
         case ActionType.OPEN_CHAT:
@@ -148,14 +120,6 @@ export class ActionRouter {
 
         case ActionType.OPEN_NOTIFICATIONS:
           router.push('/notifications');
-          return true;
-
-        case ActionType.OPEN_ATTENDANCE:
-          Alert.alert(
-            'Redirection',
-            'AI Assistant is taking you to your attendance dashboard.',
-            [{ text: 'OK', onPress: () => router.push('/(tabs)/profile') }]
-          );
           return true;
 
         case ActionType.OPEN_PAYMENTS:

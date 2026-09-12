@@ -87,7 +87,7 @@ const SERVICES_DATA = [
   { id: '5', title: 'Renovation', icon: 'hammer', color: '#EA580C', bgColor: '#FFEDD5', library: 'FontAwesome5' },
   { id: '6', title: 'Electrical\nWork', icon: 'zap', color: '#EAB308', bgColor: '#FEFCE8', library: 'Feather' },
   { id: '7', title: 'Plumbing', icon: 'faucet', color: '#06B6D4', bgColor: '#ECFEFF', library: 'FontAwesome5' },
-  { id: '8', title: 'Painting', icon: 'paint-roller', color: '#EC4899', bgColor: '#FDF2F8', library: 'MaterialCommunityIcons' },
+  { id: '8', title: 'Painting', icon: 'paint-roller', color: '#EC4899', bgColor: '#FDF2F8', library: 'FontAwesome5' },
   { id: '9', title: 'Civil\nWork', icon: 'hard-hat', color: '#10B981', bgColor: '#D1FAE5', library: 'FontAwesome5' },
   { id: '10', title: 'More\nServices', icon: 'grid', color: '#6B7280', bgColor: '#F3F4F6', library: 'Feather' },
 ];
@@ -121,7 +121,7 @@ const SERVICE_SUBMENUS: Record<string, { title: string; items: { name: string; i
   'Painting': {
     title: 'Painting Services',
     items: [
-      { name: 'Painters', icon: 'paint-roller', library: 'MaterialCommunityIcons', route: '/labours' },
+      { name: 'Painters', icon: 'paint-roller', library: 'FontAwesome5', route: '/labours' },
       { name: 'Painting Contractors', icon: 'format-paint', library: 'MaterialCommunityIcons', route: '/contractors' },
     ]
   },
@@ -164,6 +164,7 @@ export default function DashboardScreen() {
   const [clientRequests, setClientRequests] = useState<any[]>([]);
   const [labourProjects, setLabourProjects] = useState<any[]>([]);
   const [serviceMenuVisible, setServiceMenuVisible] = useState(false);
+  const [workforceModalVisible, setWorkforceModalVisible] = useState(false);
   const [activeServiceMenu, setActiveServiceMenu] = useState<string | null>(null);
   const [featuredProfessionals, setFeaturedProfessionals] = useState<any[]>([]);
   const [featuredLoading, setFeaturedLoading] = useState(true);
@@ -172,164 +173,6 @@ export default function DashboardScreen() {
   const { unreadMsgCount } = useUnreadMessages();
   const { unreadActivityCount, refreshUnreadActivityCount } = useUnreadActivities();
   const [directInvitations, setDirectInvitations] = useState<any[]>([]);
-  const [todayWork, setTodayWork] = useState<any>(null);
-  const [checkingIn, setCheckingIn] = useState(false);
-  const [selectedWorkspaceIndex, setSelectedWorkspaceIndex] = useState<number>(0);
-
-  // Computed todayWork fields based on selection
-  const workspacesList = todayWork?.workspaces || (todayWork?.workspace ? [todayWork.workspace] : []);
-  const activeWorkspace = workspacesList[selectedWorkspaceIndex] || todayWork?.workspace || null;
-  const isCheckedIn = activeWorkspace?.checkedIn ?? todayWork?.checkedIn ?? false;
-  const checkInTimeValue = activeWorkspace?.checkInTime ?? todayWork?.checkInTime ?? null;
-  const isApprovedValue = activeWorkspace?.isApproved ?? todayWork?.isApproved ?? false;
-
-  // Fetch labour's today work status
-  const fetchTodayWork = useCallback(async () => {
-    if (!currentUser?._id || currentUser?.role !== 'Labour') return;
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/labour/today-status/${currentUser._id}`);
-      const data = await res.json();
-      setTodayWork(data);
-    } catch (err) {
-      console.error('Error fetching today work status:', err);
-    }
-  }, [currentUser?._id, currentUser?.role]);
-
-  // Handle CHECK IN
-  const handleCheckIn = async () => {
-    if (!currentUser?._id || !activeWorkspace?._id) return;
-    setCheckingIn(true);
-
-    try {
-      // Request location permission
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required to check in.');
-        setCheckingIn(false);
-        return;
-      }
-
-      // Get current GPS location
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High
-      });
-
-      // Reverse geocode current coordinates to get address
-      let readableAddress = 'Unknown Location';
-      try {
-        const reverseGeocode = await Location.reverseGeocodeAsync({
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude
-        });
-        if (reverseGeocode && reverseGeocode.length > 0) {
-          const addr = reverseGeocode[0];
-          const addressParts = [
-            addr.name || addr.streetNumber,
-            addr.street,
-            addr.district || addr.city,
-            addr.region
-          ].filter(Boolean);
-          readableAddress = addressParts.join(', ');
-        }
-      } catch (revErr) {
-        console.error('Reverse geocode failed:', revErr);
-      }
-
-      // Calculate distance from site
-      let distanceFromSite = 'Unknown';
-      if (activeWorkspace.location) {
-        try {
-          const geocoded = await Location.geocodeAsync(activeWorkspace.location);
-          if (geocoded && geocoded.length > 0) {
-            const projectLat = geocoded[0].latitude;
-            const projectLng = geocoded[0].longitude;
-            const dist = getDistanceInMeters(
-              location.coords.latitude,
-              location.coords.longitude,
-              projectLat,
-              projectLng
-            );
-            distanceFromSite = `${dist} meters`;
-          }
-        } catch (geoErr) {
-          console.error('Geocoding project location failed:', geoErr);
-        }
-      }
-
-      // Format current time and date
-      const now = new Date();
-      const checkInTimeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const checkInDateStr = `${String(now.getDate()).padStart(2, '0')} ${monthNames[now.getMonth()]} ${now.getFullYear()}`;
-
-      // Google maps link
-      const mapsLink = `https://www.google.com/maps/search/?api=1&query=${location.coords.latitude},${location.coords.longitude}`;
-
-      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-      // Post attendance using existing API
-      const res = await fetch(`${BACKEND_URL}/api/project-workspaces/${activeWorkspace._id}/labour/attendance`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: todayStr,
-          senderId: currentUser._id,
-          records: [{
-            labourId: currentUser._id,
-            status: 'Present',
-            hours: 0,
-            latitude: location.coords.latitude,
-            longitude: location.coords.longitude,
-            checkInTime: checkInTimeStr,
-            address: readableAddress,
-            distanceFromSite,
-            googleMapsLink: mapsLink
-          }]
-        })
-      });
-
-      if (res.ok) {
-        // Update local state immediately
-        setTodayWork((prev: any) => {
-          if (!prev) return prev;
-          if (prev.workspaces) {
-            const updated = [...prev.workspaces];
-            const targetIndex = updated.findIndex((w: any) => w._id === activeWorkspace._id);
-            if (targetIndex !== -1) {
-              updated[targetIndex] = {
-                ...updated[targetIndex],
-                checkedIn: true,
-                checkInTime: now.toISOString(),
-                isApproved: false
-              };
-            }
-            return {
-              ...prev,
-              workspaces: updated,
-              checkedIn: targetIndex === 0 ? true : prev.checkedIn,
-              checkInTime: targetIndex === 0 ? now.toISOString() : prev.checkInTime,
-              isApproved: targetIndex === 0 ? false : prev.isApproved
-            };
-          }
-          return {
-            ...prev,
-            checkedIn: true,
-            checkInTime: now.toISOString(),
-            isApproved: false
-          };
-        });
-        Alert.alert('✅ Checked In!', 'Your GPS location and reverse geocoded address have been recorded. Waiting for contractor approval.');
-      } else {
-        const err = await res.json();
-        Alert.alert('Check-In Failed', err.message || 'Could not record attendance.');
-      }
-    } catch (error) {
-      console.error('Check-in error:', error);
-      Alert.alert('Error', 'Failed to check in. Please try again.');
-    } finally {
-      setCheckingIn(false);
-    }
-  };
 
   const handleInvitationResponse = async (requestId: string, status: 'Accepted' | 'Rejected') => {
     if (!currentUser?._id) return;
@@ -520,15 +363,13 @@ export default function DashboardScreen() {
     useCallback(() => {
       fetchUnreadJobsCount();
       fetchRequests();
-      fetchTodayWork();
-    }, [fetchUnreadJobsCount, fetchRequests, fetchTodayWork])
+    }, [fetchUnreadJobsCount, fetchRequests])
   );
 
   useEffect(() => {
     fetchUnreadJobsCount();
     fetchRequests();
-    fetchTodayWork();
-  }, [fetchUnreadJobsCount, fetchRequests, fetchTodayWork]);
+  }, [fetchUnreadJobsCount, fetchRequests]);
 
   // Handle real-time updates via Socket.IO
   useEffect(() => {
@@ -543,7 +384,6 @@ export default function DashboardScreen() {
     const handleWorkspaceUpdate = (data: any) => {
       console.log('[Home] Real-time workspace update received:', data);
       fetchRequests();
-      fetchTodayWork();
     };
 
     const handleProfileUpdated = (data: any) => {
@@ -571,16 +411,10 @@ export default function DashboardScreen() {
       SocketService.off('profile_updated', handleProfileUpdated);
       SocketService.off('connect', handleReconnect);
     };
-  }, [currentUser?._id, fetchUnreadJobsCount, fetchRequests, fetchTodayWork]);
+  }, [currentUser?._id, fetchUnreadJobsCount, fetchRequests]);
 
   useEffect(() => {
     const idsToJoin = new Set<string>();
-
-    if (workspacesList && workspacesList.length > 0) {
-      workspacesList.forEach((w: any) => {
-        if (w._id) idsToJoin.add(w._id);
-      });
-    }
 
     if (clientRequests && clientRequests.length > 0) {
       clientRequests.forEach((req: any) => {
@@ -597,7 +431,7 @@ export default function DashboardScreen() {
     idsToJoin.forEach(id => {
       SocketService.emit('join_room', { roomId: id });
     });
-  }, [workspacesList, clientRequests, labourProjects]);
+  }, [clientRequests, labourProjects]);
 
   // Fetch recent activities - also refresh on screen focus
   const fetchActivities = useCallback(async () => {
@@ -615,16 +449,12 @@ export default function DashboardScreen() {
         if (data.success && data.notifications) {
           // Map notifications to activity items
           const mapped = data.notifications.slice(0, 5).map((n: any) => {
+            const text = n.message || n.text || n.title || '';
             let icon = 'bell';
             let color = '#3B82F6';
             let bgColor = '#EFF6FF';
             
-            const text = n.text || '';
-            if (text.includes('attendance') || text.includes('Attendance') || text.includes('marked present')) {
-              icon = 'check-square';
-              color = '#10B981';
-              bgColor = '#E6FDF5';
-            } else if (text.includes('quotation') || text.includes('Quotation') || text.includes('bid') || text.includes('Bid') || text.includes('Invitation to bid')) {
+            if (text.includes('quotation') || text.includes('Quotation') || text.includes('bid') || text.includes('Bid') || text.includes('Invitation to bid')) {
               icon = 'file-text';
               color = '#8B5CF6';
               bgColor = '#F5F3FF';
@@ -1091,150 +921,7 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* ================= TODAY'S WORK (Labour Only) ================= */}
-        {currentUser?.role === 'Labour' && todayWork?.hasActiveProject && (
-          <View style={styles.todayWorkContainer}>
-            {workspacesList.length > 1 && (
-              <View style={{ marginBottom: 12, backgroundColor: '#FFFFFF', padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: COLORS.textMuted, marginBottom: 8 }}>
-                  SELECT CONTRACTOR TEAM FOR ATTENDANCE:
-                </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {workspacesList.map((wsItem: any, idx: number) => {
-                      const isSelected = idx === selectedWorkspaceIndex;
-                      const hasCheckedIn = wsItem.checkedIn;
-                      return (
-                        <TouchableOpacity
-                          key={wsItem._id || idx}
-                          onPress={() => setSelectedWorkspaceIndex(idx)}
-                          style={{
-                            backgroundColor: isSelected ? '#10B981' : '#F3F4F6',
-                            borderWidth: 1,
-                            borderColor: isSelected ? '#10B981' : '#E5E7EB',
-                            paddingHorizontal: 14,
-                            paddingVertical: 8,
-                            borderRadius: 20,
-                            flexDirection: 'row',
-                            alignItems: 'center'
-                          }}
-                        >
-                          <Text style={{
-                            fontSize: 12,
-                            fontWeight: '700',
-                            color: isSelected ? '#FFF' : COLORS.textDark
-                          }}>
-                            {wsItem.contractor?.toUpperCase() || wsItem.title?.toUpperCase() || 'TEAM'}
-                          </Text>
-                          {hasCheckedIn && (
-                            <Feather 
-                              name="check-circle" 
-                              size={12} 
-                              color={isSelected ? '#FFF' : '#10B981'} 
-                              style={{ marginLeft: 6 }} 
-                            />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </ScrollView>
-              </View>
-            )}
 
-            {isCheckedIn ? (
-              /* ── Checked-In State ── */
-              <TouchableOpacity
-                style={styles.todayWorkCheckedCard}
-                activeOpacity={0.85}
-                onPress={() => {
-                  if (activeWorkspace?._id) {
-                    router.push({
-                      pathname: '/project-progress',
-                      params: { workspaceId: activeWorkspace._id }
-                    });
-                  }
-                }}
-              >
-                <View style={styles.twCheckedHeader}>
-                  <View style={styles.twCheckedIconWrap}>
-                    <Feather name="check-circle" size={18} color="#10B981" />
-                  </View>
-                  <Text style={styles.twCheckedTitle}>Checked In Today</Text>
-                </View>
-
-                <View style={styles.twCheckedBody}>
-                  <Text style={styles.twCheckedTime}>
-                    {checkInTimeValue
-                      ? (/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(checkInTimeValue)
-                        ? checkInTimeValue.toUpperCase()
-                        : (() => {
-                             const parsed = new Date(checkInTimeValue);
-                             return !isNaN(parsed.getTime()) 
-                               ? parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase()
-                               : checkInTimeValue;
-                           })())
-                      : ''}
-                  </Text>
-                  <Text style={styles.twCheckedProject}>{activeWorkspace?.title?.toUpperCase() || 'PROJECT'}</Text>
-                </View>
-
-                <View style={styles.twCheckedFooter}>
-                  <Feather name="clock" size={12} color={COLORS.textMuted} />
-                  <Text style={styles.twCheckedFooterText}>
-                    {isApprovedValue ? 'Approved by contractor ✓' : 'Waiting for contractor approval'}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ) : (
-              /* ── Check-In State ── */
-              <View style={styles.todayWorkCard}>
-                <View style={styles.twHeader}>
-                  <FontAwesome5 name="map-marker-alt" size={14} color="#10B981" />
-                  <Text style={styles.twHeaderText}>Today's Work</Text>
-                </View>
-
-                <View style={styles.twProjectRow}>
-                  <View style={styles.twProjectIconWrap}>
-                    <MaterialCommunityIcons name="crane" size={22} color="#10B981" />
-                  </View>
-                  <View style={styles.twProjectInfo}>
-                    <Text style={styles.twProjectName} numberOfLines={1}>
-                      {activeWorkspace?.title?.toUpperCase() || 'PROJECT'}
-                    </Text>
-                    <View style={styles.twLocationRow}>
-                      <Feather name="map-pin" size={11} color={COLORS.textMuted} />
-                      <Text style={styles.twLocationText}>
-                        {activeWorkspace?.location?.toUpperCase() || 'LOCATION'}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.checkInBtn, checkingIn && { opacity: 0.7 }]}
-                  onPress={handleCheckIn}
-                  disabled={checkingIn}
-                  activeOpacity={0.85}
-                >
-                  {checkingIn ? (
-                    <ActivityIndicator size="small" color="#FFF" />
-                  ) : (
-                    <>
-                      <Feather name="check-circle" size={18} color="#FFF" style={{ marginRight: 8 }} />
-                      <Text style={styles.checkInBtnText}>CHECK IN</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                <View style={styles.twFooterNote}>
-                  <Feather name="map-pin" size={10} color={COLORS.textMuted} />
-                  <Text style={styles.twFooterNoteText}>Your location will be recorded for attendance</Text>
-                </View>
-              </View>
-            )}
-          </View>
-        )}
 
         {/* ================= QUICK ACTIONS ================= */}
         <View style={styles.sectionContainer}>
@@ -1282,14 +969,14 @@ export default function DashboardScreen() {
             {/* Skilled Labour */}
             <TouchableOpacity 
               style={[styles.qaCard, { borderColor: '#FFEDD5' }]}
-              onPress={() => router.push('/labours')}
+              onPress={() => setWorkforceModalVisible(true)}
               activeOpacity={0.85}
             >
               <View style={styles.qaCardHeader}>
                 <View style={[styles.qaIconWrap, { backgroundColor: '#FFF7ED' }]}>
                   <FontAwesome5 name="users" size={16} color="#F97316" />
                 </View>
-                <Text style={styles.qaCardTitle}>Labour</Text>
+                <Text style={styles.qaCardTitle}>Skilled{"\n"}Workforce</Text>
               </View>
               <View style={styles.qaCardFooter}>
                 <View style={[styles.qaPill, { backgroundColor: '#F97316' }]}>
@@ -1414,23 +1101,11 @@ export default function DashboardScreen() {
                   </TouchableOpacity>
                 ))
               ) : (
-                currentUser?.role === 'Client' ? (
-                  <TouchableOpacity 
-                    style={[styles.projectCard, { justifyContent: 'center', alignItems: 'center', padding: 16 }]}
-                    activeOpacity={0.8}
-                    onPress={() => router.push('/(tabs)/post-project')}
-                  >
-                    <Feather name="plus-circle" size={32} color={COLORS.green} style={{ marginBottom: 8 }} />
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>{t('postNewProject')}</Text>
-                    <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>{t('postNewProjectDesc')}</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <View style={[styles.projectCard, { justifyContent: 'center', alignItems: 'center', padding: 16 }]}>
-                    <Feather name="clipboard" size={32} color={COLORS.textLight} style={{ marginBottom: 8 }} />
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>{t('noActiveProjects')}</Text>
-                    <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>{t('noActiveProjectsDesc')}</Text>
-                  </View>
-                )
+                <View style={[styles.projectCard, { justifyContent: 'center', alignItems: 'center', padding: 16 }]}>
+                  <Feather name="clipboard" size={32} color={COLORS.textLight} style={{ marginBottom: 8 }} />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>{t('noActiveProjects')}</Text>
+                  <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>{t('noActiveProjectsDesc')}</Text>
+                </View>
               )
             ) : (
               PROJECTS_DATA.map((proj) => (
@@ -1714,6 +1389,46 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        {/* ================= ALLVER PLATFORM & SUPPORT FOOTER ================= */}
+        <View style={{ marginTop: 24, marginBottom: 30, paddingHorizontal: 16 }}>
+          <View style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 16,
+            padding: 18,
+            borderWidth: 1,
+            borderColor: '#E5E7EB',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.04,
+            shadowRadius: 3,
+            elevation: 1,
+          }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: '#111827', marginBottom: 12, textAlign: 'center' }}>
+              Allver Platform & Support
+            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+              <TouchableOpacity onPress={() => router.push('/about')} style={{ paddingVertical: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>About Us</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 10, color: '#9CA3AF' }}>•</Text>
+              <TouchableOpacity onPress={() => router.push('/contact')} style={{ paddingVertical: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>Contact Support</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 10, color: '#9CA3AF' }}>•</Text>
+              <TouchableOpacity onPress={() => router.push('/privacy-policy')} style={{ paddingVertical: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>Privacy Policy</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 10, color: '#9CA3AF' }}>•</Text>
+              <TouchableOpacity onPress={() => router.push('/terms')} style={{ paddingVertical: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>Terms of Service</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'center', marginTop: 12 }}>
+              © 2026 Allver Construction Marketplace (allver.in)
+            </Text>
+          </View>
+        </View>
+
       </ScrollView>
 
       {/* ================= SERVICE SUB-MENU MODAL ================= */}
@@ -1759,6 +1474,78 @@ export default function DashboardScreen() {
               </>
             )}
           </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Find the Right Workforce Modal */}
+      <Modal
+        visible={workforceModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setWorkforceModalVisible(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalBackdropCenter} 
+          activeOpacity={1} 
+          onPress={() => setWorkforceModalVisible(false)}
+        >
+          <TouchableOpacity 
+            style={styles.workforceModalContainer} 
+            activeOpacity={1} 
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Header: Title & Close Button */}
+            <View style={styles.workforceModalHeader}>
+              <Text style={styles.workforceModalTitle}>Find the Right Workforce</Text>
+              <TouchableOpacity 
+                style={styles.workforceCloseBtn} 
+                onPress={() => setWorkforceModalVisible(false)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Feather name="x" size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Option 1: Premium Workers */}
+            <TouchableOpacity 
+              style={styles.workforceCardOption}
+              activeOpacity={0.85}
+              onPress={() => {
+                setWorkforceModalVisible(false);
+                router.push({ pathname: '/labours', params: { type: 'Premium' } });
+              }}
+            >
+              <View style={[styles.workforceIconCircle, { backgroundColor: '#FEF3C7' }]}>
+                <FontAwesome5 name="crown" size={20} color="#F59E0B" />
+              </View>
+              <View style={styles.workforceTextCol}>
+                <Text style={styles.workforceOptionTitle}>Premium Workers</Text>
+                <Text style={styles.workforceOptionSubtitle}>Verified • Experienced</Text>
+                <Text style={styles.workforceOptionSubtitle}>High Quality</Text>
+              </View>
+              <Feather name="chevron-right" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            {/* Option 2: General Workers */}
+            <TouchableOpacity 
+              style={styles.workforceCardOption}
+              activeOpacity={0.85}
+              onPress={() => {
+                setWorkforceModalVisible(false);
+                router.push({ pathname: '/labours', params: { type: 'General' } });
+              }}
+            >
+              <View style={[styles.workforceIconCircle, { backgroundColor: '#EFF6FF' }]}>
+                <FontAwesome5 name="users" size={18} color="#2563EB" />
+              </View>
+              <View style={styles.workforceTextCol}>
+                <Text style={styles.workforceOptionTitle}>General Workers</Text>
+                <Text style={styles.workforceOptionSubtitle}>Reliable • Affordable</Text>
+                <Text style={styles.workforceOptionSubtitle}>For everyday work</Text>
+              </View>
+              <Feather name="chevron-right" size={20} color="#9CA3AF" />
+            </TouchableOpacity>
+          </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
 
@@ -1941,8 +1728,8 @@ const styles = StyleSheet.create({
   },
   qaCardFooter: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 4,
   },
   qaPill: {
@@ -2478,137 +2265,88 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  /* ======= TODAY'S WORK CARD ======= */
-  todayWorkContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 5,
-  },
-  todayWorkCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#10B981',
-    padding: 16,
-    shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  twHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  twHeaderText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#10B981',
-    marginLeft: 8,
-  },
-  twProjectRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  twProjectIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#ECFDF5',
+
+
+  /* WORKFORCE MODAL */
+  modalBackdropCenter: {
+    flex: 1,
+    backgroundColor: 'rgba(17, 24, 39, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    paddingHorizontal: 20,
   },
-  twProjectInfo: {
-    flex: 1,
+  workforceModalContainer: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
   },
-  twProjectName: {
-    fontSize: 14,
+  workforceModalHeader: {
+    marginBottom: 20,
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 28,
+  },
+  workforceCloseBtn: {
+    position: 'absolute',
+    right: 0,
+    top: -2,
+    zIndex: 10,
+    padding: 4,
+  },
+  workforceModalTitle: {
+    fontFamily: Fonts.sans,
+    fontSize: 18,
     fontWeight: '700',
     color: '#111827',
-    letterSpacing: 0.3,
-    marginBottom: 3,
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
-  twLocationRow: {
+  workforceCardOption: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  twLocationText: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  checkInBtn: {
-    backgroundColor: '#10B981',
-    borderRadius: 12,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  checkInBtnText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  twFooterNote: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  twFooterNoteText: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    marginLeft: 4,
-  },
-
-  /* Checked-In State */
-  todayWorkCheckedCard: {
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#A7F3D0',
     padding: 16,
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  twCheckedHeader: {
-    flexDirection: 'row',
+  workforceIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
   },
-  twCheckedIconWrap: {
+  workforceTextCol: {
+    flex: 1,
+    marginLeft: 14,
     marginRight: 8,
   },
-  twCheckedTitle: {
-    fontSize: 15,
+  workforceOptionTitle: {
+    fontFamily: Fonts.sans,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#059669',
-  },
-  twCheckedBody: {
-    marginBottom: 12,
-  },
-  twCheckedTime: {
-    fontSize: 22,
-    fontWeight: '800',
     color: '#111827',
     marginBottom: 2,
   },
-  twCheckedProject: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-    letterSpacing: 0.3,
-  },
-  twCheckedFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  twCheckedFooterText: {
-    fontSize: 12,
+  workforceOptionSubtitle: {
+    fontFamily: Fonts.sans,
+    fontSize: 12.5,
     color: '#6B7280',
-    marginLeft: 6,
+    lineHeight: 17,
   },
 });

@@ -5,8 +5,6 @@ export interface ExecutionContextState {
   workspaceId?: string;
   conversationId?: string;
   location?: { latitude: number; longitude: number; address: string };
-  attendanceStatus?: 'Present' | 'Absent';
-  dayType?: 'full' | 'half' | 'overtime';
   messageText?: string;
   currentStep: number;
   previousTool?: string;

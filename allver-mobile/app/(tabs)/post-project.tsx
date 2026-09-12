@@ -668,6 +668,29 @@ export default function PostProjectScreen() {
   const isLabour = currentUser?.role === 'Labour';
   const isCreator = isArchitect || isContractor;
 
+  if (currentUser?.role === 'Client') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>{t('home')}</Text>
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <Feather name="info" size={40} color={COLORS.textMuted} style={{ marginBottom: 12 }} />
+          <Text style={{ fontSize: 16, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>Explore & Connect</Text>
+          <Text style={{ fontSize: 13, color: COLORS.textMuted, textAlign: 'center', marginTop: 6, lineHeight: 20 }}>
+            Find the best architects, contractors, and skilled workers for your dream projects on the Home and Discover tabs.
+          </Text>
+          <TouchableOpacity 
+            style={{ marginTop: 20, backgroundColor: COLORS.green, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 }}
+            onPress={() => router.replace('/(tabs)')}
+          >
+            <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Go to Home</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header Bar */}
@@ -678,7 +701,7 @@ export default function PostProjectScreen() {
           </TouchableOpacity>
         ) : null}
         <Text style={styles.headerTitle}>
-          {isArchitect ? t('architectStudio') : isContractor ? t('postProject') : (currentUser?.role === 'Labour' ? t('addWork') : (currentUser?.role === 'Client' ? 'Post Contract' : t('postProject')))}
+          {isArchitect ? t('architectStudio') : isContractor ? t('postProject') : (isLabour ? t('addWork') : t('postProject'))}
         </Text>
       </View>
 

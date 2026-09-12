@@ -474,8 +474,8 @@ export default function EditProfileScreen() {
             {/* LEFT COLUMN: Photos, About */}
             <View style={styles.leftCol}>
               
-              {/* Cover Photo */}
-              {currentUser?.role !== 'Client' && (
+              {/* Cover Photo (Architect / Contractor only) */}
+              {currentUser?.role !== 'Client' && currentUser?.role !== 'Labour' && (
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}><Feather name="image" size={14} /> COVER PHOTO</Text>
                   <View style={styles.coverPreviewContainer}>

@@ -114,8 +114,6 @@ socketIo.Server.prototype.to = function(room) {
                   resolvedCategory = 'contracts';
                 } else if (textLower.includes('payment') || textLower.includes('milestone') || textLower.includes('released')) {
                   resolvedCategory = 'payments';
-                } else if (textLower.includes('attendance') || textLower.includes('present')) {
-                  resolvedCategory = 'attendance';
                 } else if (textLower.includes('marketing') || textLower.includes('promotional') || textLower.includes('recommendation')) {
                   resolvedCategory = 'marketing';
                 }
@@ -144,6 +142,8 @@ socketIo.Server.prototype.in = socketIo.Server.prototype.to;
 const onlineUsers = new Set();
 const activeCallUsers = new Map();
 const socketRateLimitStore = new Map();
+const activeJobRequests = new Map();
+const activeDispatchTimers = new Map();
 
 io.use(async (socket, next) => {
   // 1. Connection Rate Limiting: Max 20 connection attempts per minute
@@ -380,6 +380,217 @@ io.on('connection', (socket) => {
   socket.on('message_read', ({ roomId, messageId, userId }) => {
     io.to(roomId).emit('message_read', { roomId, messageId, userId });
     console.log(`[Socket] Message ${messageId} marked read by user ${userId} in room ${roomId}`);
+  });
+
+  // ─── Real-Time Job Request Dispatch & First-Worker-Wins Booking Architecture ───
+  // ─── Tiered Filtering & Multi-Wave Job Dispatch Engine ───
+  socket.on('client_create_job_request', async (jobData) => {
+    const { jobId, service, tier, location, date, price, clientInfo } = jobData || {};
+    if (!jobId) return;
+
+    console.log(`[JobDispatch] 🚀 Initiating multi-wave dispatch for job ${jobId} ("${service}", Category: ${tier || 'General Worker'}, Location: ${location || 'Noida'})`);
+
+    // Helper: Filter eligible workers by skill, category, availability & radius tiers
+    let group1 = [
+      { id: 'w1', name: 'Ramesh Yadav', tier: tier || 'Premium Worker', skill: service || 'Painting', distanceKm: 1.2, isOnline: true },
+      { id: 'w2', name: 'Sunil Kumar', tier: tier || 'Premium Worker', skill: service || 'Painting', distanceKm: 2.5, isOnline: true },
+    ];
+    let group2 = [
+      { id: 'w3', name: 'Vikram Singh', tier: tier || 'General Worker', skill: service || 'Painting', distanceKm: 4.8, isOnline: true },
+      { id: 'w4', name: 'Amit Sharma', tier: tier || 'Premium Worker', skill: service || 'Painting', distanceKm: 6.2, isOnline: true },
+    ];
+    let group3 = [
+      { id: 'w5', name: 'Rajesh Verma', tier: tier || 'General Worker', skill: service || 'Painting', distanceKm: 11.5, isOnline: true },
+      { id: 'w6', name: 'Manoj Gupta', tier: tier || 'Premium Worker', skill: service || 'Painting', distanceKm: 14.0, isOnline: true },
+    ];
+
+    const newJob = {
+      jobId,
+      service: service || 'Painting',
+      tier: tier || 'General Worker',
+      location: location || 'Sector 62, Noida',
+      date: date || 'Tomorrow',
+      price: price || '₹800 – ₹1,000 / day',
+      clientInfo: clientInfo || { userId: socket.userId, name: 'Client' },
+      status: 'SEARCHING',
+      currentWave: 1,
+      maxWaves: 3,
+      groups: { group1, group2, group3 },
+      assignedWorker: null,
+      createdAt: Date.now(),
+    };
+
+    activeJobRequests.set(jobId, newJob);
+
+    // Wave Dispatch Recursive Engine Function
+    const executeWaveDispatch = (waveNumber) => {
+      const job = activeJobRequests.get(jobId);
+      if (!job || job.status !== 'SEARCHING') return;
+
+      if (waveNumber > 3) {
+        // All waves expired without worker acceptance!
+        console.log(`[JobDispatch] ❌ All 3 waves expired for job ${jobId}. No worker accepted. Notifying client.`);
+        job.status = 'EXPIRED';
+        activeJobRequests.set(jobId, job);
+
+        const clientId = job.clientInfo?.userId || job.clientInfo?.id || socket.userId;
+        const noWorkerPayload = {
+          jobId,
+          status: 'UNAVAILABLE',
+          message: 'No eligible worker accepted your booking request after expanding search across all service areas.',
+          canRetry: true,
+        };
+
+        if (clientId) {
+          io.to(clientId.toString()).emit('job_no_workers_available', noWorkerPayload);
+          io.to(`user:${clientId}`).emit('job_no_workers_available', noWorkerPayload);
+        }
+        io.emit(`job_no_workers_available_${jobId}`, noWorkerPayload);
+
+        // Cancel modal for any open worker popups
+        io.emit('job_request_cancelled_or_assigned', {
+          jobId,
+          message: 'Job offer expired.',
+        });
+        return;
+      }
+
+      job.currentWave = waveNumber;
+      activeJobRequests.set(jobId, job);
+
+      const targetGroup = job.groups[`group${waveNumber}`] || [];
+      const radiusText = waveNumber === 1 ? '3 km' : waveNumber === 2 ? '7 km' : '15 km';
+      const waveTitle = waveNumber === 1 ? 'Group 1 (Nearest Top Workers)' : waveNumber === 2 ? 'Group 2 (Expanded Nearby Pool)' : 'Group 3 (City-Wide Pool)';
+
+      console.log(`[JobDispatch] 🌊 WAVE ${waveNumber}/3 ACTIVATED for Job ${jobId} (${waveTitle}, Radius: ${radiusText}, Target Pool: ${targetGroup.length} workers)`);
+
+      // 1. Emit live wave status to Client
+      const clientId = job.clientInfo?.userId || job.clientInfo?.id || socket.userId;
+      const clientWaveStatus = {
+        jobId,
+        wave: waveNumber,
+        maxWaves: 3,
+        radiusText,
+        waveTitle,
+        message: waveNumber === 1 
+          ? `Requesting Group 1 (${targetGroup.length || 2} nearby top workers within ${radiusText})...`
+          : waveNumber === 2
+          ? `Expanding search to Group 2 (${targetGroup.length || 2} workers within ${radiusText})...`
+          : `Expanding search city-wide (${targetGroup.length || 2} workers up to ${radiusText})...`,
+      };
+
+      if (clientId) {
+        io.to(clientId.toString()).emit('job_dispatch_wave_status', clientWaveStatus);
+        io.to(`user:${clientId}`).emit('job_dispatch_wave_status', clientWaveStatus);
+      }
+      io.emit(`job_dispatch_wave_status_${jobId}`, clientWaveStatus);
+
+      // 2. Broadcast real-time job offer to target group of workers
+      const broadcastPayload = {
+        jobId,
+        service: job.service,
+        headerTitle: `${job.service} Worker`,
+        tier: job.tier,
+        location: job.location,
+        date: job.date,
+        price: job.price,
+        clientInfo: job.clientInfo,
+        createdAt: job.createdAt,
+        wave: waveNumber,
+        waveTitle,
+        radiusText,
+        targetWorkerIds: targetGroup.map(w => w.id),
+      };
+
+      io.emit('job_request_broadcast', broadcastPayload);
+
+      // 3. Set automatic expansion timer (10 seconds per wave)
+      const timer = setTimeout(() => {
+        executeWaveDispatch(waveNumber + 1);
+      }, 10000);
+
+      activeDispatchTimers.set(jobId, timer);
+    };
+
+    // Start Wave 1 immediately
+    executeWaveDispatch(1);
+  });
+
+  socket.on('worker_accept_job_request', async (data) => {
+    const { jobId, workerInfo } = data || {};
+    if (!jobId) return;
+
+    const job = activeJobRequests.get(jobId);
+    if (!job) {
+      socket.emit('job_already_taken', { jobId, message: 'This job request is no longer active.' });
+      return;
+    }
+
+    if (job.status === 'SEARCHING') {
+      // FIRST WORKER WINS!
+      job.status = 'ASSIGNED';
+      job.assignedWorker = workerInfo || { id: socket.userId, name: 'Assigned Worker' };
+      activeJobRequests.set(jobId, job);
+
+      // Clear any running wave expansion timers immediately!
+      const timer = activeDispatchTimers.get(jobId);
+      if (timer) {
+        clearTimeout(timer);
+        activeDispatchTimers.delete(jobId);
+      }
+
+      const winningWorkerName = workerInfo?.name || workerInfo?.fullName || 'Worker';
+      console.log(`[JobDispatch] 🔥 Job ${jobId} ACCEPTED in Wave ${job.currentWave} by FIRST worker: ${winningWorkerName} (ID: ${socket.userId}).`);
+
+      // 1. Instantly confirm booking with client
+      const clientId = job.clientInfo?.userId || job.clientInfo?.id || socket.userId;
+      if (clientId) {
+        io.to(clientId.toString()).emit('job_assigned_client', {
+          jobId,
+          status: 'ASSIGNED',
+          worker: job.assignedWorker,
+        });
+        io.to(`user:${clientId}`).emit('job_assigned_client', {
+          jobId,
+          status: 'ASSIGNED',
+          worker: job.assignedWorker,
+        });
+      }
+
+      // Also broadcast client assignment globally so client room catches it
+      io.emit(`job_assigned_client_${jobId}`, {
+        jobId,
+        status: 'ASSIGNED',
+        worker: job.assignedWorker,
+      });
+
+      // 2. Notify the winning worker
+      socket.emit('job_accepted_success', {
+        jobId,
+        message: 'Job request accepted! You have been assigned.',
+        job,
+      });
+
+      // 3. Immediately stop/cancel the job offer for ALL other workers
+      io.emit('job_request_cancelled_or_assigned', {
+        jobId,
+        winnerId: socket.userId,
+        winnerName: winningWorkerName,
+        message: `Job request assigned to ${winningWorkerName}.`,
+      });
+
+    } else {
+      // Late accept — job was already claimed by a faster worker
+      console.log(`[JobDispatch] Worker ${socket.userId} tried to accept ${jobId}, but it was ALREADY assigned to ${job.assignedWorker?.name || job.assignedWorker?.fullName}`);
+      socket.emit('job_already_taken', {
+        jobId,
+        message: 'Sorry! This job request was already accepted by another worker.',
+      });
+    }
+  });
+
+  socket.on('worker_reject_job_request', ({ jobId }) => {
+    console.log(`[JobDispatch] Worker ${socket.userId} declined job request ${jobId}`);
   });
 
   // ─── In-app voice calling events (Ultra-Low-Latency Optimized) ───
@@ -1592,7 +1803,6 @@ app.put('/api/user/:id/notification-settings', async (req, res) => {
       projectUpdates: settings.projectUpdates !== false,
       contracts: settings.contracts !== false,
       payments: settings.payments !== false,
-      attendance: settings.attendance !== false,
       marketing: settings.marketing !== false,
       systemAlerts: settings.systemAlerts !== false,
     };
@@ -1843,6 +2053,212 @@ app.post('/api/login', authLimiter, async (req, res) => {
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Error logging in user: ' + (error.message || error) });
+  }
+});
+
+// ==========================================
+// FIREBASE ADMIN SDK & PHONE AUTH ENDPOINTS
+// ==========================================
+if (!admin) {
+  try {
+    admin = require('firebase-admin');
+  } catch (e) {
+    admin = null;
+  }
+}
+if (admin && !admin.apps.length) {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const saPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+    if (saPath && fs.existsSync(path.resolve(saPath))) {
+      const sa = require(path.resolve(saPath));
+      admin.initializeApp({
+        credential: admin.credential.cert(sa),
+        projectId: sa.project_id || 'allver-f9cbf'
+      });
+      console.log('[Firebase Admin] Initialized with service account file:', saPath);
+    } else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      let saRaw = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+      if (saRaw.startsWith('{')) {
+        const sa = JSON.parse(saRaw);
+        admin.initializeApp({
+          credential: admin.credential.cert(sa),
+          projectId: sa.project_id || 'allver-f9cbf'
+        });
+      } else {
+        // Base64 encoded
+        const sa = JSON.parse(Buffer.from(saRaw, 'base64').toString('utf8'));
+        admin.initializeApp({
+          credential: admin.credential.cert(sa),
+          projectId: sa.project_id || 'allver-f9cbf'
+        });
+      }
+      console.log('[Firebase Admin] Initialized with FIREBASE_SERVICE_ACCOUNT env');
+    } else {
+      admin.initializeApp({
+        projectId: 'allver-f9cbf'
+      });
+      console.log('[Firebase Admin] Initialized with project ID allver-f9cbf');
+    }
+  } catch (err) {
+    console.error('[Firebase Admin] Initialization error:', err);
+  }
+}
+
+// POST /api/auth/firebase-phone-login - Verify Firebase ID token and login user
+app.post('/api/auth/firebase-phone-login', authLimiter, async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) {
+      return res.status(400).json({ success: false, message: 'Firebase ID token is required.' });
+    }
+
+    if (!admin) {
+      return res.status(500).json({ success: false, message: 'Firebase Admin SDK is not configured on the server.' });
+    }
+
+    // Cryptographically verify ID token with Firebase Admin
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (verifyErr) {
+      console.error('[Firebase Auth Backend] Token verification failed:', verifyErr.message);
+      return res.status(401).json({ success: false, message: 'Invalid or expired Firebase ID token.' });
+    }
+
+    const verifiedPhone = decodedToken.phone_number;
+    if (!verifiedPhone) {
+      return res.status(400).json({ success: false, message: 'No verified phone number associated with this token.' });
+    }
+
+    const formattedE164 = formatPhoneNumberToE164(verifiedPhone);
+    const last10Digits = verifiedPhone.replace(/\D/g, '').slice(-10);
+
+    // Search for existing user matching full E.164 or last 10 digits
+    const user = await User.findOne({
+      $or: [
+        { phoneNumber: formattedE164 },
+        { phoneNumber: last10Digits },
+        { phone: formattedE164 },
+        { phone: last10Digits }
+      ]
+    });
+
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        isNewUser: true,
+        phoneNumber: formattedE164,
+        message: 'Phone verified! Please complete registration.'
+      });
+    }
+
+    user.lastActive = new Date();
+    await user.save();
+
+    const userObj = user.toObject();
+    delete userObj.password;
+
+    res.status(200).json({
+      success: true,
+      isNewUser: false,
+      message: 'Login successful',
+      token: user._id,
+      user: userObj
+    });
+  } catch (error) {
+    console.error('Firebase phone login error:', error);
+    res.status(500).json({ success: false, message: 'Error processing phone login: ' + (error.message || error) });
+  }
+});
+
+// POST /api/auth/firebase-phone-register - Complete registration with verified Firebase ID token
+app.post('/api/auth/firebase-phone-register', authLimiter, async (req, res) => {
+  try {
+    const { idToken, fullName, role, city, language, email } = req.body;
+
+    if (!idToken || !fullName || !role || !city) {
+      return res.status(400).json({ success: false, message: 'Missing required registration fields.' });
+    }
+
+    if (!admin) {
+      return res.status(500).json({ success: false, message: 'Firebase Admin SDK is not configured on the server.' });
+    }
+
+    // Cryptographically verify ID token with Firebase Admin
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (verifyErr) {
+      console.error('[Firebase Auth Backend] Token verification failed during registration:', verifyErr.message);
+      return res.status(401).json({ success: false, message: 'Invalid or expired Firebase ID token.' });
+    }
+
+    const verifiedPhone = decodedToken.phone_number;
+    if (!verifiedPhone) {
+      return res.status(400).json({ success: false, message: 'Verified phone number not found in token.' });
+    }
+
+    const formattedE164 = formatPhoneNumberToE164(verifiedPhone);
+    const last10Digits = verifiedPhone.replace(/\D/g, '').slice(-10);
+
+    // Check if user already exists
+    let user = await User.findOne({
+      $or: [
+        { phoneNumber: formattedE164 },
+        { phoneNumber: last10Digits },
+        { phone: formattedE164 }
+      ]
+    });
+
+    if (user) {
+      user.fullName = fullName || user.fullName;
+      user.role = role || user.role;
+      user.city = city || user.city;
+      user.language = language || user.language || 'en';
+      user.lastActive = new Date();
+      await user.save();
+
+      const userObj = user.toObject();
+      delete userObj.password;
+      return res.status(200).json({
+        success: true,
+        message: 'Account updated successfully',
+        token: user._id,
+        user: userObj
+      });
+    }
+
+    const userEmail = email ? email.trim().toLowerCase() : `user_${last10Digits}@allver.app`;
+
+    const newUser = new User({
+      fullName,
+      email: userEmail,
+      phoneNumber: formattedE164,
+      phone: formattedE164,
+      password: 'firebase_auth_verified',
+      role,
+      city,
+      language: language || 'en',
+      lastActive: new Date()
+    });
+
+    await newUser.save();
+
+    const newUserObj = newUser.toObject();
+    delete newUserObj.password;
+
+    res.status(201).json({
+      success: true,
+      message: 'Account created successfully',
+      token: newUser._id,
+      user: newUserObj
+    });
+  } catch (error) {
+    console.error('Firebase phone register error:', error);
+    res.status(500).json({ success: false, message: 'Error registering user: ' + (error.message || error) });
   }
 });
 
@@ -3393,7 +3809,6 @@ app.get('/api/project-workspaces/user/:userId', async (req, res) => {
           if (plain.labourManagement) {
             plain.labourManagement = {
               ...plain.labourManagement,
-              attendance: [],
               payments: []
             };
           }
@@ -4651,310 +5066,8 @@ app.post('/api/project-workspaces/:id/updates/:updateId/comments', async (req, r
   }
 });
 
-// Labour Today's Work Status — check if labour has an active project today and attendance status
-app.get('/api/labour/today-status/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
 
-    // Find active workspaces where this labour is in the team
-    const activeWorkspaces = await ProjectWorkspace.find({
-      labourTeam: userId,
-      status: { $nin: ['Completed', 'Cancelled'] }
-    })
-      .populate('contractRequest', 'location')
-      .populate('contractor', 'fullName')
-      .populate('professional', 'fullName')
-      .lean();
 
-    if (!activeWorkspaces || activeWorkspaces.length === 0) {
-      return res.status(200).json({ hasActiveProject: false });
-    }
-
-    const today = new Date();
-    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-
-    const workspaces = activeWorkspaces.map(ws => {
-      const location = ws.contractRequest?.location || '';
-      let checkedIn = false;
-      let checkInTime = null;
-      let isApproved = false;
-
-      const attendance = ws.labourManagement?.attendance || [];
-      const todayEntry = attendance.find(a => a.date === todayStr);
-
-      if (todayEntry) {
-        const labourRecord = todayEntry.records?.find(r => {
-          const rId = r.labourId?._id || r.labourId;
-          return rId?.toString() === userId;
-        });
-
-        if (labourRecord) {
-          checkedIn = true;
-          isApproved = labourRecord.isMarked === true;
-          checkInTime = labourRecord.checkInTime || todayEntry.createdAt || today.toISOString();
-        }
-      }
-
-      return {
-        _id: ws._id,
-        title: ws.title,
-        location: location,
-        contractor: ws.contractor?.fullName || ws.professional?.fullName || '',
-        checkedIn,
-        checkInTime,
-        isApproved
-      };
-    });
-
-    res.status(200).json({
-      hasActiveProject: true,
-      workspaces,
-      workspace: workspaces[0],
-      checkedIn: workspaces[0].checkedIn,
-      checkInTime: workspaces[0].checkInTime,
-      isApproved: workspaces[0].isApproved
-    });
-  } catch (error) {
-    console.error('Error fetching labour today status:', error);
-    res.status(500).json({ message: 'Error fetching today status: ' + error.message });
-  }
-});
-
-// 16. Record Labour Attendance
-app.post('/api/project-workspaces/:id/labour/attendance', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { date, records, senderId } = req.body;
-
-    if (!date || !records || !senderId) {
-      return res.status(400).json({ message: 'Date, records, and senderId are required' });
-    }
-
-    const workspace = await ProjectWorkspace.findById(id);
-    if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
-
-    const isContractor = workspace.contractor?.toString() === senderId || workspace.professional?.toString() === senderId;
-
-    // Check if the sender is a registered labour in this workspace
-    const isLabourMember = workspace.labourTeam?.some(l => l?.toString() === senderId);
-
-    if (!isContractor && !isLabourMember) {
-      return res.status(403).json({ message: 'Forbidden: Only contractor or assigned labour can update attendance' });
-    }
-
-    if (!workspace.labourManagement) {
-      workspace.labourManagement = { attendance: [], payments: [] };
-    }
-
-    // Find if date already exists
-    const existingDateIndex = workspace.labourManagement.attendance.findIndex(a => a.date === date);
-
-    if (isLabourMember && !isContractor) {
-      // Labour can ONLY update their own GPS coordinates — not status/hours/other records
-      const gpsRecord = records.find(r => r.labourId?.toString() === senderId);
-      if (!gpsRecord) {
-        return res.status(400).json({ message: 'Labour can only update their own GPS check-in.' });
-      }
-
-      if (existingDateIndex > -1) {
-        // Find the labour's own record and only patch check-in data
-        const existingRecords = workspace.labourManagement.attendance[existingDateIndex].records || [];
-        const ownRecordIdx = existingRecords.findIndex(r => (r.labourId?._id || r.labourId)?.toString() === senderId);
-        if (ownRecordIdx > -1) {
-          existingRecords[ownRecordIdx].latitude = gpsRecord.latitude;
-          existingRecords[ownRecordIdx].longitude = gpsRecord.longitude;
-          existingRecords[ownRecordIdx].checkInTime = gpsRecord.checkInTime;
-          existingRecords[ownRecordIdx].checkOutTime = gpsRecord.checkOutTime;
-          existingRecords[ownRecordIdx].address = gpsRecord.address;
-          existingRecords[ownRecordIdx].distanceFromSite = gpsRecord.distanceFromSite;
-          existingRecords[ownRecordIdx].googleMapsLink = gpsRecord.googleMapsLink;
-          existingRecords[ownRecordIdx].isMarked = false;
-        } else {
-          // No existing record for this labour yet — add entry
-          existingRecords.push({
-            labourId: senderId,
-            status: gpsRecord.status || 'Present',
-            hours: gpsRecord.hours || 0,
-            latitude: gpsRecord.latitude,
-            longitude: gpsRecord.longitude,
-            checkInTime: gpsRecord.checkInTime,
-            checkOutTime: gpsRecord.checkOutTime,
-            address: gpsRecord.address,
-            distanceFromSite: gpsRecord.distanceFromSite,
-            googleMapsLink: gpsRecord.googleMapsLink,
-            isMarked: false
-          });
-        }
-        workspace.markModified('labourManagement');
-      } else {
-        // No attendance entry for this date yet — create one with GPS data
-        workspace.labourManagement.attendance.push({
-          date,
-          records: [{
-            labourId: senderId,
-            status: gpsRecord.status || 'Present',
-            hours: gpsRecord.hours || 0,
-            latitude: gpsRecord.latitude,
-            longitude: gpsRecord.longitude,
-            checkInTime: gpsRecord.checkInTime,
-            checkOutTime: gpsRecord.checkOutTime,
-            address: gpsRecord.address,
-            distanceFromSite: gpsRecord.distanceFromSite,
-            googleMapsLink: gpsRecord.googleMapsLink,
-            isMarked: false
-          }],
-          markedBy: senderId
-        });
-      }
-    } else {
-      // Contractor — full write access to all records
-      const markedRecords = records.map(r => ({
-        ...r,
-        isMarked: true
-      }));
-
-      if (existingDateIndex > -1) {
-        // Merge records to keep other labourers' GPS check-ins intact
-        const existingRecords = workspace.labourManagement.attendance[existingDateIndex].records || [];
-        markedRecords.forEach(mr => {
-          const idx = existingRecords.findIndex(er => (er.labourId?._id || er.labourId)?.toString() === mr.labourId?.toString());
-          if (idx > -1) {
-            const existing = existingRecords[idx].toObject ? existingRecords[idx].toObject() : existingRecords[idx];
-            existingRecords[idx] = {
-              ...existing,
-              ...mr,
-              checkInTime: mr.checkInTime !== undefined && mr.checkInTime !== null ? mr.checkInTime : existing.checkInTime,
-              checkOutTime: mr.checkOutTime !== undefined && mr.checkOutTime !== null ? mr.checkOutTime : existing.checkOutTime,
-              address: mr.address !== undefined && mr.address !== null ? mr.address : existing.address,
-              distanceFromSite: mr.distanceFromSite !== undefined && mr.distanceFromSite !== null ? mr.distanceFromSite : existing.distanceFromSite,
-              googleMapsLink: mr.googleMapsLink !== undefined && mr.googleMapsLink !== null ? mr.googleMapsLink : existing.googleMapsLink,
-              remarks: mr.remarks !== undefined && mr.remarks !== null ? mr.remarks : (existing.remarks || '')
-            };
-          } else {
-            existingRecords.push(mr);
-          }
-        });
-        workspace.labourManagement.attendance[existingDateIndex].records = existingRecords;
-        workspace.labourManagement.attendance[existingDateIndex].markedBy = senderId;
-      } else {
-        workspace.labourManagement.attendance.push({
-          date,
-          records: markedRecords,
-          markedBy: senderId
-        });
-      }
-      workspace.markModified('labourManagement');
-    }
-
-    await workspace.save();
-
-    // Trigger notification immediately for Attendance Submitted / GPS Checked In
-    try {
-      const senderUser = await User.findById(senderId);
-      const formattedDate = new Date(date).toLocaleDateString();
-      const io = req.app.get('io');
-
-      if (isLabourMember && !isContractor) {
-        // Labour checked in via GPS -> Notify the contractor assigned to the project
-        const contractorId = workspace.contractor || workspace.professional;
-        if (contractorId) {
-          const contractorNotifText = `📍 Labour Checked In\nLabourer ${senderUser.fullName} has checked in with GPS location for date ${date}.\n\n[View Attendance]`;
-          const contractorNotif = new Notification({
-            recipientId: contractorId,
-            senderId: senderId,
-            text: contractorNotifText,
-            workspaceId: id
-          });
-          await contractorNotif.save();
-
-          if (io) {
-            io.to(contractorId.toString()).emit('new_notification', {
-              _id: contractorNotif._id,
-              recipientId: contractorId,
-              senderId: {
-                _id: senderUser._id,
-                fullName: senderUser.fullName,
-                avatarUrl: senderUser.avatarUrl,
-                role: senderUser.role
-              },
-              text: contractorNotif.text,
-              isRead: false,
-              createdAt: contractorNotif.createdAt
-            });
-          }
-        }
-      } else {
-        // Update any matching "Labour Checked In" notifications for these labourers to isMarked: true
-        try {
-          const dateStr = date; // YYYY-MM-DD
-          const labourIds = records.map(r => r.labourId?.toString()).filter(Boolean);
-          if (labourIds.length > 0) {
-            await Notification.updateMany(
-              {
-                senderId: { $in: labourIds },
-                text: { $regex: new RegExp(`Labour Checked In.*${dateStr}`, 'i') }
-              },
-              { $set: { isMarked: true } }
-            );
-          }
-        } catch (updateNotifErr) {
-          console.error('Error marking notifications as processed:', updateNotifErr);
-        }
-
-        // Notify each individual labourer
-        if (records && records.length > 0) {
-          for (const record of records) {
-            const lId = record.labourId;
-            if (lId) {
-              const labourNotifText = `📋 Attendance Recorded\nYour attendance for ${formattedDate} has been marked as ${record.status} (${record.hours} hours) by Contractor ${senderUser.fullName}\n\n[View Attendance]`;
-              const labourNotif = new Notification({
-                recipientId: lId,
-                senderId: senderId,
-                text: labourNotifText,
-                workspaceId: id
-              });
-              await labourNotif.save();
-
-              if (io) {
-                io.to(lId.toString()).emit('new_notification', {
-                  _id: labourNotif._id,
-                  recipientId: lId,
-                  senderId: {
-                    _id: senderUser._id,
-                    fullName: senderUser.fullName,
-                    avatarUrl: senderUser.avatarUrl,
-                    role: senderUser.role
-                  },
-                  text: labourNotif.text,
-                  isRead: false,
-                  createdAt: labourNotif.createdAt
-                });
-              }
-            }
-          }
-        }
-      }
-    } catch (notifErr) {
-      console.error('Error triggering attendance submitted notification:', notifErr);
-    }
-
-    const updated = await ProjectWorkspace.findById(id)
-      .populate('client', 'fullName email phoneNumber role city avatarUrl')
-      .populate('professional', 'fullName email phoneNumber role city avatarUrl')
-      .populate('contractor', 'fullName email phoneNumber role city avatarUrl')
-      .populate('architect', 'fullName email phoneNumber role city avatarUrl')
-      .populate('labourTeam', 'fullName email phoneNumber role city skillType availability avatarUrl')
-      .populate({ path: 'messages.sender', select: 'fullName email role avatarUrl' });
-
-    emitWorkspaceUpdate(req, id, updated);
-    res.status(200).json({ message: 'Attendance recorded successfully', workspace: updated });
-  } catch (error) {
-    console.error('Error recording attendance:', error);
-    res.status(500).json({ message: 'Error recording attendance: ' + error.message });
-  }
-});
-
-// 17. Record Labour Payment/Advance
 app.post('/api/project-workspaces/:id/labour/payment', async (req, res) => {
   try {
     const { id } = req.params;
@@ -4973,7 +5086,7 @@ app.post('/api/project-workspaces/:id/labour/payment', async (req, res) => {
     }
 
     if (!workspace.labourManagement) {
-      workspace.labourManagement = { attendance: [], payments: [] };
+      workspace.labourManagement = { payments: [] };
     }
 
     workspace.labourManagement.payments.push({
@@ -5049,7 +5162,7 @@ app.post('/api/project-workspaces/:id/client/payment', async (req, res) => {
     if (!workspace) return res.status(404).json({ message: 'Workspace not found' });
 
     if (!workspace.labourManagement) {
-      workspace.labourManagement = { attendance: [], payments: [] };
+      workspace.labourManagement = { payments: [] };
     }
 
     const recipientId = workspace.contractor || workspace.professional;
@@ -5337,40 +5450,7 @@ app.get('/api/notifications/:userId', async (req, res) => {
         }).sort({ createdAt: -1 });
       }
     }
-
-    // Compute isMarked for labour check-in notifications if recipient is a contractor
-    const ProjectWorkspace = require('./models/ProjectWorkspace');
-    const workspaces = await ProjectWorkspace.find({
-      $or: [
-        { contractor: userId },
-        { professional: userId }
-      ]
-    });
-
-    const parsedNotifications = notifications.map(item => {
-      const plainNotif = item.toObject ? item.toObject() : item;
-      if (plainNotif.text && plainNotif.text.includes('Labour Checked In')) {
-        const match = plainNotif.text.match(/for date (\d{4}-\d{2}-\d{2})/);
-        if (match) {
-          const dateStr = match[1];
-          const labourId = plainNotif.senderId?._id || plainNotif.senderId;
-          
-          let isMarked = false;
-          for (const w of workspaces) {
-            const att = w.labourManagement?.attendance?.find(a => a.date === dateStr);
-            if (att) {
-              const rec = att.records?.find(r => (r.labourId?._id || r.labourId)?.toString() === labourId?.toString());
-              if (rec && rec.isMarked === true) {
-                isMarked = true;
-                break;
-              }
-            }
-          }
-          plainNotif.isMarked = isMarked;
-        }
-      }
-      return plainNotif;
-    });
+    const parsedNotifications = notifications.map(item => item.toObject ? item.toObject() : item);
 
     res.status(200).json({ success: true, notifications: parsedNotifications });
   } catch (error) {
@@ -5402,7 +5482,7 @@ app.post('/api/notifications/read-projects/:userId', async (req, res) => {
       { 
         recipientId: userId, 
         isRead: false,
-        text: /New Project|\[View Project\]|Applied|\[View Application\]|Project Invitation|\[View Invitation\]|Submitted Design|\[View Design\]|Labour Joined|Joined Project|Payment Received|\[View Details\]|Attendance Submitted|\[View Attendance\]|Milestone|\[View Progress\]|Document Shared|\[View Document\]|Site Visit|\[View Schedule\]/
+        text: /New Project|\[View Project\]|Applied|\[View Application\]|Project Invitation|\[View Invitation\]|Submitted Design|\[View Design\]|Labour Joined|Joined Project|Payment Received|\[View Details\]|Milestone|\[View Progress\]|Document Shared|\[View Document\]|Site Visit|\[View Schedule\]/
       }, 
       { $set: { isRead: true } }
     );
@@ -6423,9 +6503,6 @@ app.post('/api/notifications/test-trigger', async (req, res) => {
       case 'Labour Joined Project':
         text = `👷 Labour Joined Project\nLabourer ${senderUser.fullName} has joined the project: ${title || 'Luxury Villa'}\n\n[View Project]`;
         break;
-      case 'Attendance Submitted':
-        text = `📋 Attendance Submitted\nLabour attendance for ${visitDate || 'today'} has been marked by Contractor ${senderUser.fullName}\n\n[View Attendance]`;
-        break;
       case 'Project Milestone Completed':
         text = `✅ ${title || 'Foundation Work Completed'}\n\n${senderUser.role || 'Contractor'} ${senderUser.fullName} uploaded progress photos\n\n[View Progress]`;
         break;
@@ -6689,7 +6766,7 @@ app.get('/api/test-notifications', async (req, res) => {
       {
         recipientId: rahul._id,
         senderId: contractor._id,
-        text: `📋 Attendance Recorded\nYour attendance for today has been marked as Present (8.0 hours) by Contractor ${contractor.fullName}\n\n[View Attendance]`,
+        text: `👷 Joined Project\nYou have been assigned to project: Luxury Villa by Contractor ${contractor.fullName}\n\n[View Project]`,
         createdAt: new Date()
       },
       {
@@ -6697,12 +6774,6 @@ app.get('/api/test-notifications', async (req, res) => {
         senderId: contractor._id,
         text: `💰 Payment Received\nReceived ₹5,000 (Advance) for Project Sector 62 Thane\n\n[View Details]`,
         createdAt: new Date(Date.now() - 1000 * 60 * 30)
-      },
-      {
-        recipientId: rahul._id,
-        senderId: contractor._id,
-        text: `📋 Attendance Recorded\nYour attendance for yesterday has been marked as Overtime (10.0 hours) by Contractor ${contractor.fullName}\n\n[View Attendance]`,
-        createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24)
       }
     ];
 

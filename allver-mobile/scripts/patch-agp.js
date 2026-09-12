@@ -85,6 +85,106 @@ if (fs.existsSync(nodeModulesDir)) {
         console.error(`Error patching CallKeep in ${filePath}:`, e);
       }
     }
+
+    // 3. Patch react-native-worklets CMakeLists.txt for NDK C++ STL symbol linking
+    if (filePath.endsWith(path.join('react-native-worklets', 'android', 'CMakeLists.txt'))) {
+      try {
+        let content = fs.readFileSync(filePath, 'utf8');
+        if (content.includes('target_link_libraries(worklets log ReactAndroid::jsi fbjni::fbjni)') && !content.includes('c++_shared')) {
+          content = content.replace('target_link_libraries(worklets log ReactAndroid::jsi fbjni::fbjni)', 'target_link_libraries(worklets log ReactAndroid::jsi fbjni::fbjni c++_shared)');
+          fs.writeFileSync(filePath, content, 'utf8');
+          console.log(`Patched Worklets CMake: ${path.relative(nodeModulesDir, filePath)} (added c++_shared to target_link_libraries)`);
+        }
+      } catch (e) {
+        console.error(`Error patching Worklets CMake in ${filePath}:`, e);
+      }
+    }
+
+    // 4. Patch react-native-screens CMakeLists.txt for NDK C++ STL symbol linking
+    if (filePath.includes(path.join('react-native-screens', 'android')) && filePath.endsWith('CMakeLists.txt')) {
+      try {
+        let content = fs.readFileSync(filePath, 'utf8');
+        if (content.includes('fbjni::fbjni\n            android\n        )') && !content.includes('c++_shared')) {
+          content = content.replace('fbjni::fbjni\n            android\n        )', 'fbjni::fbjni\n            android\n            c++_shared\n        )');
+          fs.writeFileSync(filePath, content, 'utf8');
+          console.log(`Patched Screens CMake: ${path.relative(nodeModulesDir, filePath)}`);
+        }
+        if (content.includes('fbjni::fbjni\n  )') && !content.includes('c++_shared')) {
+          content = content.replace('fbjni::fbjni\n  )', 'fbjni::fbjni\n    c++_shared\n  )');
+          fs.writeFileSync(filePath, content, 'utf8');
+          console.log(`Patched Screens JNI CMake: ${path.relative(nodeModulesDir, filePath)}`);
+        }
+      } catch (e) {
+        console.error(`Error patching Screens CMake in ${filePath}:`, e);
+      }
+    }
+
+    // 5. Patch expo-modules-core CMakeLists.txt for NDK C++ STL symbol linking
+    if (filePath.includes(path.join('expo-modules-core', 'android')) && filePath.endsWith('CMakeLists.txt')) {
+      try {
+        let content = fs.readFileSync(filePath, 'utf8');
+        let modified = false;
+        if (content.includes('android\n  ${JSEXECUTOR_LIB}') && !content.includes('c++_shared')) {
+          content = content.replace('android\n  ${JSEXECUTOR_LIB}', 'android\n  c++_shared\n  ${JSEXECUTOR_LIB}');
+          modified = true;
+        }
+        if (content.includes('ReactAndroid::jsi\n)') && !content.includes('c++_shared')) {
+          content = content.replace('ReactAndroid::jsi\n)', 'ReactAndroid::jsi\n  c++_shared\n)');
+          modified = true;
+        }
+        if (content.includes('target_precompile_headers(') && !content.includes('# target_precompile_headers(')) {
+          content = content.replace(/target_precompile_headers\(/g, '# target_precompile_headers(');
+          modified = true;
+        }
+        if (modified) {
+          fs.writeFileSync(filePath, content, 'utf8');
+          console.log(`Patched ExpoModulesCore CMake: ${path.relative(nodeModulesDir, filePath)}`);
+        }
+      } catch (e) {
+        console.error(`Error patching ExpoModulesCore CMake in ${filePath}:`, e);
+      }
+    }
+    // 6. Patch react-native-reanimated CMakeLists.txt for NDK C++ STL symbol linking
+    if (filePath.endsWith(path.join('react-native-reanimated', 'android', 'CMakeLists.txt'))) {
+      try {
+        let content = fs.readFileSync(filePath, 'utf8');
+        if (content.includes('android\n                      worklets)') && !content.includes('c++_shared')) {
+          content = content.replace('android\n                      worklets)', 'android\n                      worklets c++_shared)');
+          fs.writeFileSync(filePath, content, 'utf8');
+          console.log(`Patched Reanimated CMake: ${path.relative(nodeModulesDir, filePath)}`);
+        }
+      } catch (e) {
+        console.error(`Error patching Reanimated CMake in ${filePath}:`, e);
+      }
+    }
+
+    // 7. Patch react-native-gesture-handler CMakeLists.txt for NDK C++ STL symbol linking
+    if (filePath.includes(path.join('react-native-gesture-handler', 'android')) && filePath.endsWith('CMakeLists.txt')) {
+      try {
+        let content = fs.readFileSync(filePath, 'utf8');
+        if (content.includes('fbjni::fbjni\n)') && !content.includes('c++_shared')) {
+          content = content.replace('fbjni::fbjni\n)', 'fbjni::fbjni\n  c++_shared\n)');
+          fs.writeFileSync(filePath, content, 'utf8');
+          console.log(`Patched GestureHandler CMake: ${path.relative(nodeModulesDir, filePath)}`);
+        }
+      } catch (e) {
+        console.error(`Error patching GestureHandler CMake in ${filePath}:`, e);
+      }
+    }
+
+    // 8. Patch react-native-safe-area-context CMakeLists.txt for NDK C++ STL symbol linking
+    if (filePath.includes(path.join('react-native-safe-area-context', 'android')) && filePath.endsWith('CMakeLists.txt')) {
+      try {
+        let content = fs.readFileSync(filePath, 'utf8');
+        if (content.includes('reactnative\n  )') && !content.includes('c++_shared')) {
+          content = content.replace('reactnative\n  )', 'reactnative\n          c++_shared\n  )');
+          fs.writeFileSync(filePath, content, 'utf8');
+          console.log(`Patched SafeAreaContext CMake: ${path.relative(nodeModulesDir, filePath)}`);
+        }
+      } catch (e) {
+        console.error(`Error patching SafeAreaContext CMake in ${filePath}:`, e);
+      }
+    }
   });
   console.log('Post-install patching complete.');
 } else {

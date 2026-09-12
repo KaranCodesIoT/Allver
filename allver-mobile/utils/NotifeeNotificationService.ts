@@ -10,12 +10,14 @@ let AndroidCategory: any = null;
 if (Platform.OS !== 'web') {
   try {
     const notifeeModule = require('@notifee/react-native');
-    notifee = notifeeModule.default || notifeeModule;
-    AndroidStyle = notifeeModule.AndroidStyle;
-    AndroidImportance = notifeeModule.AndroidImportance;
-    AndroidCategory = notifeeModule.AndroidCategory;
+    notifee = notifeeModule?.default || notifeeModule;
+    if (notifeeModule) {
+      AndroidStyle = notifeeModule.AndroidStyle;
+      AndroidImportance = notifeeModule.AndroidImportance;
+      AndroidCategory = notifeeModule.AndroidCategory;
+    }
   } catch (e) {
-    console.log('[NotifeeService] Notifee native module not available in current environment:', e);
+    // Notifee native module not available in current environment (e.g. Expo Go)
   }
 }
 
@@ -63,15 +65,6 @@ export class NotifeeNotificationService {
         sound: 'default',
       });
 
-      // 4. Attendance Channel
-      await notifee.createChannel({
-        id: 'attendance',
-        name: 'Attendance Alerts',
-        description: 'Daily check-in and attendance notifications',
-        importance: AndroidImportance?.DEFAULT || 3,
-        vibration: true,
-        sound: 'default',
-      });
 
       // 5. Payment Channel
       await notifee.createChannel({
@@ -290,45 +283,6 @@ export class NotifeeNotificationService {
     }
   }
 
-  /**
-   * Display Attendance Notification with CHECK IN action
-   */
-  public static async displayAttendanceNotification(data: {
-    workspaceId: string;
-    projectName: string;
-  }) {
-    if (!notifee) return;
-    await this.initChannels();
-
-    const { workspaceId, projectName } = data;
-
-    try {
-      await notifee.displayNotification({
-        id: `att_${workspaceId}`,
-        title: `⏰ Attendance Reminder`,
-        body: `Please mark your attendance for ${projectName}`,
-        data: {
-          workspaceId,
-          category: 'attendance',
-        },
-        android: {
-          channelId: 'attendance',
-          actions: [
-            {
-              title: 'CHECK IN',
-              pressAction: { id: 'check_in' },
-            },
-          ],
-          pressAction: {
-            id: 'default',
-            launchActivity: 'default',
-          },
-        },
-      });
-    } catch (err) {
-      console.error('[NotifeeService] Error displaying attendance notification:', err);
-    }
-  }
 
   /**
    * Display Payment Notification with VIEW DETAILS action
