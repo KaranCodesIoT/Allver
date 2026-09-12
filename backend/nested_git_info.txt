@@ -1,1 +1,0 @@
-NO NESTED .GIT IN allver-mobile.
