@@ -811,37 +811,21 @@ export default function DashboardScreen() {
               )}
             </TouchableOpacity>
 
-            {currentUser?.role === 'Labour' ? (
-              <TouchableOpacity 
-                style={styles.headerAvatarBtn}
-                onPress={() => router.push('/(tabs)/profile')}
-              >
-                {currentUser?.avatarUrl ? (
-                  <Image 
-                    source={{ uri: resolveAvatarUrl(currentUser.avatarUrl, currentUser.updatedAt) }} 
-                    style={styles.headerAvatarImg} 
-                  />
-                ) : (
-                  <View style={[styles.headerAvatarImg, { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', borderColor: '#94A3B8' }]}>
-                    <Feather name="user" size={14} color={COLORS.textDark} />
-                  </View>
-                )}
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity 
-                style={styles.iconBadgeBtn}
-                onPress={() => router.push('/jobs')}
-              >
-                <Feather name="briefcase" size={20} color={COLORS.textDark} />
-                {unreadActivityCount > 0 && (
-                  <View style={styles.badgeCircle}>
-                    <Text style={styles.badgeText}>
-                      {unreadActivityCount > 99 ? '99+' : unreadActivityCount}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity 
+              style={styles.headerAvatarBtn}
+              onPress={() => router.push('/(tabs)/profile')}
+            >
+              {currentUser?.avatarUrl ? (
+                <Image 
+                  source={{ uri: resolveAvatarUrl(currentUser.avatarUrl, currentUser.updatedAt) }} 
+                  style={styles.headerAvatarImg} 
+                />
+              ) : (
+                <View style={[styles.headerAvatarImg, { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', borderColor: '#94A3B8' }]}>
+                  <Feather name="user" size={14} color={COLORS.textDark} />
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -966,24 +950,26 @@ export default function DashboardScreen() {
               </View>
             </TouchableOpacity>
 
-            {/* Skilled Labour */}
-            <TouchableOpacity 
-              style={[styles.qaCard, { borderColor: '#FFEDD5' }]}
-              onPress={() => setWorkforceModalVisible(true)}
-              activeOpacity={0.85}
-            >
-              <View style={styles.qaCardHeader}>
-                <View style={[styles.qaIconWrap, { backgroundColor: '#FFF7ED' }]}>
-                  <FontAwesome5 name="users" size={16} color="#F97316" />
+            {/* Skilled Labour - Hidden for Skilled Workers / Labour */}
+            {currentUser?.role !== 'Labour' && currentUser?.role !== 'Worker' && currentUser?.role !== 'Skilled Worker' && (
+              <TouchableOpacity 
+                style={[styles.qaCard, { borderColor: '#FFEDD5' }]}
+                onPress={() => setWorkforceModalVisible(true)}
+                activeOpacity={0.85}
+              >
+                <View style={styles.qaCardHeader}>
+                  <View style={[styles.qaIconWrap, { backgroundColor: '#FFF7ED' }]}>
+                    <FontAwesome5 name="users" size={16} color="#F97316" />
+                  </View>
+                  <Text style={styles.qaCardTitle}>Skilled{"\n"}Workforce</Text>
                 </View>
-                <Text style={styles.qaCardTitle}>Skilled{"\n"}Workforce</Text>
-              </View>
-              <View style={styles.qaCardFooter}>
-                <View style={[styles.qaPill, { backgroundColor: '#F97316' }]}>
-                  <Text style={styles.qaPillText}>Find ↗</Text>
+                <View style={styles.qaCardFooter}>
+                  <View style={[styles.qaPill, { backgroundColor: '#F97316' }]}>
+                    <Text style={styles.qaPillText}>Find ↗</Text>
+                  </View>
                 </View>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            )}
           </View>
 
 

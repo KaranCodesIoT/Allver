@@ -51,8 +51,8 @@ export class ActionRouter {
         case ActionType.VIEW_PROJECTS:
           Alert.alert(
             'Action Executed',
-            'AI Assistant is redirecting you to job opportunities / projects.',
-            [{ text: 'OK', onPress: () => router.push('/jobs') }]
+            'AI Assistant is redirecting you to feed.',
+            [{ text: 'OK', onPress: () => router.push('/(tabs)/feed') }]
           );
           return true;
 
@@ -131,7 +131,7 @@ export class ActionRouter {
           return true;
 
         case ActionType.OPEN_JOBS:
-          router.push('/jobs');
+          router.push('/(tabs)/feed');
           return true;
 
         case ActionType.OPEN_TIMELINE:

@@ -10,6 +10,7 @@ import Constants from 'expo-constants';
 import { BACKEND_URL } from '../../constants/Config';
 import { getToken, saveStoredUser, removeToken, removeStoredUser, getStoredUser } from '../../constants/Auth';
 import CallKeepService from '../../utils/CallKeepService';
+import ActiveJobBanner from '../../components/ActiveJobBanner';
 
 const COLORS = {
   green: '#16A34A',
@@ -172,13 +173,57 @@ export default function TabLayout() {
     */
     console.log('[BOOT] [TabLayout] CallKeep setup bypassed.');
 
-    // 2. Initialize Socket.IO connection
+    // 2. Initialize Socket.IO connection & Sync Worker Location
     console.log('[BOOT] [TabLayout] Importing SocketService...');
     import('../../utils/SocketService')
-      .then(({ default: SocketService }) => {
+      .then(async ({ default: SocketService }) => {
         console.log('[BOOT] [TabLayout] SocketService imported. Initializing for user:', userId);
         SocketService.initialize(userId);
         console.log('[BOOT] [TabLayout] SocketService.initialize() finished.');
+
+        // If user is a worker/labour/contractor, sync live GPS location with backend matching engine
+        if (user.role && user.role !== 'Client') {
+          const syncLocation = async () => {
+            const activeUser = (global as any).currentUser || user;
+            if (activeUser.availability === 'Not Available' || activeUser.isAvailableForBooking === false) {
+              return;
+            }
+
+            try {
+              const Location = await import('expo-location');
+              const { status } = await Location.getForegroundPermissionsAsync();
+              if (status === 'granted') {
+                const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                if (pos?.coords) {
+                  const { latitude, longitude } = pos.coords;
+                  console.log(`[WorkerLocation] Syncing live worker coordinates (${latitude}, ${longitude}) to backend...`);
+                  SocketService.emit('worker_update_location', {
+                    latitude,
+                    longitude,
+                    formattedAddress: activeUser.formattedAddress || activeUser.location || '',
+                    workArea: activeUser.workArea || activeUser.city || '',
+                    availability: activeUser.availability || 'Available',
+                    isAvailableForBooking: activeUser.isAvailableForBooking !== false,
+                    skillType: activeUser.skillType || activeUser.workCategory || '',
+                    serviceRadiusKm: activeUser.serviceRadiusKm || activeUser.workAreaRadius || 15,
+                  });
+                }
+              }
+            } catch (locErr) {
+              console.warn('[WorkerLocation] Background location sync error:', locErr);
+            }
+          };
+
+          // Sync when socket connects & periodically
+          SocketService.on('connect', syncLocation);
+          const initialTimer = setTimeout(syncLocation, 1500);
+          const locationRefreshInterval = setInterval(syncLocation, 60000);
+          return () => {
+            clearTimeout(initialTimer);
+            clearInterval(locationRefreshInterval);
+            SocketService.off('connect', syncLocation);
+          };
+        }
       })
       .catch(err => console.error('[BOOT] [TabLayout Error] SocketService import error:', err));
 
@@ -402,8 +447,10 @@ export default function TabLayout() {
   const tabHeight = 56 + bottomPadding;
 
   return (
-    <Tabs
-      screenOptions={{
+    <View style={{ flex: 1 }}>
+      <ActiveJobBanner />
+      <Tabs
+        screenOptions={{
         tabBarActiveTintColor: COLORS.green,
         tabBarInactiveTintColor: COLORS.textMuted,
         headerShown: false,
@@ -490,5 +537,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+  </View>
   );
 }

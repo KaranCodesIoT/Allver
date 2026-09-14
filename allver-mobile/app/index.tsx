@@ -54,6 +54,53 @@ export default function Index() {
           console.log('[BOOT] [Step 29] Applying language:', userLang);
           i18n.changeLanguage(userLang);
 
+          // Check for active in-flight job session
+          try {
+            const activeToken = token || (await getToken());
+            const isWorker = userObj.role === 'Labour' || userObj.role === 'Contractor';
+            const checkUrl = isWorker
+              ? `${BACKEND_URL}/api/worker/active-job`
+              : `${BACKEND_URL}/api/customer/active-job`;
+
+            const activeJobRes = await fetch(checkUrl, {
+              headers: {
+                'Content-Type': 'application/json',
+                ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
+              }
+            });
+
+            if (activeJobRes.ok) {
+              const activeJobData = await activeJobRes.json();
+              if (activeJobData.success && activeJobData.hasActiveJob && activeJobData.activeJob) {
+                const job = activeJobData.activeJob;
+                console.log('[BOOT] [Step 30B] Found active job, restoring session for jobId:', job.jobId);
+                if (isWorker) {
+                  router.replace({
+                    pathname: '/active-job',
+                    params: {
+                      jobId: job.jobId,
+                      jobData: JSON.stringify(job)
+                    }
+                  } as any);
+                  return;
+                } else {
+                  router.replace({
+                    pathname: '/booking-flow',
+                    params: {
+                      jobId: job.jobId,
+                      service: job.service,
+                      location: job.clientLocation?.address || job.location || '',
+                      price: job.price || '₹900'
+                    }
+                  } as any);
+                  return;
+                }
+              }
+            }
+          } catch (jobErr) {
+            console.warn('[BOOT] [Step 30B Warning] Active job recovery check skipped:', jobErr);
+          }
+
           // Role-based Navigation logic
           console.log('[BOOT] [Step 30] User role:', userObj.role);
           if (userObj.role === 'Architect') {

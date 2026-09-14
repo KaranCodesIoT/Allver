@@ -247,8 +247,6 @@ export default function RootLayout() {
           console.log('[Notifee Initial Notification Tapped]', data);
           if (data?.conversationId) {
             router.push({ pathname: '/chat-room', params: { conversationId: data.conversationId, receiverId: data.senderId } });
-          } else if (data?.jobId) {
-            router.push('/jobs');
           } else if (data?.workspaceId) {
             router.push('/labours');
           }
@@ -265,8 +263,6 @@ export default function RootLayout() {
         if (pressAction?.id === 'default' || type === 1) { // EventType.PRESS
           if (data?.conversationId) {
             router.push({ pathname: '/chat-room', params: { conversationId: data.conversationId, receiverId: data.senderId } });
-          } else if (data?.jobId) {
-            router.push('/jobs');
           } else if (data?.workspaceId) {
             router.push('/labours');
           }
@@ -319,6 +315,7 @@ export default function RootLayout() {
             <Stack.Screen name="labours" options={{ headerShown: false }} />
             <Stack.Screen name="book-worker" options={{ headerShown: false }} />
             <Stack.Screen name="booking-flow" options={{ headerShown: false }} />
+            <Stack.Screen name="active-job" options={{ headerShown: false }} />
             <Stack.Screen name="project-detail" options={{ headerShown: false }} />
             <Stack.Screen name="project-applications" options={{ headerShown: false }} />
             <Stack.Screen name="project-compare" options={{ headerShown: false }} />
@@ -328,7 +325,6 @@ export default function RootLayout() {
             <Stack.Screen name="contact" options={{ headerShown: false }} />
             <Stack.Screen name="privacy-policy" options={{ headerShown: false }} />
             <Stack.Screen name="terms" options={{ headerShown: false }} />
-            <Stack.Screen name="jobs" options={{ headerShown: false, title: 'Opportunity' }} />
             <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           </Stack>
           <StatusBar style="auto" />

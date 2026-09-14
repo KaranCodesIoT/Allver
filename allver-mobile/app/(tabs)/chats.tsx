@@ -365,37 +365,21 @@ export default function ChatsScreen() {
               <View style={styles.activeHeaderLine} />
             </TouchableOpacity>
 
-            {currentUser?.role === 'Labour' ? (
-              <TouchableOpacity 
-                style={styles.headerAvatarBtn}
-                onPress={() => router.push('/(tabs)/profile')}
-              >
-                {currentUser?.avatarUrl ? (
-                  <Image 
-                    source={{ uri: resolveAvatarUrl(currentUser.avatarUrl) }} 
-                    style={styles.headerAvatarImg} 
-                  />
-                ) : (
-                  <View style={[styles.headerAvatarImg, { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', borderColor: '#94A3B8' }]}>
-                    <Feather name="user" size={14} color={COLORS.textDark} />
-                  </View>
-                )}
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity 
-                style={styles.iconBadgeBtn}
-                onPress={() => router.push('/jobs')}
-              >
-                <Feather name="briefcase" size={20} color={COLORS.textDark} />
-                {unreadActivityCount > 0 && (
-                  <View style={styles.badgeCircle}>
-                    <Text style={styles.badgeText}>
-                      {unreadActivityCount > 99 ? '99+' : unreadActivityCount}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity 
+              style={styles.headerAvatarBtn}
+              onPress={() => router.push('/(tabs)/profile')}
+            >
+              {currentUser?.avatarUrl ? (
+                <Image 
+                  source={{ uri: resolveAvatarUrl(currentUser.avatarUrl) }} 
+                  style={styles.headerAvatarImg} 
+                />
+              ) : (
+                <View style={[styles.headerAvatarImg, { backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', borderColor: '#94A3B8' }]}>
+                  <Feather name="user" size={14} color={COLORS.textDark} />
+                </View>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -426,9 +410,9 @@ export default function ChatsScreen() {
 
         {/* Conversations List */}
         <View style={styles.listContainer}>
-          {filteredConversations.map((chat) => (
+          {filteredConversations.map((chat, index) => (
             <TouchableOpacity 
-              key={chat.id} 
+              key={`${chat.id || chat.receiverId || 'chat'}_${index}`} 
               style={styles.chatItem} 
               activeOpacity={0.7}
               onPress={() => handleChatPress(chat)}

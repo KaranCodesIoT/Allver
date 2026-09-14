@@ -1,9 +1,11 @@
-import React from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Linking, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Linking, Dimensions, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather, Ionicons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { BACKEND_URL } from '../constants/Config';
+import { getStoredUser } from '../constants/Auth';
 
 const { width } = Dimensions.get('window');
 
@@ -24,45 +26,156 @@ const COLORS = {
   blueLight: '#EFF6FF',
 };
 
+const PROJECT_TYPE_IMAGES: Record<string, string> = {
+  Residential: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=400&q=80',
+  Commercial: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=400&q=80',
+  Renovation: 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?auto=format&fit=crop&w=400&q=80',
+  Interior: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=400&q=80',
+  Civil: 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=400&q=80',
+  default: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=400&q=80',
+};
+
+interface PaymentDetail {
+  _id: string;
+  workspaceId: string;
+  projectTitle: string;
+  projectType: string;
+  client: { fullName: string; avatarUrl?: string; city?: string } | null;
+  contractor: { fullName: string; avatarUrl?: string } | null;
+  amount: number;
+  type: string;
+  status: string;
+  date: string;
+  paymentId: string;
+}
+
 export default function PaymentStatusScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const paymentId = params.paymentId as string;
+
+  const [loading, setLoading] = useState(true);
+  const [payment, setPayment] = useState<PaymentDetail | null>(null);
+
+  useEffect(() => {
+    const fetchPayment = async () => {
+      try {
+        let user = (global as any).currentUser;
+        if (!user) {
+          const stored = await getStoredUser();
+          if (stored) {
+            user = typeof stored === 'string' ? JSON.parse(stored) : stored;
+          }
+        }
+        if (!user?._id || !paymentId) {
+          setLoading(false);
+          return;
+        }
+
+        const res = await fetch(`${BACKEND_URL}/api/earnings/${user._id}/payments/${paymentId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setPayment(data.payment);
+        }
+      } catch (err) {
+        console.error('Error fetching payment detail for status:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPayment();
+  }, [paymentId]);
+
+  const formatCurrency = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
+  
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ', ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatShortDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  const getExpectedClearDate = (dateStr: string) => {
+    const d = new Date(new Date(dateStr).getTime() + 3 * 24 * 60 * 60 * 1000);
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/earnings')} activeOpacity={0.7}>
+            <Feather name="chevron-left" size={24} color={COLORS.textDark} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Payment Status</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={COLORS.green} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!payment) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/earnings')} activeOpacity={0.7}>
+            <Feather name="chevron-left" size={24} color={COLORS.textDark} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Payment Status</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Text style={{ color: COLORS.textMuted, fontSize: 14 }}>Payment not found</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const isPaid = payment.status === 'Paid';
+  const imageUri = PROJECT_TYPE_IMAGES[payment.projectType] || PROJECT_TYPE_IMAGES.default;
 
   const TIMELINE_STEPS = [
     {
       id: 'step-1',
-      title: 'Job Completed',
-      date: '4 Sept 2026, 11:00 AM',
-      description: 'You marked the job as completed.',
-      status: 'completed', // completed | active | upcoming
+      title: payment.type === 'Advance' ? 'Advance Requested' : 'Work Milestone Recorded',
+      date: formatDate(payment.date),
+      description: 'Recorded by contractor for project.',
+      status: 'completed',
     },
     {
       id: 'step-2',
-      title: 'Client Payment',
-      date: '4 Sept 2026, 11:30 AM',
-      description: 'Client has made the payment.',
+      title: 'Contractor Payment Recorded',
+      date: formatDate(payment.date),
+      description: 'Payment has been logged in project workspace.',
       status: 'completed',
     },
     {
       id: 'step-3',
       title: 'Processing',
-      date: 'Expected by 7 Sept 2026',
-      description: 'Payment is being verified and processed.',
-      status: 'active',
+      date: isPaid ? 'Completed' : `Expected by ${getExpectedClearDate(payment.date)}`,
+      description: isPaid ? 'Payment verification complete.' : 'Payment is in 3-day verification holding period.',
+      status: isPaid ? 'completed' : 'active',
     },
     {
       id: 'step-4',
       title: 'Added to Earnings',
-      date: '',
-      description: 'Will be added after verification.',
-      status: 'upcoming',
+      date: isPaid ? formatDate(payment.date) : '',
+      description: isPaid ? 'Successfully credited to your earnings.' : 'Will be added automatically after verification.',
+      status: isPaid ? 'completed' : 'upcoming',
     },
     {
       id: 'step-5',
       title: 'Available to Withdraw',
-      date: '',
-      description: 'You can withdraw once it is added to your earnings.',
-      status: 'upcoming',
+      date: isPaid ? 'Available Now' : '',
+      description: isPaid ? 'You can withdraw this amount now.' : 'You can withdraw once verified.',
+      status: isPaid ? 'completed' : 'upcoming',
     },
   ];
 
@@ -91,20 +204,22 @@ export default function PaymentStatusScreen() {
         {/* ================= JOB MINI CARD ================= */}
         <View style={styles.jobMiniCard}>
           <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?auto=format&fit=crop&w=400&q=80' }}
+            source={{ uri: imageUri }}
             style={styles.jobThumb}
             contentFit="cover"
           />
           <View style={styles.jobDetails}>
-            <Text style={styles.jobTitle}>Plumbing Repair</Text>
-            <Text style={styles.jobSubtitle}>Dadar, Mumbai</Text>
+            <Text style={styles.jobTitle}>{payment.projectTitle}</Text>
+            <Text style={styles.jobSubtitle}>{payment.client?.city || payment.projectType}</Text>
             <View style={styles.amountStatusRow}>
-              <Text style={styles.jobAmount}>₹2,000</Text>
-              <View style={styles.pendingBadge}>
-                <Text style={styles.pendingBadgeText}>Pending</Text>
+              <Text style={styles.jobAmount}>{formatCurrency(payment.amount)}</Text>
+              <View style={[styles.pendingBadge, isPaid && { backgroundColor: COLORS.greenLight }]}>
+                <Text style={[styles.pendingBadgeText, isPaid && { color: COLORS.green }]}>
+                  {payment.status}
+                </Text>
               </View>
             </View>
-            <Text style={styles.jobDateText}>Completed on 4 Sept 2026</Text>
+            <Text style={styles.jobDateText}>Recorded on {formatShortDate(payment.date)}</Text>
           </View>
         </View>
 
@@ -180,7 +295,7 @@ export default function PaymentStatusScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.helpTitle}>Need help?</Text>
               <Text style={styles.helpDesc}>
-                Contact our support team if the payment is delayed.
+                Contact our support team if you have questions regarding this payment.
               </Text>
             </View>
           </View>

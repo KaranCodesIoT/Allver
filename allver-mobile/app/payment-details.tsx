@@ -1,9 +1,11 @@
-import React from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { BACKEND_URL } from '../constants/Config';
+import { getStoredUser } from '../constants/Auth';
 
 const { width } = Dimensions.get('window');
 
@@ -20,23 +22,109 @@ const COLORS = {
   bgLight: '#F8FAFC',
 };
 
+const PROJECT_TYPE_IMAGES: Record<string, string> = {
+  Residential: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=400&q=80',
+  Commercial: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=400&q=80',
+  Renovation: 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?auto=format&fit=crop&w=400&q=80',
+  Interior: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=400&q=80',
+  Civil: 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=400&q=80',
+  default: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=400&q=80',
+};
+
+interface PaymentDetail {
+  _id: string;
+  workspaceId: string;
+  projectTitle: string;
+  projectType: string;
+  client: { fullName: string; avatarUrl?: string; city?: string } | null;
+  contractor: { fullName: string; avatarUrl?: string } | null;
+  amount: number;
+  type: string;
+  status: string;
+  date: string;
+  paymentId: string;
+}
+
 export default function PaymentDetailsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const paymentId = params.paymentId as string;
 
-  const id = (params.id as string) || 'pmt-1';
-  const isPainting = id === 'pmt-3';
+  const [loading, setLoading] = useState(true);
+  const [payment, setPayment] = useState<PaymentDetail | null>(null);
 
-  const jobTitle = isPainting ? 'Painting Work' : 'Mason Work';
-  const jobSubtitle = isPainting ? 'Worli, Mumbai' : 'Sharma Residence';
-  const amount = isPainting ? '₹1,150' : '₹3,500';
-  const dateStr = isPainting ? '28 Aug 2026, 4:15 PM' : '5 Sept 2026, 11:30 AM';
-  const paymentId = isPainting ? 'ALV-PMT-781924' : 'ALV-PMT-892736';
-  const clientName = isPainting ? 'Mrs. Anita Deshmukh' : 'Mr. Rohit Sharma';
-  const clientLoc = isPainting ? 'Worli, Mumbai' : 'Andheri, Mumbai';
-  const image = isPainting
-    ? 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=400&q=80'
-    : 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=400&q=80';
+  useEffect(() => {
+    const fetchPayment = async () => {
+      try {
+        let user = (global as any).currentUser;
+        if (!user) {
+          const stored = await getStoredUser();
+          if (stored) {
+            user = typeof stored === 'string' ? JSON.parse(stored) : stored;
+          }
+        }
+        if (!user?._id || !paymentId) {
+          setLoading(false);
+          return;
+        }
+
+        const res = await fetch(`${BACKEND_URL}/api/earnings/${user._id}/payments/${paymentId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setPayment(data.payment);
+        }
+      } catch (err) {
+        console.error('Error fetching payment detail:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchPayment();
+  }, [paymentId]);
+
+  const formatCurrency = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ', ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/earnings')} activeOpacity={0.7}>
+            <Feather name="chevron-left" size={24} color={COLORS.textDark} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Payment Details</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={COLORS.green} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!payment) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/earnings')} activeOpacity={0.7}>
+            <Feather name="chevron-left" size={24} color={COLORS.textDark} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Payment Details</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <Text style={{ color: COLORS.textMuted, fontSize: 14 }}>Payment not found</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const imageUri = PROJECT_TYPE_IMAGES[payment.projectType] || PROJECT_TYPE_IMAGES.default;
+  const isPaid = payment.status === 'Paid';
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -62,23 +150,23 @@ export default function PaymentDetailsScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* ================= JOB MINI CARD ================= */}
         <View style={styles.jobMiniCard}>
-          <Image source={{ uri: image }} style={styles.jobThumb} contentFit="cover" />
+          <Image source={{ uri: imageUri }} style={styles.jobThumb} contentFit="cover" />
           <View style={styles.jobDetails}>
-            <Text style={styles.jobTitle}>{jobTitle}</Text>
-            <Text style={styles.jobSubtitle}>{jobSubtitle}</Text>
+            <Text style={styles.jobTitle}>{payment.projectTitle}</Text>
+            <Text style={styles.jobSubtitle}>{payment.client?.city || payment.projectType}</Text>
             <View style={styles.completedPill}>
-              <Text style={styles.completedPillText}>Completed</Text>
+              <Text style={styles.completedPillText}>{isPaid ? 'Completed' : 'Processing'}</Text>
             </View>
-            <Text style={styles.jobDateText}>{dateStr}</Text>
+            <Text style={styles.jobDateText}>{formatDate(payment.date)}</Text>
           </View>
         </View>
 
         {/* ================= LARGE AMOUNT CARD ================= */}
         <View style={styles.amountCard}>
           <View style={styles.amountHeaderRow}>
-            <Text style={styles.amountValue}>{amount}</Text>
+            <Text style={styles.amountValue}>{formatCurrency(payment.amount)}</Text>
             <View style={styles.paidBadge}>
-              <Text style={styles.paidBadgeText}>Paid</Text>
+              <Text style={styles.paidBadgeText}>{payment.status}</Text>
             </View>
           </View>
           <Text style={styles.amountSub}>Payment received in your earnings</Text>
@@ -86,8 +174,8 @@ export default function PaymentDetailsScreen() {
           {/* Breakdown Rows */}
           <View style={styles.breakdownBox}>
             <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Job Amount</Text>
-              <Text style={styles.breakdownVal}>{amount}</Text>
+              <Text style={styles.breakdownLabel}>{payment.type === 'Advance' ? 'Advance Amount' : 'Job Amount'}</Text>
+              <Text style={styles.breakdownVal}>{formatCurrency(payment.amount)}</Text>
             </View>
             <View style={styles.breakdownRow}>
               <Text style={styles.breakdownLabel}>ALLVER Service Fee</Text>
@@ -96,40 +184,47 @@ export default function PaymentDetailsScreen() {
             <View style={styles.breakdownDivider} />
             <View style={styles.breakdownRow}>
               <Text style={styles.breakdownTotalLabel}>Worker Earnings</Text>
-              <Text style={styles.breakdownTotalVal}>{amount}</Text>
+              <Text style={styles.breakdownTotalVal}>{formatCurrency(payment.amount)}</Text>
             </View>
           </View>
         </View>
 
         {/* ================= CLIENT CARD ================= */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.sectionHeading}>Client</Text>
-          <View style={styles.clientRow}>
-            <View style={styles.clientAvatar}>
-              <Feather name="user" size={18} color={COLORS.textMuted} />
-            </View>
-            <View style={styles.clientMeta}>
-              <Text style={styles.clientName}>{clientName}</Text>
-              <Text style={styles.clientLoc}>{clientLoc}</Text>
+        {payment.client && (
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionHeading}>Client</Text>
+            <View style={styles.clientRow}>
+              <View style={styles.clientAvatar}>
+                <Feather name="user" size={18} color={COLORS.textMuted} />
+              </View>
+              <View style={styles.clientMeta}>
+                <Text style={styles.clientName}>{payment.client.fullName}</Text>
+                <Text style={styles.clientLoc}>{payment.client.city || ''}</Text>
+              </View>
             </View>
           </View>
-        </View>
+        )}
 
         {/* ================= PAYMENT METADATA ================= */}
         <View style={styles.metaCard}>
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>Payment ID</Text>
-            <Text style={styles.metaValue}>{paymentId}</Text>
+            <Text style={styles.metaValue}>{payment.paymentId}</Text>
+          </View>
+          <View style={styles.metaDivider} />
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLabel}>Payment Type</Text>
+            <Text style={styles.metaValue}>{payment.type}</Text>
           </View>
           <View style={styles.metaDivider} />
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>Payment Method</Text>
-            <Text style={styles.metaValue}>Client Online Payment</Text>
+            <Text style={styles.metaValue}>Contractor Payment</Text>
           </View>
           <View style={styles.metaDivider} />
           <View style={styles.metaRow}>
-            <Text style={styles.metaLabel}>Completed On</Text>
-            <Text style={styles.metaValue}>{dateStr}</Text>
+            <Text style={styles.metaLabel}>{isPaid ? 'Completed On' : 'Recorded On'}</Text>
+            <Text style={styles.metaValue}>{formatDate(payment.date)}</Text>
           </View>
         </View>
 

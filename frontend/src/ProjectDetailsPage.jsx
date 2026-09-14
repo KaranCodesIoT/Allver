@@ -4,9 +4,11 @@ import {
   ArrowLeft, MapPin, Calendar, DollarSign, Send, MessageCircle,
   FileText, CheckCircle2, Clock, Play, ThumbsUp, MessageSquare,
   Plus, Check, Sparkles, CreditCard, ShieldCheck, AlertCircle, RefreshCw,
-  Layers, Grid, Droplet, Wrench, BellRing, Receipt, IndianRupee, X
+  Layers, Grid, Droplet, Wrench, BellRing, Receipt, IndianRupee, X, ExternalLink
 } from 'lucide-react';
 import DashboardLayout from './DashboardLayout';
+import { createPaymentOrder, openRazorpayCheckout, verifyPayment, getReceiptDownloadUrl } from './services/razorpayService';
+import { getAuthToken } from './config/api';
 
 const UNSPLASH_PRESETS = [
   'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=600&q=80',
@@ -439,6 +441,8 @@ const ProjectDetailsPage = () => {
   const [activePaymentModalMilestone, setActivePaymentModalMilestone] = useState(null);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [paymentSuccessMsg, setPaymentSuccessMsg] = useState(false);
+  const [paymentReceiptDetails, setPaymentReceiptDetails] = useState(null);
+  const [paymentErrorMsg, setPaymentErrorMsg] = useState(null);
 
   // Architect Payment Request State
   const [payReqModal, setPayReqModal] = useState(null);
@@ -544,11 +548,13 @@ const ProjectDetailsPage = () => {
     setCommentInputs({ ...commentInputs, [uid]: '' });
   };
 
-  // Payment Sim (Client direct pay – legacy)
+  // Payment Flow (Razorpay Standard Web Checkout)
   const triggerPaymentFlow = (milestone) => {
     setActivePaymentModalMilestone(milestone);
     setPaymentSuccessMsg(false);
     setPaymentProcessing(false);
+    setPaymentReceiptDetails(null);
+    setPaymentErrorMsg(null);
   };
 
   // Contractor or Architect: Open Payment Request Modal
@@ -612,32 +618,13 @@ const ProjectDetailsPage = () => {
     }, 1400);
   };
 
-  // Client: Approve Payment → status becomes 'Paid'
+  // Client: Approve Payment → opens Razorpay Standard Web Checkout
   const handleApprovePayment = (ms) => {
     if (!isAssignedClient) {
-      alert("Only the assigned Client can approve payments.");
+      alert("Only the assigned Client can approve and pay milestones.");
       return;
     }
-    const receiptNo = `REC-2026-${String(Date.now()).slice(-4)}`;
-    setPayments(prev => ({
-      ...prev,
-      paid: prev.paid + ms.amount,
-      pending: prev.pending - ms.amount,
-      milestones: prev.milestones.map(m =>
-        m.id === ms.id ? { ...m, status: 'Paid', receipt: receiptNo, date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) } : m
-      )
-    }));
-    setChatMessages(prev => [
-      ...prev,
-      {
-        id: Date.now(),
-        sender: 'client',
-        name: currentUser?.fullName || 'Client',
-        text: `✅ Payment Approved for "${ms.name}" — ₹${ms.amount.toLocaleString('en-IN')}. Receipt ${receiptNo} generated.`,
-        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        type: 'text'
-      }
-    ]);
+    triggerPaymentFlow(ms);
   };
 
   // Client: Open Reject Modal
@@ -682,68 +669,140 @@ const ProjectDetailsPage = () => {
     }, 1000);
   };
 
-  const handleProcessPayment = () => {
+  const handleProcessPayment = async () => {
     if (!isAssignedClient) {
       alert("Only the assigned Client can process payments.");
       return;
     }
+    if (!activePaymentModalMilestone) return;
+
     setPaymentProcessing(true);
-    setTimeout(() => {
-      setPaymentProcessing(false);
-      setPaymentSuccessMsg(true);
-      
-      // Update balance
+    setPaymentErrorMsg(null);
+
+    try {
+      const token = getAuthToken();
       const milestoneAmount = activePaymentModalMilestone.amount;
-      const updatedMilestones = payments.milestones.map(ms => {
-        if (ms.id === activePaymentModalMilestone.id) {
-          return { ...ms, status: 'Paid', date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) };
-        }
-        return ms;
+      const milestoneJobId = `proj_${id}_${activePaymentModalMilestone.id}`;
+
+      // 1. Create authoritative order on backend (receives keyId, amountInPaise, orderId, gatewayOrderId)
+      const orderData = await createPaymentOrder({
+        jobId: milestoneJobId,
+        amount: milestoneAmount,
+        description: `Payment for ${activePaymentModalMilestone.name}`,
+        token
       });
 
-      setPayments({
-        ...payments,
-        paid: payments.paid + milestoneAmount,
-        pending: payments.pending - milestoneAmount,
-        milestones: updatedMilestones
-      });
+      // 2. Open Razorpay Standard Web Checkout Modal
+      await openRazorpayCheckout({
+        keyId: orderData.keyId,
+        orderId: orderData.orderId,
+        gatewayOrderId: orderData.gatewayOrderId,
+        amountInPaise: orderData.amountInPaise,
+        currency: orderData.currency,
+        description: `Milestone: ${activePaymentModalMilestone.name}`,
+        prefill: {
+          name: currentUser?.fullName || 'Client',
+          email: currentUser?.email || '',
+          contact: currentUser?.phoneNumber || ''
+        },
+        onDismiss: () => {
+          setPaymentProcessing(false);
+        },
+        onError: (errMsg) => {
+          setPaymentProcessing(false);
+          setPaymentErrorMsg(errMsg || 'Payment was cancelled or could not be completed.');
+        },
+        onSuccess: async (payResponse) => {
+          try {
+            // 3. Authoritative cryptographic backend verification
+            const verifyResult = await verifyPayment({
+              orderId: payResponse.orderId,
+              gatewayOrderId: payResponse.razorpay_order_id,
+              gatewayPaymentId: payResponse.razorpay_payment_id,
+              gatewaySignature: payResponse.razorpay_signature,
+              jobId: milestoneJobId,
+              token
+            });
 
-      // Append confirmation message in Chat
-      const confirmChat = {
-        id: Date.now() + 10,
-        sender: 'client',
-        name: currentUser ? `${currentUser.fullName} (Client)` : 'Client',
-        text: `💸 Milestone Paid: Just processed payment of ₹${milestoneAmount.toLocaleString('en-IN')} for "${activePaymentModalMilestone.name}".`,
-        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        type: 'text'
-      };
-      
-      setChatMessages(prev => [...prev, confirmChat]);
+            if (verifyResult.success && verifyResult.status === 'PAID') {
+              const receiptNo = `ALV-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+              const receiptUrl = getReceiptDownloadUrl(milestoneJobId, token);
 
-      // Automatically trigger architect confirmation after 2.5 seconds
-      setTimeout(() => {
-        setIsTyping(true);
-        setTimeout(() => {
-          setIsTyping(false);
-          setChatMessages(prev => [
-            ...prev,
-            {
-              id: Date.now() + 20,
-              sender: 'architect',
-              name: projectMembers.architectName || 'Neha (Architect)',
-              text: `Thank you! I received the notification for the payment of ₹${milestoneAmount.toLocaleString('en-IN')}. I've marked it in the dashboard ledger.`,
-              time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-              type: 'text'
+              setPaymentProcessing(false);
+              setPaymentSuccessMsg(true);
+              setPaymentReceiptDetails({
+                receiptNumber: receiptNo,
+                receiptUrl,
+                paymentId: payResponse.razorpay_payment_id,
+                amount: milestoneAmount
+              });
+
+              // Update milestone state
+              const updatedMilestones = payments.milestones.map(ms => {
+                if (ms.id === activePaymentModalMilestone.id) {
+                  return {
+                    ...ms,
+                    status: 'Paid',
+                    receipt: receiptNo,
+                    receiptUrl,
+                    date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                  };
+                }
+                return ms;
+              });
+
+              setPayments(prev => ({
+                ...prev,
+                paid: prev.paid + milestoneAmount,
+                pending: prev.pending - milestoneAmount,
+                milestones: updatedMilestones
+              }));
+
+              // Log confirmation message in Chat
+              setChatMessages(prev => [
+                ...prev,
+                {
+                  id: Date.now() + 10,
+                  sender: 'client',
+                  name: currentUser ? `${currentUser.fullName} (Client)` : 'Client',
+                  text: `💸 Milestone Paid: Verified online payment of ₹${milestoneAmount.toLocaleString('en-IN')} for "${activePaymentModalMilestone.name}". Ref: ${payResponse.razorpay_payment_id}`,
+                  time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                  type: 'text'
+                }
+              ]);
+
+              // Automatically trigger architect confirmation message
+              setTimeout(() => {
+                setIsTyping(true);
+                setTimeout(() => {
+                  setIsTyping(false);
+                  setChatMessages(prev => [
+                    ...prev,
+                    {
+                      id: Date.now() + 20,
+                      sender: 'architect',
+                      name: projectMembers.architectName || 'Neha (Architect)',
+                      text: `Thank you! I received the verified payment notification for ₹${milestoneAmount.toLocaleString('en-IN')}. Receipt ${receiptNo} has been logged in the ledger.`,
+                      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                      type: 'text'
+                    }
+                  ]);
+                }, 1000);
+              }, 1200);
+            } else {
+              setPaymentProcessing(false);
+              setPaymentErrorMsg(verifyResult.message || 'Payment verification failed on server.');
             }
-          ]);
-        }, 1200);
-      }, 2000);
-
-      setTimeout(() => {
-        setActivePaymentModalMilestone(null);
-      }, 1500);
-
-    }, 1500);
+          } catch (vErr) {
+            setPaymentProcessing(false);
+            setPaymentErrorMsg(vErr.message || 'Payment verification could not be completed.');
+          }
+        }
+      });
+    } catch (err) {
+      setPaymentProcessing(false);
+      setPaymentErrorMsg(err.message || 'Error initializing payment gateway.');
+    }
   };
 
   // Send message
@@ -1522,7 +1581,20 @@ const ProjectDetailsPage = () => {
                             {ms.status === 'Paid' && (
                               <div className="ms-action-paid">
                                 <CheckCircle2 size={13} />
-                                <span>Receipt {ms.receipt}</span>
+                                {ms.receiptUrl ? (
+                                  <a
+                                    href={ms.receiptUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="View & Download Official Receipt"
+                                    style={{ color: '#059669', textDecoration: 'underline', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                                  >
+                                    <span>Receipt</span>
+                                    <ExternalLink size={11} />
+                                  </a>
+                                ) : (
+                                  <span>Receipt {ms.receipt}</span>
+                                )}
                               </div>
                             )}
 
@@ -1538,7 +1610,7 @@ const ProjectDetailsPage = () => {
                             {ms.status === 'Payment Requested' && isAssignedClient && (
                               <div className="ms-client-actions">
                                 <button className="btn-approve-pay" onClick={() => handleApprovePayment(ms)}>
-                                  <Check size={13} /> Approve
+                                  <Check size={13} /> Pay via Razorpay
                                 </button>
                                 <button className="btn-reject-pay" onClick={() => openRejectModal(ms)}>
                                   <X size={13} /> Reject
@@ -1936,7 +2008,7 @@ const ProjectDetailsPage = () => {
             <div className="modal-header">
               <div className="brand">
                 <ShieldCheck size={24} className="accent-color" />
-                <span>AllverHQ Secure Checkout</span>
+                <span>Allver Secure Razorpay Checkout</span>
               </div>
               <button 
                 className="close-btn"
@@ -1950,11 +2022,26 @@ const ProjectDetailsPage = () => {
             {paymentSuccessMsg ? (
               <div className="modal-success-screen">
                 <div className="success-icon"><Check size={36} /></div>
-                <h2>Payment Successful!</h2>
+                <h2>Payment Verified & Confirmed!</h2>
                 <p className="desc">
-                  We have successfully processed the payment of <strong>₹{activePaymentModalMilestone.amount.toLocaleString('en-IN')}</strong> for <strong>{activePaymentModalMilestone.name}</strong>.
+                  Payment of <strong>₹{activePaymentModalMilestone.amount.toLocaleString('en-IN')}</strong> for <strong>{activePaymentModalMilestone.name}</strong> was authoritatively verified and recorded in the financial ledger.
                 </p>
-                <span className="note">Updating balance sheet...</span>
+                {paymentReceiptDetails?.receiptUrl && (
+                  <div style={{ marginTop: '1.25rem', marginBottom: '1rem' }}>
+                    <a
+                      href={paymentReceiptDetails.receiptUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-modal-checkout-submit"
+                      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', textDecoration: 'none', background: '#059669', color: '#fff' }}
+                    >
+                      <Receipt size={16} />
+                      <span>Download Official Payment Receipt</span>
+                      <ExternalLink size={14} />
+                    </a>
+                  </div>
+                )}
+                <span className="note">Balance sheet and double-entry ledger updated.</span>
               </div>
             ) : (
               <div className="modal-form-screen">
@@ -1965,33 +2052,26 @@ const ProjectDetailsPage = () => {
                 </div>
 
                 <div className="card-entry-form">
-                  <div className="form-row">
-                    <label>Cardholder Name</label>
-                    <input type="text" defaultValue="Raj Kumar" placeholder="Name on card" />
+                  <div style={{ padding: '1rem', background: '#f0fdf4', borderRadius: '0.5rem', border: '1px solid #bbf7d0', marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#166534', fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.25rem' }}>
+                      <ShieldCheck size={18} />
+                      <span>Razorpay Standard Web Checkout</span>
+                    </div>
+                    <p style={{ fontSize: '0.8rem', color: '#15803d', margin: 0 }}>
+                      Supports UPI (GPay, PhonePe, Paytm, BHIM), Instant QR Code, Netbanking (50+ banks), Credit/Debit Cards, and Wallets.
+                    </p>
                   </div>
 
-                  <div className="form-row">
-                    <label>Card Number</label>
-                    <div className="input-icon-wrap">
-                      <CreditCard size={16} className="inp-ico" />
-                      <input type="text" defaultValue="4320 8872 1092 3445" placeholder="0000 0000 0000 0000" />
+                  {paymentErrorMsg && (
+                    <div style={{ padding: '0.75rem', background: '#fef2f2', borderRadius: '0.5rem', border: '1px solid #fecaca', color: '#991b1b', fontSize: '0.85rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <AlertCircle size={16} />
+                      <span>{paymentErrorMsg}</span>
                     </div>
-                  </div>
-
-                  <div className="form-grid">
-                    <div className="form-row">
-                      <label>Expiry Date</label>
-                      <input type="text" defaultValue="12/28" placeholder="MM/YY" />
-                    </div>
-                    <div className="form-row">
-                      <label>CVV / CVC</label>
-                      <input type="password" defaultValue="332" placeholder="***" />
-                    </div>
-                  </div>
+                  )}
 
                   <div className="security-notice">
                     <ShieldCheck size={14} />
-                    <span>AES-256 Bit Encryption Protected SSL Gateway</span>
+                    <span>256-bit Encrypted Server Payment Handshake (Test Mode)</span>
                   </div>
 
                   <button 
@@ -2002,10 +2082,10 @@ const ProjectDetailsPage = () => {
                     {paymentProcessing ? (
                       <>
                         <RefreshCw size={16} className="spin" />
-                        <span>Verifying Card Details...</span>
+                        <span>Communicating with Razorpay...</span>
                       </>
                     ) : (
-                      <span>Authorise Secure Payment</span>
+                      <span>Pay ₹{activePaymentModalMilestone.amount.toLocaleString('en-IN')} via Razorpay</span>
                     )}
                   </button>
                 </div>

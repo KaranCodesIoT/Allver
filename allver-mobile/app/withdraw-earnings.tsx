@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Modal, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert, Modal, Dimensions, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { BACKEND_URL } from '../constants/Config';
+import { getStoredUser, getToken } from '../constants/Auth';
+import SocketService from '../utils/SocketService';
 
 const { width } = Dimensions.get('window');
 
@@ -22,8 +25,11 @@ const COLORS = {
 
 export default function WithdrawEarningsScreen() {
   const router = useRouter();
-  const availableBalance = 8450;
-  const [amount, setAmount] = useState('8450');
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [userId, setUserId] = useState<string>('');
+  const [availableBalance, setAvailableBalance] = useState<number>(0);
+  const [amount, setAmount] = useState('');
   const [selectedBankId, setSelectedBankId] = useState('bank-1');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [showAddBankModal, setShowAddBankModal] = useState(false);
@@ -40,22 +46,137 @@ export default function WithdrawEarningsScreen() {
     },
   ]);
 
-  const handleWithdraw = () => {
+  useEffect(() => {
+    const fetchBalance = async () => {
+      try {
+        let user = (global as any).currentUser;
+        if (!user) {
+          const stored = await getStoredUser();
+          if (stored) {
+            user = typeof stored === 'string' ? JSON.parse(stored) : stored;
+          }
+        }
+        if (user?._id) {
+          setUserId(user._id);
+          // Try wallet API first for authoritative ledger balance
+          let avail = 0;
+          try {
+            const token = await getToken();
+            const authHeaders: Record<string, string> = token
+              ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+              : { 'Content-Type': 'application/json' };
+            const wRes = await fetch(`${BACKEND_URL}/api/wallet/${user._id}`, { headers: authHeaders });
+            if (wRes.ok) {
+              const wData = await wRes.json();
+              if (wData.success && wData.wallet) {
+                avail = Math.max(0, wData.wallet.balance || 0);
+              }
+            }
+          } catch (e) {}
+
+          // Also check workspace earnings if wallet balance is 0
+          if (avail === 0) {
+            try {
+              const res = await fetch(`${BACKEND_URL}/api/earnings/${user._id}`);
+              if (res.ok) {
+                const data = await res.json();
+                avail = data.availableToWithdraw || 0;
+              }
+            } catch (e) {}
+          }
+
+          setAvailableBalance(avail);
+          setAmount(avail > 0 ? String(avail) : '');
+        }
+      } catch (err) {
+        console.error('Error fetching balance for withdrawal:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchBalance();
+  }, []);
+
+  // Real-time authoritative socket listener for wallet updates
+  useEffect(() => {
+    if (!userId) return;
+    const handleWalletUpdated = (data: any) => {
+      console.log('[WithdrawEarnings] Real-time wallet_updated received:', data);
+      if (data && data.availableBalance !== undefined) {
+        setAvailableBalance(Math.max(0, data.availableBalance));
+      } else if (data && data.balance !== undefined) {
+        setAvailableBalance(Math.max(0, data.balance));
+      }
+    };
+    SocketService.on('wallet_updated', handleWalletUpdated);
+    return () => {
+      SocketService.off('wallet_updated', handleWalletUpdated);
+    };
+  }, [userId]);
+
+  const handleWithdraw = async () => {
     const num = parseFloat(amount.replace(/,/g, ''));
     if (isNaN(num) || num <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid amount to withdraw.');
       return;
     }
     if (num > availableBalance) {
-      Alert.alert('Insufficient Balance', `You can only withdraw up to ₹${availableBalance.toLocaleString()}.`);
+      Alert.alert('Insufficient Balance', `You can only withdraw up to ₹${availableBalance.toLocaleString('en-IN')}.`);
       return;
     }
 
-    setShowSuccessModal(true);
+    const selectedBank = banks.find((b) => b.id === selectedBankId) || banks[0];
+    if (!selectedBank) {
+      Alert.alert('No Bank Selected', 'Please select or add a bank account.');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const token = await getToken();
+      const authHeaders: Record<string, string> = token
+        ? { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+        : { 'Content-Type': 'application/json' };
+      // Primary: Call wallet withdrawal API (ledger-backed)
+      let res = await fetch(`${BACKEND_URL}/api/wallet/${userId}/withdraw`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          amount: num,
+          bankName: selectedBank.name,
+          accountLast4: selectedBank.accountLast4,
+        }),
+      });
+
+      // Fallback to legacy earnings withdrawal if needed
+      if (!res.ok && res.status === 404) {
+        res = await fetch(`${BACKEND_URL}/api/earnings/${userId}/withdraw`, {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({
+            amount: num,
+            bankName: selectedBank.name,
+            accountLast4: selectedBank.accountLast4,
+          }),
+        });
+      }
+
+      const data = await res.json();
+      if (res.ok) {
+        setShowSuccessModal(true);
+      } else {
+        Alert.alert('Withdrawal Failed', data.message || 'Could not process withdrawal.');
+      }
+    } catch (err) {
+      console.error('Error submitting withdrawal:', err);
+      Alert.alert('Error', 'Network error. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleAddBank = () => {
-    if (!newBankName || !newAccountNumber || !newIfsc) {
+    if (!newBankName.trim() || !newAccountNumber.trim() || !newIfsc.trim()) {
       Alert.alert('Missing Details', 'Please fill in all bank details.');
       return;
     }
@@ -63,7 +184,7 @@ export default function WithdrawEarningsScreen() {
     const last4 = newAccountNumber.slice(-4);
     const newBank = {
       id: `bank-${Date.now()}`,
-      name: newBankName,
+      name: newBankName.trim(),
       accountLast4: last4 || '0000',
       isPrimary: false,
     };
@@ -74,8 +195,25 @@ export default function WithdrawEarningsScreen() {
     setNewBankName('');
     setNewAccountNumber('');
     setNewIfsc('');
-    Alert.alert('Bank Added', `${newBankName} account ending in ${last4} added successfully.`);
+    Alert.alert('Bank Added', `${newBank.name} account ending in ${last4} added successfully.`);
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/earnings')} activeOpacity={0.7}>
+            <Feather name="chevron-left" size={24} color={COLORS.textDark} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Withdraw Earnings</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={COLORS.green} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -106,7 +244,7 @@ export default function WithdrawEarningsScreen() {
           </View>
           <View style={styles.balanceMeta}>
             <Text style={styles.balanceLabel}>Available Balance</Text>
-            <Text style={styles.balanceValue}>₹{availableBalance.toLocaleString()}</Text>
+            <Text style={styles.balanceValue}>₹{availableBalance.toLocaleString('en-IN')}</Text>
           </View>
           <Text style={styles.balanceSub}>
             You can withdraw this amount to your bank account.
@@ -117,7 +255,7 @@ export default function WithdrawEarningsScreen() {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Select Bank Account</Text>
           <TouchableOpacity onPress={() => setShowAddBankModal(true)} activeOpacity={0.7}>
-            <Text style={styles.manageText}>Manage</Text>
+            <Text style={styles.manageText}>+ Add New</Text>
           </TouchableOpacity>
         </View>
 
@@ -182,11 +320,18 @@ export default function WithdrawEarningsScreen() {
 
         {/* ================= WITHDRAW MONEY BUTTON ================= */}
         <TouchableOpacity
-          style={styles.withdrawActionBtn}
+          style={[styles.withdrawActionBtn, (availableBalance <= 0 || submitting) && { opacity: 0.6 }]}
           onPress={handleWithdraw}
+          disabled={availableBalance <= 0 || submitting}
           activeOpacity={0.85}
         >
-          <Text style={styles.withdrawActionText}>Withdraw Money</Text>
+          {submitting ? (
+            <ActivityIndicator size="small" color={COLORS.white} />
+          ) : (
+            <Text style={styles.withdrawActionText}>
+              {availableBalance > 0 ? 'Withdraw Money' : 'No Balance to Withdraw'}
+            </Text>
+          )}
         </TouchableOpacity>
 
         {/* ================= SECURITY FOOTNOTE ================= */}
@@ -250,7 +395,7 @@ export default function WithdrawEarningsScreen() {
               <Feather name="check" size={28} color={COLORS.white} />
             </View>
             <Text style={styles.successModalTitle}>Withdrawal Initiated!</Text>
-            <Text style={styles.successModalAmount}>₹{parseFloat(amount || '0').toLocaleString()}</Text>
+            <Text style={styles.successModalAmount}>₹{parseFloat(amount || '0').toLocaleString('en-IN')}</Text>
             <Text style={styles.successModalSub}>
               Your withdrawal request has been submitted. The money will be deposited to your bank account within 24 hours.
             </Text>

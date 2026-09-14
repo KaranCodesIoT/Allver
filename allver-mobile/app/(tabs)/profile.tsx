@@ -10,8 +10,8 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
 import { useTranslation } from '../../utils/i18n';
-import { removeToken, removeStoredUser } from '../../constants/Auth';
 import SocketService from '../../utils/SocketService';
+import { forwardGeocodeAddress, findCoordinatesForLocationText } from '../../utils/GeocodingService';
 
 const { width } = Dimensions.get('window');
 
@@ -210,13 +210,27 @@ export default function ProfileScreen() {
       }
     };
 
+    const handleJobHistoryUpdated = () => {
+      const loggedInUserId = (global as any).currentUser?._id;
+      const loggedInRole = (global as any).currentUser?.role;
+      if (loggedInUserId) {
+        fetchClientProjects(loggedInUserId, loggedInRole);
+      }
+    };
+
     SocketService.on('profile_updated', handleProfileUpdated);
     SocketService.on('workspace_updated', handleWorkspaceUpdated);
     SocketService.on('user_settings_updated', handleUserSettingsUpdated);
+    SocketService.on('job_history_updated', handleJobHistoryUpdated);
+    SocketService.on('job_payment_completed', handleJobHistoryUpdated);
+    SocketService.on('job_settled', handleJobHistoryUpdated);
     return () => {
       SocketService.off('profile_updated', handleProfileUpdated);
       SocketService.off('workspace_updated', handleWorkspaceUpdated);
       SocketService.off('user_settings_updated', handleUserSettingsUpdated);
+      SocketService.off('job_history_updated', handleJobHistoryUpdated);
+      SocketService.off('job_payment_completed', handleJobHistoryUpdated);
+      SocketService.off('job_settled', handleJobHistoryUpdated);
     };
   }, [currentUser?._id]);
 
@@ -335,6 +349,37 @@ export default function ProfileScreen() {
 
   const fetchClientProjects = async (userId: string, role?: string) => {
     try {
+      // 1. Fetch direct booking jobs for this user (both completed & active)
+      let directJobsMapped: any[] = [];
+      try {
+        const roleParam = role === 'Client' ? 'client' : (role === 'Labour' ? 'worker' : 'all');
+        const jobsRes = await fetch(`${BACKEND_URL}/api/jobs/history/user/${userId}?role=${roleParam}`);
+        if (jobsRes.ok) {
+          const jobsData = await jobsRes.json();
+          if (jobsData.success && jobsData.jobs) {
+            directJobsMapped = jobsData.jobs.map((j: any) => ({
+              id: j.jobId,
+              title: `${j.service} Service`,
+              location: j.clientLocation?.address || 'Mumbai',
+              status: (j.status === 'COMPLETED' || j.status === 'SETTLED') ? 'Completed' : 'In Progress',
+              workspaceId: null,
+              jobId: j.jobId,
+              isDirectBooking: true,
+              projectType: 'Direct Booking',
+              description: `Completed by ${j.workerName || 'Worker'} for ${j.clientName || 'Client'}. Paid ₹${j.finalAmount} via ${j.paymentMethod || 'Online'}`,
+              budget: `₹${j.finalAmount}`,
+              timeline: 'Direct Booking',
+              requirements: [j.service],
+              updates: [],
+              image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=400&q=80',
+              completedAt: j.completedAt || j.createdAt
+            }));
+          }
+        }
+      } catch (jErr) {
+        console.warn('Error fetching direct booking jobs history in profile:', jErr);
+      }
+
       const wsRes = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${userId}`);
       const wsData = await wsRes.json();
       const workspaces = wsData.workspaces || [];
@@ -356,7 +401,8 @@ export default function ProfileScreen() {
             updates: w.updates || []
           };
         });
-        const sortedMapped = mapped.sort((a: any, b: any) => {
+        const combined = [...directJobsMapped, ...mapped];
+        const sortedMapped = combined.sort((a: any, b: any) => {
           const aFinished = a.status === 'Completed' || a.status === 'Cancelled';
           const bFinished = b.status === 'Completed' || b.status === 'Cancelled';
           if (aFinished && !bFinished) return 1;
@@ -406,7 +452,8 @@ export default function ProfileScreen() {
         };
       });
 
-      const sortedMerged = merged.sort((a: any, b: any) => {
+      const combinedClient = [...directJobsMapped, ...merged];
+      const sortedMerged = combinedClient.sort((a: any, b: any) => {
         const aFinished = a.status === 'Completed' || a.status === 'Cancelled';
         const bFinished = b.status === 'Completed' || b.status === 'Cancelled';
         if (aFinished && !bFinished) return 1;
@@ -1089,15 +1136,67 @@ export default function ProfileScreen() {
     router.push('/edit-profile');
   };
 
+  const [gpsStatusText, setGpsStatusText] = useState('Live GPS active');
+
   const handleToggleAvailability = async (newValue: boolean) => {
     if (!currentUser?._id) return;
     setIsAvailableForWork(newValue);
     setSavingAvailability(true);
     try {
+      let lat: number | null = null;
+      let lng: number | null = null;
+      if (newValue) {
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status === 'granted') {
+            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            if (pos?.coords) {
+              lat = pos.coords.latitude;
+              lng = pos.coords.longitude;
+              setGpsStatusText('Live GPS active');
+            }
+          }
+        } catch (locErr) {
+          console.warn('GPS fetch error on availability toggle:', locErr);
+        }
+      }
+
+      const updatePayload: any = {
+        availability: newValue ? 'Available' : 'Not Available',
+        isAvailableForBooking: newValue,
+      };
+      if (lat !== null && lng !== null) {
+        updatePayload.latitude = lat;
+        updatePayload.longitude = lng;
+        updatePayload.lastLocationUpdate = new Date();
+      }
+
       await fetch(`${BACKEND_URL}/api/user/profile/${currentUser._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ availability: newValue ? 'Available' : 'Not Available' })
+        body: JSON.stringify(updatePayload)
+      });
+
+      if ((global as any).currentUser) {
+        (global as any).currentUser.availability = newValue ? 'Available' : 'Not Available';
+        (global as any).currentUser.isAvailableForBooking = newValue;
+        if (lat !== null && lng !== null) {
+          (global as any).currentUser.latitude = lat;
+          (global as any).currentUser.longitude = lng;
+          (global as any).currentUser.lastLocationUpdate = new Date();
+        }
+      }
+
+      // Sync live status and real GPS with backend matching engine
+      SocketService.emit('worker_update_location', {
+        latitude: lat !== null ? lat : currentUser.latitude,
+        longitude: lng !== null ? lng : currentUser.longitude,
+        formattedAddress: workArea || currentUser.location || '',
+        workArea: workArea || currentUser.workArea || '',
+        availability: newValue ? 'Available' : 'Not Available',
+        isAvailableForBooking: newValue,
+        skillType: currentUser.skillType || currentUser.workCategory || '',
+        serviceRadiusKm: workAreaRadius || currentUser.serviceRadiusKm || 15,
       });
     } catch (err) {
       console.error('Error saving availability:', err);
@@ -1110,15 +1209,55 @@ export default function ProfileScreen() {
   const handleSaveWorkArea = async () => {
     if (!currentUser?._id || !workAreaInput.trim()) return;
     const radius = parseInt(workAreaRadiusInput) || 15;
+    const trimmedWorkArea = workAreaInput.trim();
     try {
+      // Resolve coordinates for custom typed work area (e.g. 'parshik nagar, kalwa west')
+      let resolvedCoords = await forwardGeocodeAddress(trimmedWorkArea);
+      if (!resolvedCoords) {
+        resolvedCoords = findCoordinatesForLocationText(trimmedWorkArea);
+      }
+
+      const payload: any = {
+        workArea: trimmedWorkArea,
+        workAreaRadius: radius,
+        serviceRadiusKm: radius,
+      };
+
+      if (resolvedCoords) {
+        payload.latitude = resolvedCoords.lat;
+        payload.longitude = resolvedCoords.lng;
+        payload.formattedAddress = trimmedWorkArea;
+      }
+
       await fetch(`${BACKEND_URL}/api/user/profile/${currentUser._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workArea: workAreaInput.trim(), workAreaRadius: radius })
+        body: JSON.stringify(payload)
       });
-      setWorkArea(workAreaInput.trim());
+      setWorkArea(trimmedWorkArea);
       setWorkAreaRadius(radius);
       setShowWorkAreaModal(false);
+
+      if ((global as any).currentUser) {
+        (global as any).currentUser.workArea = trimmedWorkArea;
+        (global as any).currentUser.workAreaRadius = radius;
+        (global as any).currentUser.serviceRadiusKm = radius;
+        if (resolvedCoords) {
+          (global as any).currentUser.latitude = resolvedCoords.lat;
+          (global as any).currentUser.longitude = resolvedCoords.lng;
+        }
+      }
+
+      // Sync updated workArea, service radius & resolved coordinates to matching engine
+      SocketService.emit('worker_update_location', {
+        latitude: resolvedCoords?.lat,
+        longitude: resolvedCoords?.lng,
+        formattedAddress: trimmedWorkArea,
+        workArea: trimmedWorkArea,
+        serviceRadiusKm: radius,
+        availability: isAvailableForWork ? 'Available' : 'Not Available',
+        isAvailableForBooking: isAvailableForWork,
+      });
     } catch (err) {
       console.error('Error saving work area:', err);
       Alert.alert('Error', 'Failed to save work area');
@@ -1395,6 +1534,9 @@ export default function ProfileScreen() {
                 <Text style={styles.workAreaLabel}>Work Area</Text>
                 <Text style={styles.workAreaCity}>{workArea || cityOnly}</Text>
                 <Text style={styles.workAreaRadius}>(Within {workAreaRadius} km)</Text>
+                <Text style={{ fontSize: 11, color: isAvailableForWork ? '#16A34A' : '#64748B', fontWeight: '600', marginTop: 4 }}>
+                  {isAvailableForWork ? `● Current GPS: ${gpsStatusText}` : '○ Current GPS: Offline'}
+                </Text>
               </View>
               <TouchableOpacity onPress={() => { setWorkAreaInput(workArea || cityOnly); setWorkAreaRadiusInput(String(workAreaRadius)); setShowWorkAreaModal(true); }}>
                 <Text style={styles.workAreaChangeBtn}>Change</Text>

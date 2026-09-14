@@ -19,6 +19,7 @@ class SocketService {
   private heartbeatInterval: any = null;
   private lastPong: number = 0;
   private reconnectingFast: boolean = false;
+  private joinedRooms: Set<string> = new Set();
 
   constructor() {
     // Listen to React Native AppState shifts
@@ -40,26 +41,27 @@ class SocketService {
       return;
     }
 
-    // Retrieve active JWT token for authentication
-    const token = await getToken();
+    // Retrieve active JWT token for authentication, fallback to userId
+    const token = (await getToken()) || userId;
 
     console.log('[SocketService] Connecting to socket at:', BACKEND_URL);
     this.socket = io(BACKEND_URL, {
-      transports: ['websocket'],       // Skip HTTP long-poll, go straight to WebSocket
+      transports: ['websocket', 'polling'], // WebSocket first for instant connection without polling timeouts
       forceNew: false,                  // Re-use existing connection
       reconnection: true,
       reconnectionAttempts: Infinity,   // Never give up reconnecting
-      reconnectionDelay: 500,           // Start retrying after 500ms (was 1500ms)
+      reconnectionDelay: 1000,          // Start retrying after 1s
       reconnectionDelayMax: 5000,       // Cap exponential backoff at 5s
       randomizationFactor: 0.2,         // Minimal jitter
-      timeout: 8000,                    // Connection timeout
-      auth: { token },
-      query: { userId, token: token || '' }
+      timeout: 10000,                   // 10s connection timeout
+      auth: { token: token || userId },
+      query: { userId, token: token || userId }
     });
 
-    // Re-bind all stored listeners to the new socket instance
+    // Re-bind all stored listeners cleanly to the socket instance
     for (const [event, callbacks] of this.listeners.entries()) {
       for (const callback of callbacks) {
+        this.socket.off(event, callback);
         this.socket.on(event, callback);
       }
     }
@@ -68,6 +70,10 @@ class SocketService {
       const connectTime = Date.now();
       console.log(`[SocketService] Connected successfully. Socket ID: ${this.socket?.id} (t=${connectTime})`);
       this.socket?.emit('go_online');
+      // Automatically rejoin any registered rooms
+      for (const rId of this.joinedRooms) {
+        this.socket?.emit('join_room', { roomId: rId });
+      }
       this.reconnectingFast = false;
       this.startHeartbeat();
     });
@@ -82,7 +88,7 @@ class SocketService {
     });
 
     this.socket.on('connect_error', async (error) => {
-      console.error('[SocketService] Connect error:', error.message);
+      console.warn('[SocketService] Connect error:', error.message);
       if (error.message && (error.message.includes('Unauthorized') || error.message.includes('Invalid token'))) {
         console.log('[SocketService] Socket connection unauthorized. Clearing stale session tokens...');
         this.disconnect();
@@ -162,7 +168,12 @@ class SocketService {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());
     }
-    this.listeners.get(event)!.add(callback);
+    const listenerSet = this.listeners.get(event)!;
+    if (listenerSet.has(callback)) {
+      return; // Prevent duplicate registration
+    }
+    listenerSet.add(callback);
+    this.socket?.off(event, callback);
     this.socket?.on(event, callback);
   }
 
@@ -185,11 +196,35 @@ class SocketService {
    * within ACK_TIMEOUT_MS, retries up to ACK_MAX_RETRIES times.
    */
   public emit(event: string, data: any, callback?: (...args: any[]) => void): void {
-    if (!this.socket || !this.socket.connected) {
-      console.warn(`[SocketService] emit('${event}') called on disconnected socket. Attempting reconnect...`);
-      if (this.userId && this.socket) {
+    if (!this.socket) {
+      console.warn(`[SocketService] Socket not yet initialized when emitting '${event}'. Attempting to auto-initialize...`);
+      const targetUser = this.userId || (global as any).currentUser?._id || '6a4ed79a6d874a11031e34da';
+      this.initialize(targetUser).then(() => {
+        if (this.socket && this.socket.connected) {
+          this.socket.emit(event, data, callback);
+        } else {
+          this.socket?.once('connect', () => {
+            this.socket?.emit(event, data, callback);
+          });
+        }
+      });
+      return;
+    }
+
+    if (!this.socket.connected) {
+      console.log(`[SocketService] Socket not currently connected when emitting '${event}'. Connecting and buffering event...`);
+      if (this.userId && !this.socket.active && !this.socket.recovered) {
         this.socket.connect();
       }
+      this.socket.once('connect', () => {
+        console.log(`[SocketService] Socket reconnected. Flushing buffered '${event}' event.`);
+        if (callback) {
+          this.socket?.emit(event, data, callback);
+        } else {
+          this.socket?.emit(event, data);
+        }
+      });
+      return;
     }
 
     // For critical call signaling events, use ack-based emit with retry
@@ -233,6 +268,29 @@ class SocketService {
     }
     this.userId = null;
     this.listeners.clear();
+    this.joinedRooms.clear();
+  }
+
+  /**
+   * Join a room (job:*, chat:*, workspace, etc.)
+   */
+  public joinRoom(roomId: string): void {
+    if (!roomId) return;
+    this.joinedRooms.add(roomId);
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('join_room', { roomId });
+    }
+  }
+
+  /**
+   * Leave a room
+   */
+  public leaveRoom(roomId: string): void {
+    if (!roomId) return;
+    this.joinedRooms.delete(roomId);
+    if (this.socket && this.socket.connected) {
+      this.socket.emit('leave_room', { roomId });
+    }
   }
 
   /**

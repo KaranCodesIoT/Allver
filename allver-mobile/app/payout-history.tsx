@@ -1,8 +1,10 @@
-import React from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { BACKEND_URL } from '../constants/Config';
+import { getStoredUser } from '../constants/Auth';
 
 const COLORS = {
   green: '#16A34A',
@@ -23,46 +25,89 @@ const COLORS = {
   blueLight: '#EFF6FF',
 };
 
+interface WithdrawalItem {
+  _id: string;
+  amount: number;
+  status: string;
+  bankName: string;
+  accountLast4: string;
+  requestedAt: string;
+  completedAt?: string;
+}
+
 export default function PayoutHistoryScreen() {
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [userId, setUserId] = useState<string>('');
+  const [withdrawals, setWithdrawals] = useState<WithdrawalItem[]>([]);
 
-  const PAYOUTS = [
-    {
-      id: 'p-1',
-      amount: '₹5,000',
-      status: 'Completed',
-      bankText: 'Withdraw to HDFC Bank (•••• 4821)',
-      dateText: '6 Sept 2026, 10:15 AM',
-    },
-    {
-      id: 'p-2',
-      amount: '₹3,000',
-      status: 'Completed',
-      bankText: 'Withdraw to HDFC Bank (•••• 4821)',
-      dateText: '29 Aug 2026, 4:20 PM',
-    },
-    {
-      id: 'p-3',
-      amount: '₹2,000',
-      status: 'Processing',
-      bankText: 'Withdraw to HDFC Bank (•••• 4821)',
-      dateText: '6 Sept 2026, 2:10 PM',
-    },
-    {
-      id: 'p-4',
-      amount: '₹4,500',
-      status: 'Completed',
-      bankText: 'Withdraw to HDFC Bank (•••• 4821)',
-      dateText: '12 Aug 2026, 11:05 AM',
-    },
-    {
-      id: 'p-5',
-      amount: '₹1,500',
-      status: 'Failed',
-      bankText: 'Withdraw to HDFC Bank (•••• 4821)',
-      dateText: '20 Jul 2026, 6:30 PM',
-    },
-  ];
+  const fetchWithdrawals = useCallback(async (labourId: string) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/earnings/${labourId}/withdrawals`);
+      if (res.ok) {
+        const data = await res.json();
+        setWithdrawals(data.withdrawals || []);
+      }
+    } catch (err) {
+      console.error('Error fetching withdrawal history:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      let user = (global as any).currentUser;
+      if (!user) {
+        const stored = await getStoredUser();
+        if (stored) {
+          try {
+            user = typeof stored === 'string' ? JSON.parse(stored) : stored;
+          } catch (e) {}
+        }
+      }
+      if (user?._id) {
+        setUserId(user._id);
+        await fetchWithdrawals(user._id);
+      }
+      setLoading(false);
+    };
+    load();
+  }, [fetchWithdrawals]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    if (userId) {
+      await fetchWithdrawals(userId);
+    }
+    setRefreshing(false);
+  }, [userId, fetchWithdrawals]);
+
+  const formatCurrency = (amount: number) => `₹${amount.toLocaleString('en-IN')}`;
+
+  const formatDate = (dateStr: string) => {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ', ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/earnings')} activeOpacity={0.7}>
+            <Feather name="chevron-left" size={24} color={COLORS.textDark} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Payout History</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={COLORS.green} />
+          <Text style={{ marginTop: 12, color: COLORS.textMuted, fontSize: 13 }}>Loading payouts...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -85,56 +130,74 @@ export default function PayoutHistoryScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.payoutsList}>
-          {PAYOUTS.map((payout) => {
-            const isCompleted = payout.status === 'Completed';
-            const isProcessing = payout.status === 'Processing';
-            const isFailed = payout.status === 'Failed';
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[COLORS.green]} tintColor={COLORS.green} />
+        }
+      >
+        {withdrawals.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <MaterialCommunityIcons name="cash-refund" size={48} color={COLORS.textLight} />
+            <Text style={styles.emptyTitle}>No Payouts Yet</Text>
+            <Text style={styles.emptyDesc}>
+              When you withdraw money from your available earnings, your payout requests will appear here.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.payoutsList}>
+            {withdrawals.map((payout) => {
+              const isCompleted = payout.status === 'Completed';
+              const isProcessing = payout.status === 'Processing';
+              const isFailed = payout.status === 'Failed';
 
-            let iconBg = COLORS.greenLight;
-            let iconColor = COLORS.green;
-            let iconName: any = 'arrow-down';
-            let badgeBg = COLORS.greenLight;
-            let badgeColor = COLORS.green;
+              let iconBg = COLORS.greenLight;
+              let iconColor = COLORS.green;
+              let iconName: any = 'arrow-down';
+              let badgeBg = COLORS.greenLight;
+              let badgeColor = COLORS.green;
 
-            if (isProcessing) {
-              iconBg = COLORS.orangeLight;
-              iconColor = COLORS.orange;
-              iconName = 'clock';
-              badgeBg = COLORS.orangeLight;
-              badgeColor = COLORS.orange;
-            } else if (isFailed) {
-              iconBg = COLORS.redLight;
-              iconColor = COLORS.red;
-              iconName = 'alert-circle';
-              badgeBg = COLORS.redLight;
-              badgeColor = COLORS.red;
-            }
+              if (isProcessing) {
+                iconBg = COLORS.orangeLight;
+                iconColor = COLORS.orange;
+                iconName = 'clock';
+                badgeBg = COLORS.orangeLight;
+                badgeColor = COLORS.orange;
+              } else if (isFailed) {
+                iconBg = COLORS.redLight;
+                iconColor = COLORS.red;
+                iconName = 'alert-circle';
+                badgeBg = COLORS.redLight;
+                badgeColor = COLORS.red;
+              }
 
-            return (
-              <View key={payout.id} style={styles.payoutCard}>
-                <View style={[styles.statusIconWrap, { backgroundColor: iconBg }]}>
-                  <Feather name={iconName} size={18} color={iconColor} />
-                </View>
-
-                <View style={styles.payoutDetails}>
-                  <View style={styles.amountStatusRow}>
-                    <Text style={styles.payoutAmount}>{payout.amount}</Text>
-                    <View style={[styles.statusBadge, { backgroundColor: badgeBg }]}>
-                      <Text style={[styles.statusBadgeText, { color: badgeColor }]}>
-                        {payout.status}
-                      </Text>
-                    </View>
+              return (
+                <View key={payout._id} style={styles.payoutCard}>
+                  <View style={[styles.statusIconWrap, { backgroundColor: iconBg }]}>
+                    <Feather name={iconName} size={18} color={iconColor} />
                   </View>
 
-                  <Text style={styles.bankText}>{payout.bankText}</Text>
-                  <Text style={styles.dateText}>{payout.dateText}</Text>
+                  <View style={styles.payoutDetails}>
+                    <View style={styles.amountStatusRow}>
+                      <Text style={styles.payoutAmount}>{formatCurrency(payout.amount)}</Text>
+                      <View style={[styles.statusBadge, { backgroundColor: badgeBg }]}>
+                        <Text style={[styles.statusBadgeText, { color: badgeColor }]}>
+                          {payout.status}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.bankText}>
+                      Withdraw to {payout.bankName} (•••• {payout.accountLast4})
+                    </Text>
+                    <Text style={styles.dateText}>{formatDate(payout.requestedAt)}</Text>
+                  </View>
                 </View>
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* ================= INFO BANNER ================= */}
         <View style={styles.infoBanner}>
@@ -237,6 +300,25 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 11,
     color: COLORS.textLight,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  emptyDesc: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   infoBanner: {
     flexDirection: 'row',

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Modal, Animated, Alert, Platform } from 'react-native';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import SocketService from '../utils/SocketService';
 
 interface IncomingJobModalProps {
@@ -9,6 +10,7 @@ interface IncomingJobModalProps {
 }
 
 export default function IncomingJobModal({ currentUserId, currentUserRole }: IncomingJobModalProps) {
+  const router = useRouter();
   const [activeJob, setActiveJob] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [countdown, setCountdown] = useState(30);
@@ -99,15 +101,25 @@ export default function IncomingJobModal({ currentUserId, currentUserRole }: Inc
       }
     };
 
-    // 4. Listen for acceptance success
+    // 4. Listen for acceptance success -> Navigate to Active Job Screen
     const handleJobAcceptedSuccess = (data: any) => {
       if (countdownRef.current) clearInterval(countdownRef.current);
       setModalVisible(false);
-      Alert.alert(
-        '🎉 Booking Confirmed!',
-        `You have been assigned to this job request!\nLocation: ${activeJob?.location || 'Nearby Area'}`
-      );
+      const targetJob = data.job || activeJob;
       setActiveJob(null);
+
+      // Route worker directly to the Active Job Console
+      try {
+        router.push({
+          pathname: '/active-job',
+          params: {
+            jobId: data.jobId,
+            jobData: JSON.stringify(targetJob)
+          }
+        });
+      } catch (err) {
+        console.error('[IncomingJobModal] Error navigating to active-job:', err);
+      }
     };
 
     SocketService.on('job_request_broadcast', handleJobBroadcast);
@@ -224,7 +236,7 @@ export default function IncomingJobModal({ currentUserId, currentUserRole }: Inc
               <View style={styles.detailRow}>
                 <Feather name="map-pin" size={16} color="#F97316" style={{ marginRight: 8 }} />
                 <Text style={styles.detailText} numberOfLines={1}>
-                  {activeJob.location || 'Sector 62, Noida'} ({activeJob.radiusText ? `Within ${activeJob.radiusText} service area` : 'Nearby'})
+                  {activeJob.location || 'Selected Location'}{activeJob.distanceKm !== undefined ? ` • 📍 ${activeJob.distanceKm} km away` : (activeJob.radiusText ? ` • Within ${activeJob.radiusText}` : '')}
                 </Text>
               </View>
 
