@@ -469,17 +469,6 @@ export default function ActiveJobScreen() {
     );
   };
 
-  const handleSubmitRating = () => {
-    SocketService.emit('submit_job_rating', {
-      jobId,
-      rating: clientRating,
-      reviewText,
-      ratedRole: 'client',
-    });
-    Alert.alert('⭐ Thank You!', 'Your review for the client has been submitted.', [
-      { text: 'Done', onPress: () => router.replace('/(tabs)') },
-    ]);
-  };
 
   // Load conversation messages and join rooms when worker chat modal opens
   useEffect(() => {
@@ -681,6 +670,16 @@ export default function ActiveJobScreen() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        try {
+          SocketService.emit('submit_job_rating', {
+            jobId: activeJobId,
+            rating: clientRating,
+            reviewText,
+            ratedRole: 'client',
+          });
+        } catch (sErr) {
+          console.warn('[ActiveJob] Socket emit rating error:', sErr);
+        }
         setRatingSubmitted(true);
         Alert.alert(
           '⭐ Rating Submitted',
