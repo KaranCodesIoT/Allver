@@ -54,7 +54,7 @@ const getLocalBackendUrl = () => {
 
   if (ip && isVirtualAdapter(ip)) {
     console.warn(`[Config] Detected virtual/host-only adapter IP (${ip}). Falling back to local Wi-Fi LAN...`);
-    ip = '192.168.105.179';
+    ip = '10.134.133.241';
   }
 
   if (ip && !isVirtualAdapter(ip)) {
@@ -63,9 +63,9 @@ const getLocalBackendUrl = () => {
 
   if (Platform.OS === 'android') {
     // If running on a physical Android phone on Wi-Fi, try LAN IP before emulator alias
-    return 'http://192.168.105.179:5000';
+    return 'http://10.134.133.241:5000';
   }
-  return 'http://192.168.105.179:5000';
+  return 'http://10.134.133.241:5000';
 };
 
 export const BACKEND_URL = __DEV__ ? getLocalBackendUrl() : 'https://allver.onrender.com';

@@ -12,7 +12,8 @@ import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
 import { useTranslation } from '../../utils/i18n';
 import SocketService from '../../utils/SocketService';
 import { forwardGeocodeAddress, findCoordinatesForLocationText } from '../../utils/GeocodingService';
-import { clearAuthSession } from '../../constants/Auth';
+import { clearAuthSession, isGuestUser } from '../../constants/Auth';
+import LoginRequiredModal from '../../components/LoginRequiredModal';
 
 const { width } = Dimensions.get('window');
 
@@ -90,6 +91,8 @@ export default function ProfileScreen() {
   const [editingPostType, setEditingPostType] = useState<'media' | 'design'>('media');
   const [showEditPostModal, setShowEditPostModal] = useState(false);
   const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [guestModalVisible, setGuestModalVisible] = useState(false);
+  const [guestModalAction, setGuestModalAction] = useState('');
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [notifSettings, setNotifSettings] = useState({
@@ -1439,6 +1442,271 @@ export default function ProfileScreen() {
 
     return list;
   };
+
+  const renderLanguageModal = () => (
+    <Modal
+      visible={showLanguageModal}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowLanguageModal(false)}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay} 
+        activeOpacity={1} 
+        onPress={() => setShowLanguageModal(false)}
+      >
+        <TouchableOpacity 
+          activeOpacity={1}
+          style={{
+            width: width * 0.88,
+            maxWidth: 360,
+            backgroundColor: COLORS.white,
+            borderRadius: 24,
+            padding: 24,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.15,
+            shadowRadius: 20,
+            elevation: 10,
+          }}
+        >
+          {/* Modal Header */}
+          <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 20,
+          }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.navy }}>
+              {t('chooseLanguage') || 'Choose Your Language'}
+            </Text>
+            <TouchableOpacity 
+              onPress={() => setShowLanguageModal(false)}
+              style={{
+                backgroundColor: '#F1F5F9',
+                borderRadius: 15,
+                width: 30,
+                height: 30,
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              <Feather name="x" size={16} color={COLORS.textMuted} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Language Options */}
+          {[
+            { code: 'en', native: 'English', eng: 'English', emoji: '🇺🇸' },
+            { code: 'hi', native: 'हिन्दी', eng: 'Hindi', emoji: '🇮🇳' },
+            { code: 'mr', native: 'मराठी', eng: 'Marathi', emoji: '🇮🇳' }
+          ].map((lang) => {
+            const isSelected = i18n.language === lang.code;
+            return (
+              <TouchableOpacity
+                key={lang.code}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingVertical: 14,
+                  paddingHorizontal: 18,
+                  borderRadius: 16,
+                  backgroundColor: isSelected ? '#FEF3C7' : '#F8FAFC',
+                  borderWidth: 1.5,
+                  borderColor: isSelected ? COLORS.primary : '#F1F5F9',
+                  marginBottom: 12,
+                }}
+                onPress={() => {
+                  i18n.changeLanguage(lang.code);
+                  setShowLanguageModal(false);
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 20, marginRight: 12 }}>{lang.emoji}</Text>
+                  <View style={{ alignItems: 'flex-start' }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark }}>
+                      {lang.native}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
+                      {lang.eng}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: isSelected ? COLORS.primary : '#CBD5E1',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  backgroundColor: isSelected ? COLORS.primary : 'transparent',
+                }}>
+                  {isSelected && (
+                    <Feather name="check" size={12} color={COLORS.white} />
+                  )}
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+
+  if (isGuestUser(currentUser)) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        {/* Guest Header */}
+        <View style={styles.navHeader}>
+          <Text style={styles.headerTitle}>{t('myProfile') || 'Profile'}</Text>
+          <View style={styles.headerRightActions}>
+            <TouchableOpacity onPress={() => setShowLanguageModal(true)} style={styles.headerIconBtn}>
+              <Ionicons name="language" size={18} color={COLORS.textDark} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <ScrollView bounces={true} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 60, paddingTop: 12 }}>
+          {/* Guest Hero Card */}
+          <View style={guestStyles.heroCard}>
+            <View style={guestStyles.avatarRing}>
+              <Feather name="user" size={36} color="#F3C769" />
+            </View>
+            <View style={guestStyles.guestBadge}>
+              <Text style={guestStyles.guestBadgeText}>Guest User</Text>
+            </View>
+            <Text style={guestStyles.heroTitle}>Browsing as Guest</Text>
+            <Text style={guestStyles.heroSubtitle}>
+              Create an account or login to unlock hiring, chatting, tracking projects, and booking verified professionals.
+            </Text>
+
+            <TouchableOpacity
+              style={guestStyles.loginCtaBtn}
+              activeOpacity={0.85}
+              onPress={() => router.push('/login')}
+            >
+              <Feather name="log-in" size={17} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={guestStyles.loginCtaText}>Log In / Sign Up</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Unlocked with an account card */}
+          <View style={guestStyles.sectionCard}>
+            <Text style={guestStyles.sectionHeading}>Unlocked with an Account</Text>
+
+            {[
+              { icon: 'briefcase', title: 'Post Projects & Hire', desc: 'Create job postings or hire verified contractors & architects', action: 'Hiring' },
+              { icon: 'message-square', title: 'Chat & Voice Calls', desc: 'Direct end-to-end messaging and instant calls with pros', action: 'Messaging' },
+              { icon: 'calendar', title: 'Track Active Jobs', desc: 'Milestone progress, daily updates and live site tracking', action: 'Job Tracking' },
+              { icon: 'credit-card', title: 'Protected Escrow Payments', desc: 'Secure payment releases with auto-generated GST invoices', action: 'Payments' },
+            ].map((item, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={guestStyles.benefitRow}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setGuestModalAction(item.action);
+                  setGuestModalVisible(true);
+                }}
+              >
+                <View style={guestStyles.benefitIconWrap}>
+                  <Feather name={item.icon as any} size={18} color="#016B4F" />
+                </View>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={guestStyles.benefitTitle}>{item.title}</Text>
+                  <Text style={guestStyles.benefitDesc}>{item.desc}</Text>
+                </View>
+                <View style={guestStyles.lockPill}>
+                  <Feather name="lock" size={12} color="#F59E0B" />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* General Preferences */}
+          <View style={guestStyles.sectionCard}>
+            <Text style={guestStyles.sectionHeading}>General & Support</Text>
+
+            <TouchableOpacity
+              style={guestStyles.prefRow}
+              activeOpacity={0.7}
+              onPress={() => setShowLanguageModal(true)}
+            >
+              <View style={guestStyles.prefIconWrap}>
+                <Ionicons name="language" size={18} color="#3B82F6" />
+              </View>
+              <Text style={guestStyles.prefTitle}>{t('chooseLanguage') || 'App Language'}</Text>
+              <Feather name="chevron-right" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={guestStyles.prefRow}
+              activeOpacity={0.7}
+              onPress={() => router.push('/about')}
+            >
+              <View style={guestStyles.prefIconWrap}>
+                <Feather name="info" size={18} color="#10B981" />
+              </View>
+              <Text style={guestStyles.prefTitle}>About Allver</Text>
+              <Feather name="chevron-right" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={guestStyles.prefRow}
+              activeOpacity={0.7}
+              onPress={() => router.push('/contact')}
+            >
+              <View style={guestStyles.prefIconWrap}>
+                <Feather name="help-circle" size={18} color="#F59E0B" />
+              </View>
+              <Text style={guestStyles.prefTitle}>Help & Support</Text>
+              <Feather name="chevron-right" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={guestStyles.prefRow}
+              activeOpacity={0.7}
+              onPress={() => router.push('/terms')}
+            >
+              <View style={guestStyles.prefIconWrap}>
+                <Feather name="file-text" size={18} color="#6366F1" />
+              </View>
+              <Text style={guestStyles.prefTitle}>Terms of Service</Text>
+              <Feather name="chevron-right" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[guestStyles.prefRow, { borderBottomWidth: 0 }]}
+              activeOpacity={0.7}
+              onPress={() => router.push('/privacy-policy')}
+            >
+              <View style={guestStyles.prefIconWrap}>
+                <Feather name="shield" size={18} color="#14B8A6" />
+              </View>
+              <Text style={guestStyles.prefTitle}>Privacy Policy</Text>
+              <Feather name="chevron-right" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+
+        {/* Reusable Login Required Modal */}
+        <LoginRequiredModal
+          visible={guestModalVisible}
+          onClose={() => setGuestModalVisible(false)}
+          title="Login required"
+          message="Create an account or login to continue."
+          actionSource={guestModalAction}
+        />
+
+        {/* Language Modal */}
+        {renderLanguageModal()}
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -3053,117 +3321,7 @@ export default function ProfileScreen() {
       </Modal>
 
       {/* ===== LANGUAGE SELECTOR MODAL ===== */}
-      <Modal
-        visible={showLanguageModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowLanguageModal(false)}
-      >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
-          activeOpacity={1} 
-          onPress={() => setShowLanguageModal(false)}
-        >
-          <TouchableOpacity 
-            activeOpacity={1}
-            style={{
-              width: width * 0.88,
-              maxWidth: 360,
-              backgroundColor: COLORS.white,
-              borderRadius: 24,
-              padding: 24,
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 10 },
-              shadowOpacity: 0.15,
-              shadowRadius: 20,
-              elevation: 10,
-            }}
-          >
-            {/* Modal Header */}
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 20,
-            }}>
-              <Text style={{ fontSize: 18, fontWeight: '800', color: COLORS.navy }}>
-                {t('chooseLanguage') || 'Choose Your Language'}
-              </Text>
-              <TouchableOpacity 
-                onPress={() => setShowLanguageModal(false)}
-                style={{
-                  backgroundColor: '#F1F5F9',
-                  borderRadius: 15,
-                  width: 30,
-                  height: 30,
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                }}
-              >
-                <Feather name="x" size={16} color={COLORS.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Language Options */}
-            {[
-              { code: 'en', native: 'English', eng: 'English', emoji: '🇺🇸' },
-              { code: 'hi', native: 'हिन्दी', eng: 'Hindi', emoji: '🇮🇳' },
-              { code: 'mr', native: 'मराठी', eng: 'Marathi', emoji: '🇮🇳' }
-            ].map((lang) => {
-              const isSelected = i18n.language === lang.code;
-              return (
-                <TouchableOpacity
-                  key={lang.code}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    paddingVertical: 14,
-                    paddingHorizontal: 18,
-                    borderRadius: 16,
-                    backgroundColor: isSelected ? '#FEF3C7' : '#F8FAFC',
-                    borderWidth: 1.5,
-                    borderColor: isSelected ? COLORS.primary : '#F1F5F9',
-                    marginBottom: 12,
-                  }}
-                  onPress={() => {
-                    i18n.changeLanguage(lang.code);
-                    setShowLanguageModal(false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 20, marginRight: 12 }}>{lang.emoji}</Text>
-                    <View style={{ alignItems: 'flex-start' }}>
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: COLORS.textDark }}>
-                        {lang.native}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: COLORS.textMuted, marginTop: 2 }}>
-                        {lang.eng}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: 10,
-                    borderWidth: 2,
-                    borderColor: isSelected ? COLORS.primary : '#CBD5E1',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    backgroundColor: isSelected ? COLORS.primary : 'transparent',
-                  }}>
-                    {isSelected && (
-                      <Feather name="check" size={12} color={COLORS.white} />
-                    )}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+      {renderLanguageModal()}
 
       {/* ================= PORTFOLIO VIDEO MODAL ================= */}
       <Modal
@@ -5150,5 +5308,183 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
+  },
+});
+
+const guestStyles = StyleSheet.create({
+  heroCard: {
+    backgroundColor: '#0C121E',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#1E2B3E',
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 6,
+      },
+      web: {
+        boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+      },
+    }),
+  },
+  avatarRing: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#101725',
+    borderWidth: 2,
+    borderColor: '#F3C769',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  guestBadge: {
+    backgroundColor: 'rgba(243, 199, 105, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(243, 199, 105, 0.3)',
+    marginBottom: 10,
+  },
+  guestBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#F3C769',
+    letterSpacing: 0.3,
+  },
+  heroTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 20,
+    paddingHorizontal: 10,
+  },
+  loginCtaBtn: {
+    width: '100%',
+    height: 48,
+    backgroundColor: '#016B4F',
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#016B4F',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  loginCtaText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  sectionCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
+  },
+  sectionHeading: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 14,
+  },
+  benefitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  benefitIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: 'rgba(1, 107, 79, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  benefitTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 2,
+  },
+  benefitDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 16,
+  },
+  lockPill: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#FEF3C7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  prefRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  prefIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  prefTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E293B',
+    flex: 1,
   },
 });

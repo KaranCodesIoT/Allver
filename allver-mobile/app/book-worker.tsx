@@ -31,6 +31,8 @@ import {
   GeocodedLocationDetails,
 } from '../utils/GeocodingService';
 import { GOOGLE_MAPS_API_KEY } from '../constants/Config';
+import { isGuestUser } from '../constants/Auth';
+import LoginRequiredModal from '../components/LoginRequiredModal';
 
 const SERVICE_BOOKING_DETAILS: Record<
   string,
@@ -209,6 +211,7 @@ export default function BookWorkerScreen() {
   const [dateModalVisible, setDateModalVisible] = useState(false);
   const [infoModalVisible, setInfoModalVisible] = useState(false);
   const [successModalVisible, setSuccessModalVisible] = useState(false);
+  const [guestModalVisible, setGuestModalVisible] = useState(false);
 
   // Map and Search Temp State
   const [tempLocation, setTempLocation] = useState(location);
@@ -640,6 +643,10 @@ export default function BookWorkerScreen() {
 
   // Booking action: passes all location coordinates and place ID to booking-flow
   const handleBooking = () => {
+    if (isGuestUser()) {
+      setGuestModalVisible(true);
+      return;
+    }
     const generatedJobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     router.push({
       pathname: '/booking-flow',
@@ -1122,6 +1129,14 @@ export default function BookWorkerScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      <LoginRequiredModal
+        visible={guestModalVisible}
+        onClose={() => setGuestModalVisible(false)}
+        title="Login required"
+        message="Create an account or login to book verified workers."
+        actionSource="Booking a Worker"
+      />
     </SafeAreaView>
   );
 }

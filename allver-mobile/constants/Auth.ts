@@ -18,12 +18,15 @@ const withTimeout = <T>(promise: Promise<T>, timeoutMs = 2000, fallback: T): Pro
 
 export const saveToken = async (token: string): Promise<void> => {
   try {
+    (global as any).isGuestMode = false;
     if (Platform.OS === 'web') {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(TOKEN_KEY, token);
+        localStorage.setItem(GUEST_KEY, 'false');
       }
     } else {
       await SecureStore.setItemAsync(TOKEN_KEY, token);
+      await SecureStore.setItemAsync(GUEST_KEY, 'false');
     }
   } catch (error) {
     console.error('Error saving token:', error);
@@ -170,6 +173,61 @@ export const clearAuthSession = async (): Promise<void> => {
 };
 
 const LANG_KEY = 'userLanguage';
+const GUEST_KEY = 'isGuestMode';
+
+export const setGuestMode = async (isGuest: boolean): Promise<void> => {
+  try {
+    (global as any).isGuestMode = isGuest;
+    const val = isGuest ? 'true' : 'false';
+    if (Platform.OS === 'web') {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(GUEST_KEY, val);
+      }
+    } else {
+      await SecureStore.setItemAsync(GUEST_KEY, val);
+    }
+  } catch (error) {
+    console.error('Error saving guest mode:', error);
+  }
+};
+
+export const isGuestSession = async (): Promise<boolean> => {
+  try {
+    if ((global as any).isGuestMode === true) return true;
+    let stored: string | null = null;
+    if (Platform.OS === 'web') {
+      if (typeof localStorage !== 'undefined') {
+        stored = localStorage.getItem(GUEST_KEY);
+      }
+    } else {
+      stored = await withTimeout(SecureStore.getItemAsync(GUEST_KEY), 2000, null);
+    }
+    const isGuest = stored === 'true';
+    (global as any).isGuestMode = isGuest;
+    return isGuest;
+  } catch (error) {
+    return false;
+  }
+};
+
+/**
+ * Fast synchronous check whether an active user context is a guest.
+ * Returns true if no user object or user._id exists, or if isGuestMode is flagged.
+ */
+export const isGuestUser = (user?: any): boolean => {
+  if ((global as any).isGuestMode === true) return true;
+  const activeUser = user || (global as any).currentUser;
+  return !activeUser || !activeUser._id;
+};
+
+/**
+ * Enters unauthenticated Guest Mode:
+ * Wipes any stale tokens, clears user session, and flags guest mode.
+ */
+export const enterGuestMode = async (): Promise<void> => {
+  await clearAuthSession();
+  await setGuestMode(true);
+};
 
 export const saveStoredLanguage = async (lang: string): Promise<void> => {
   try {
@@ -191,7 +249,6 @@ export const getStoredLanguage = async (): Promise<string | null> => {
       if (typeof localStorage !== 'undefined') {
         return localStorage.getItem(LANG_KEY);
       }
-      return null;
     } else {
       return await withTimeout(SecureStore.getItemAsync(LANG_KEY), 2000, null);
     }

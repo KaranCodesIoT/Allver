@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
-import { getStoredLanguage, getToken, getStoredUser, removeToken, removeStoredUser, saveStoredUser, clearAuthSession } from '../constants/Auth';
+import { getStoredLanguage, getToken, getStoredUser, removeToken, removeStoredUser, saveStoredUser, clearAuthSession, enterGuestMode } from '../constants/Auth';
 import { BACKEND_URL } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 
@@ -142,16 +142,18 @@ export default function Index() {
           return;
         }
 
-        // 2. If no valid session, route to Choose Language screen
-        console.log('[BOOT] [Step 32] No active session. Routing to /choose-language.');
-        router.replace('/choose-language');
+        // 2. Public Browsing / Guest Mode: If no valid session, route directly to public browsing at /(tabs)
+        console.log('[BOOT] [Step 32] No active session. Entering public guest browsing at /(tabs).');
+        await enterGuestMode();
+        router.replace('/(tabs)');
 
       } catch (error) {
         console.error('[BOOT] [Step 33 Error] Unexpected error during startup check:', error);
         try {
-          router.replace('/login');
+          await enterGuestMode();
+          router.replace('/(tabs)');
         } catch (navError) {
-          console.error('[BOOT] [Step 33 Fallback Error] Failed to fall back to login screen:', navError);
+          console.error('[BOOT] [Step 33 Fallback Error] Failed to route to tabs:', navError);
         }
       }
     };

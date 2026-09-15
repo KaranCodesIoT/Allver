@@ -7,6 +7,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import SocketService from '../utils/SocketService';
+import { isGuestUser } from '../constants/Auth';
+import LoginRequiredModal from '../components/LoginRequiredModal';
 
 import * as Location from 'expo-location';
 
@@ -69,6 +71,8 @@ export default function LabourDetailScreen() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [showUnfollowModal, setShowUnfollowModal] = useState(false);
   const [specializations, setSpecializations] = useState<string[]>([]);
+  const [guestModalVisible, setGuestModalVisible] = useState(false);
+  const [guestModalAction, setGuestModalAction] = useState('');
 
   const [labourWorkSubTab, setLabourWorkSubTab] = useState<'Active' | 'Completed'>('Active');
 
@@ -275,8 +279,9 @@ export default function LabourDetailScreen() {
   }, [currentUser, id]);
 
   const handleFollowPress = () => {
-    if (!currentUser) {
-      Alert.alert('Login Required', 'Please log in to follow other users.');
+    if (isGuestUser(currentUser) || !currentUser) {
+      setGuestModalAction('Following Professionals');
+      setGuestModalVisible(true);
       return;
     }
 
@@ -444,8 +449,9 @@ export default function LabourDetailScreen() {
 
 
   const handleMessage = () => {
-    if (!currentUser) {
-      Alert.alert('Login Required', 'Please log in to send messages.');
+    if (isGuestUser(currentUser) || !currentUser) {
+      setGuestModalAction('Messaging a Worker');
+      setGuestModalVisible(true);
       return;
     }
     router.push({
@@ -460,6 +466,11 @@ export default function LabourDetailScreen() {
   };
 
   const handleHire = () => {
+    if (isGuestUser(currentUser) || !currentUser) {
+      setGuestModalAction('Calling a Worker');
+      setGuestModalVisible(true);
+      return;
+    }
     Linking.openURL(`tel:+919876543210`);
   };
 
@@ -584,7 +595,7 @@ export default function LabourDetailScreen() {
 
           {/* Action Buttons Row */}
           <View style={styles.profileActionsRow}>
-            {id && currentUser && currentUser._id !== id && (
+            {id && (currentUser?._id !== id) && (
               <TouchableOpacity 
                 style={[styles.primaryActionBtn, isFollowing && styles.followingActionBtn]} 
                 onPress={handleFollowPress}
@@ -1106,6 +1117,13 @@ export default function LabourDetailScreen() {
         </View>
       </Modal>
 
+      <LoginRequiredModal
+        visible={guestModalVisible}
+        onClose={() => setGuestModalVisible(false)}
+        title="Login required"
+        message="Create an account or login to continue."
+        actionSource={guestModalAction}
+      />
     </SafeAreaView>
   );
 }

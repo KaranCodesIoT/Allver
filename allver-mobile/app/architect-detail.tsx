@@ -8,6 +8,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import SocketService from '../utils/SocketService';
+import { isGuestUser } from '../constants/Auth';
+import LoginRequiredModal from '../components/LoginRequiredModal';
 
 
 const { width } = Dimensions.get('window');
@@ -189,6 +191,8 @@ export default function ArchitectDetailScreen() {
   const [projectTimeline, setProjectTimeline] = useState('');
   const [projectDetails, setProjectDetails] = useState('');
   const [isHiring, setIsHiring] = useState(false);
+  const [guestModalVisible, setGuestModalVisible] = useState(false);
+  const [guestModalAction, setGuestModalAction] = useState('');
 
   // Set default location when professional location becomes available
   useEffect(() => {
@@ -440,8 +444,9 @@ export default function ArchitectDetailScreen() {
   };
 
   const handleFollowPress = () => {
-    if (!currentUser) {
-      Alert.alert('Login Required', 'Please log in to follow other users.');
+    if (isGuestUser(currentUser)) {
+      setGuestModalAction('Following Professionals');
+      setGuestModalVisible(true);
       return;
     }
 
@@ -516,10 +521,20 @@ export default function ArchitectDetailScreen() {
   };
 
   const handleWhatsApp = () => {
+    if (isGuestUser(currentUser)) {
+      setGuestModalAction('Contacting Professionals');
+      setGuestModalVisible(true);
+      return;
+    }
     Linking.openURL(`whatsapp://send?phone=${phone}&text=Hello ${name}, I saw your profile on Allver and wanted to inquire about architectural services.`);
   };
 
   const handleCall = () => {
+    if (isGuestUser(currentUser)) {
+      setGuestModalAction('Calling Professionals');
+      setGuestModalVisible(true);
+      return;
+    }
     Linking.openURL(`tel:${phone}`);
   };
 
@@ -647,10 +662,17 @@ export default function ArchitectDetailScreen() {
                 </TouchableOpacity>
 
 
-                {currentUser?.role === 'Client' ? (
+                {currentUser?.role === 'Client' || isGuestUser(currentUser) ? (
                   <TouchableOpacity 
                     style={[styles.outlineActionBtn, { borderColor: COLORS.green, backgroundColor: COLORS.greenLight }]} 
-                    onPress={() => setIsHireModalVisible(true)}
+                    onPress={() => {
+                      if (isGuestUser(currentUser)) {
+                        setGuestModalAction('Hiring an Architect');
+                        setGuestModalVisible(true);
+                        return;
+                      }
+                      setIsHireModalVisible(true);
+                    }}
                   >
                     <Feather name="briefcase" size={12} color={COLORS.green} style={{ marginRight: 4 }} />
                     <Text style={[styles.outlineActionText, { color: COLORS.green, fontWeight: '700' }]}>{t('hire')}</Text>
@@ -665,8 +687,9 @@ export default function ArchitectDetailScreen() {
                 <TouchableOpacity 
                   style={[styles.outlineActionBtn, { borderColor: COLORS.blue, backgroundColor: '#EFF6FF' }]}
                   onPress={() => {
-                    if (!currentUser) {
-                      Alert.alert('Login Required', 'Please log in to send messages.');
+                    if (isGuestUser(currentUser)) {
+                      setGuestModalAction('Direct Messaging');
+                      setGuestModalVisible(true);
                       return;
                     }
                     router.push({
@@ -1172,6 +1195,14 @@ export default function ArchitectDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      <LoginRequiredModal
+        visible={guestModalVisible}
+        onClose={() => setGuestModalVisible(false)}
+        title="Login required"
+        message="Create an account or login to continue."
+        actionSource={guestModalAction}
+      />
     </SafeAreaView>
   );
 }

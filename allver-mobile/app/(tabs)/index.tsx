@@ -13,6 +13,8 @@ import SocketService from '../../utils/SocketService';
 import { useUnreadMessages } from '../../context/UnreadMessageContext';
 import { useUnreadActivities } from '../../context/UnreadActivityContext';
 import * as Location from 'expo-location';
+import { isGuestUser } from '../../constants/Auth';
+import LoginRequiredModal from '../../components/LoginRequiredModal';
 
 const { width } = Dimensions.get('window');
 
@@ -173,6 +175,8 @@ export default function DashboardScreen() {
   const { unreadMsgCount } = useUnreadMessages();
   const { unreadActivityCount, refreshUnreadActivityCount } = useUnreadActivities();
   const [directInvitations, setDirectInvitations] = useState<any[]>([]);
+  const [guestModalVisible, setGuestModalVisible] = useState(false);
+  const [guestModalSource, setGuestModalSource] = useState('');
 
   const handleInvitationResponse = async (requestId: string, status: 'Accepted' | 'Rejected') => {
     if (!currentUser?._id) return;
@@ -591,23 +595,21 @@ export default function DashboardScreen() {
 
   useFocusEffect(useCallback(() => { loadCurrentUser(); }, [loadCurrentUser]));
 
-  // Fetch featured professionals from API when user is loaded
+  // Fetch featured professionals from API when user is loaded or in guest mode
   useEffect(() => {
-    if (!currentUser?._id) {
-      setFeaturedLoading(false);
-      return;
-    }
     const fetchFeatured = async () => {
       try {
         if (!featuredProfessionals || featuredProfessionals.length === 0) {
           setFeaturedLoading(true);
         }
-        const res = await fetch(`${BACKEND_URL}/api/featured-professionals/${currentUser._id}`);
+        const endpoint = currentUser?._id
+          ? `${BACKEND_URL}/api/featured-professionals/${currentUser._id}`
+          : `${BACKEND_URL}/api/featured-professionals/guest`;
+        const res = await fetch(endpoint);
         const data = await res.json();
         if (data.featured) {
           setFeaturedProfessionals(data.featured);
         }
-
       } catch (err) {
         console.error('Error fetching featured professionals:', err);
       } finally {
@@ -617,7 +619,8 @@ export default function DashboardScreen() {
     fetchFeatured();
   }, [currentUser?._id]);
 
-  const userName = currentUser?.fullName || 'Rohit';
+  const isGuest = isGuestUser(currentUser);
+  const userName = isGuest ? 'Guest' : (currentUser?.fullName || 'User');
 
   // Set exactly 4 columns per row for Browse by Service grid
   const numCols = 4;
@@ -828,12 +831,49 @@ export default function DashboardScreen() {
             contentFit="contain"
           />
           <View style={styles.headerIconsRow}>
-            
-            <NotificationBell size={20} color={COLORS.textDark} />
+            {isGuest ? (
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: '#016B4F',
+                  paddingHorizontal: 12,
+                  paddingVertical: 5,
+                  borderRadius: 14,
+                  marginRight: 6,
+                }}
+                activeOpacity={0.8}
+                onPress={() => router.push('/login')}
+              >
+                <Feather name="log-in" size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>Log In</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {isGuest ? (
+              <TouchableOpacity
+                style={styles.iconBadgeBtn}
+                onPress={() => {
+                  setGuestModalSource('Notifications');
+                  setGuestModalVisible(true);
+                }}
+              >
+                <Feather name="bell" size={20} color={COLORS.textDark} />
+              </TouchableOpacity>
+            ) : (
+              <NotificationBell size={20} color={COLORS.textDark} />
+            )}
 
             <TouchableOpacity 
               style={styles.iconBadgeBtn}
-              onPress={() => router.push('/chats')}
+              onPress={() => {
+                if (isGuest) {
+                  setGuestModalSource('Chat & Messages');
+                  setGuestModalVisible(true);
+                  return;
+                }
+                router.push('/chats');
+              }}
             >
               <Feather name="message-square" size={20} color={COLORS.textDark} />
               {unreadMsgCount > 0 && (
@@ -1009,7 +1049,14 @@ export default function DashboardScreen() {
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>{t('myProjects')}</Text>
-            <TouchableOpacity onPress={() => router.push('/my-projects')}>
+            <TouchableOpacity onPress={() => {
+              if (isGuest) {
+                setGuestModalSource('My Projects');
+                setGuestModalVisible(true);
+                return;
+              }
+              router.push('/my-projects');
+            }}>
               <Text style={styles.viewAllText}>{t('viewAll')}</Text>
             </TouchableOpacity>
           </View>
@@ -1602,6 +1649,15 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
+
+      {/* Login Required Modal for Guests */}
+      <LoginRequiredModal
+        visible={guestModalVisible}
+        onClose={() => setGuestModalVisible(false)}
+        title="Login required"
+        message="Create an account or login to continue."
+        actionSource={guestModalSource}
+      />
 
     </SafeAreaView>
   );

@@ -96,11 +96,11 @@ export default function ChooseLanguageScreen() {
         }
       }
 
-      // Default: Go to signup
-      router.replace('/signup');
+      // Default: Go to public browsing at /(tabs)
+      router.replace('/(tabs)');
     } catch (err) {
       console.error(err);
-      router.replace('/signup');
+      router.replace('/(tabs)');
     } finally {
       setLoading(false);
     }

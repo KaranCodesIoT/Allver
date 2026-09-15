@@ -8,8 +8,9 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { BACKEND_URL } from '../../constants/Config';
-import { getToken, saveStoredUser, removeToken, removeStoredUser, getStoredUser, clearAuthSession } from '../../constants/Auth';
+import { getToken, saveStoredUser, removeToken, removeStoredUser, getStoredUser, clearAuthSession, isGuestUser } from '../../constants/Auth';
 import CallKeepService from '../../utils/CallKeepService';
+import LoginRequiredModal from '../../components/LoginRequiredModal';
 
 const COLORS = {
   green: '#16A34A',
@@ -19,12 +20,25 @@ const COLORS = {
   white: '#FFFFFF',
 };
 
-const CustomPostButton = ({ onPress, accessibilityState, style, label }: any) => {
+const CustomPostButton = ({ onPress, accessibilityState, style, label, onGuestIntercept }: any) => {
   const isFocused = accessibilityState?.selected;
+
+  const handlePress = (e: any) => {
+    if (isGuestUser()) {
+      if (typeof onGuestIntercept === 'function') {
+        onGuestIntercept();
+      }
+      return;
+    }
+    if (typeof onPress === 'function') {
+      onPress(e);
+    }
+  };
+
   return (
     <TouchableOpacity
       activeOpacity={0.8}
-      onPress={onPress}
+      onPress={handlePress}
       style={[style, { overflow: 'visible', justifyContent: 'center', alignItems: 'center' }]}
     >
       <View style={{
@@ -80,6 +94,7 @@ export default function TabLayout() {
   const { t } = useTranslation();
   
   const [userRole, setUserRole] = useState<string>('');
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const responseListener = useRef<any>();
 
   useEffect(() => {
@@ -488,7 +503,13 @@ export default function TabLayout() {
               }
             : {
                 title: postLabel,
-                tabBarButton: (props) => <CustomPostButton {...props} label={postLabel} />,
+                tabBarButton: (props) => (
+                  <CustomPostButton
+                    {...props}
+                    label={postLabel}
+                    onGuestIntercept={() => setShowLoginModal(true)}
+                  />
+                ),
               }
         }
       />
@@ -532,6 +553,14 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+
+    <LoginRequiredModal
+      visible={showLoginModal}
+      onClose={() => setShowLoginModal(false)}
+      title="Login required"
+      message="Create an account or login to post projects and hire professionals."
+      actionSource="Posting a Project"
+    />
   </View>
   );
 }

@@ -9,46 +9,53 @@ import { Feather } from '@expo/vector-icons';
 import { Link, useRouter } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
-import { saveToken, saveStoredUser } from '../constants/Auth';
+import { saveToken, saveStoredUser, enterGuestMode } from '../constants/Auth';
 import { notifyClearActiveJob } from '../context/ActiveJobContext';
 import { sendFirebaseOtp, verifyFirebaseOtp, formatIndianPhoneNumber } from '../utils/FirebaseAuthService';
 
 const { width, height } = Dimensions.get('window');
 
 const COLORS = {
-  teal: '#0F4C43',           // Deep teal matching mockup button
-  tealDark: '#0B3630',       // Active teal dark
-  tealLight: '#D1E8E3',
-  gold: '#C4A94D',           // Gold color for lines & border
-  goldBorder: '#DFD5C6',     // Metallic gold border
-  darkBg: '#13171F',         // Dark slate grey/black matching mockup
+  darkBg: '#070C15',         // Exact dark charcoal midnight from mockup
+  cardBg: '#0C121E',         // Exact dark slate card background
+  cardBorder: '#1C2738',     // Exact subtle card border
+  inputBg: '#101725',        // Exact dark input field background
+  inputBorder: '#1E2B3E',    // Exact input border
+  inputBorderFocused: '#01805D',
+  emerald: '#016B4F',        // Exact rich emerald green CTA
+  emeraldDark: '#014432',
+  emeraldLight: 'rgba(1, 107, 79, 0.15)',
+  gold: '#F3C769',           // Exact luminous warm gold for "Allver", script, & icons
+  goldLight: '#F7D58B',
+  goldBorder: '#4A3B1C',
   white: '#FFFFFF',
-  offWhite: '#F4F5F7',
-  inputBg: '#EDEFF2',        // Light grey input background
-  inputBorder: '#E5E7EB',
-  textDark: '#1E2426',
-  textMuted: '#8E9CAE',      // Muted grey for subtitle
-  textLabel: '#374151',
+  offWhite: '#F1F5F9',
+  textMuted: '#8E9CAE',      // Exact subtitle muted blue-grey
+  textSubtle: '#5A6A7E',     // Exact placeholder text
+  textDark: '#0F172A',
   red: '#EF4444',
-  cardBg: '#FFFFFF',
+  teal: '#016B4F',
 };
 
-// Gold lines decorative background
-const GoldLines = () => (
+// Exact abstract curved ribbons & ambient lighting matching mockup
+const BackgroundDecor = () => (
   <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
-    {/* Top-right diagonal grid lines */}
-    <View style={[styles.goldLine, { top: -20, right: 40, height: 280, transform: [{ rotate: '-35deg' }] }]} />
-    <View style={[styles.goldLine, { top: -60, right: 90, height: 280, transform: [{ rotate: '-35deg' }] }]} />
-    <View style={[styles.goldLine, { top: 40, right: -10, height: 220, transform: [{ rotate: '-35deg' }] }]} />
-    
-    {/* Intersecting lines */}
-    <View style={[styles.goldLine, { top: -40, right: 10, height: 250, transform: [{ rotate: '55deg' }] }]} />
-    <View style={[styles.goldLine, { top: 30, right: -50, height: 250, transform: [{ rotate: '55deg' }] }]} />
+    {/* Ambient radial glow top center behind logo */}
+    <View style={styles.topAmbientGlow} />
 
-    {/* Bottom-left lines */}
-    <View style={[styles.goldLine, { bottom: -50, left: -20, height: 220, transform: [{ rotate: '-35deg' }] }]} />
-    <View style={[styles.goldLine, { bottom: -10, left: 30, height: 180, transform: [{ rotate: '-35deg' }] }]} />
-    <View style={[styles.goldLine, { bottom: -40, left: 10, height: 200, transform: [{ rotate: '55deg' }] }]} />
+    {/* Warm golden-bronze curved sweep bottom-left curving across card */}
+    <View style={styles.goldCurvedSweep} />
+    <View style={styles.goldCurvedSweepInner} />
+
+    {/* Deep emerald curved ribbon swooping on right edge */}
+    <View style={styles.emeraldCurvedRibbon} />
+    <View style={styles.emeraldCurvedRibbonInner} />
+
+    {/* Fine geometric accent lines */}
+    <View style={[styles.fineAccentLine, { top: -20, right: 30, height: 320, transform: [{ rotate: '-35deg' }] }]} />
+    <View style={[styles.fineAccentLine, { top: 50, right: 80, height: 260, transform: [{ rotate: '-35deg' }] }]} />
+    <View style={[styles.fineAccentLine, { top: 120, right: -15, height: 280, transform: [{ rotate: '55deg' }] }]} />
+    <View style={[styles.fineAccentLine, { bottom: -30, left: -20, height: 180, transform: [{ rotate: '-35deg' }] }]} />
   </View>
 );
 
@@ -427,8 +434,8 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.outerWrap}>
-      <GoldLines />
-      <SafeAreaView style={styles.safeArea} edges={['bottom']}>
+      <BackgroundDecor />
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.container}
@@ -439,37 +446,88 @@ export default function LoginScreen() {
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
-            {/* Top header section covering full width/height above card */}
-            <View style={styles.topHeaderSection}>
+            {/* Top Area: Back Circle (left) & Skip for now (right) */}
+            <View style={styles.topNavRow}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (router.canGoBack()) {
+                    router.back();
+                  } else {
+                    router.replace('/');
+                  }
+                }}
+                style={styles.topBackCircle}
+                activeOpacity={0.7}
+                accessibilityLabel="Go back"
+              >
+                <Feather name="arrow-left" size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={async () => {
+                  try {
+                    await enterGuestMode();
+                  } catch (e) {
+                    console.error('Error entering guest mode:', e);
+                  }
+                  router.replace('/(tabs)');
+                }}
+                style={styles.skipBtn}
+                activeOpacity={0.7}
+                accessibilityLabel="Skip for now"
+              >
+                <Text style={styles.skipBtnText}>Skip for now</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Brand Logo & Tagline */}
+            <View style={styles.brandContainer}>
               <Image
                 source={require('../assets/images/ALLVER IMGS.jpeg')}
-                style={styles.topBgImage}
-                resizeMode="cover"
+                style={styles.brandLogoImage}
+                resizeMode="contain"
               />
-              <View style={styles.topOverlayContent}>
-                {/* Back button */}
-                <TouchableOpacity
-                  onPress={() => {
-                    if (router.canGoBack()) {
-                      router.back();
-                    } else {
-                      router.replace('/');
-                    }
-                  }}
-                  style={styles.backBtn}
-                >
-                  <Feather name="arrow-left" size={20} color="#1E2426" />
-                </TouchableOpacity>
+              <Text style={styles.brandTagline}>BUILD  •  CONNECT  •  GROW</Text>
+            </View>
 
-                <View style={styles.welcomeTextContainer}>
-                  <Text style={styles.welcomeText}>Welcome Back</Text>
-                  <Text style={styles.sloganText}>Build.Connect.Grow</Text>
+            {/* Welcome Section */}
+            <View style={styles.heroSection}>
+              <Text style={styles.heroTitle}>
+                Welcome{'\n'}to <Text style={styles.heroTitleGold}>Allver</Text>
+              </Text>
+              <Text style={styles.heroSubtitle}>
+                India’s construction ecosystem{'\n'}in your hands.
+              </Text>
+            </View>
+
+            {/* Value Proposition Chips */}
+            <View style={styles.featuresWrap}>
+              <View style={styles.featureCardsRow}>
+                <View style={styles.featureCard}>
+                  <View style={styles.featureIconBadge}>
+                    <Feather name="users" size={17} color="#F3C769" />
+                  </View>
+                  <Text style={styles.featureCardText}>Find{'\n'}Professionals</Text>
+                </View>
+
+                <View style={styles.featureCard}>
+                  <View style={styles.featureIconBadge}>
+                    <Feather name="briefcase" size={17} color="#F3C769" />
+                  </View>
+                  <Text style={styles.featureCardText}>Get{'\n'}Projects</Text>
+                </View>
+
+                <View style={styles.featureCard}>
+                  <View style={styles.featureIconBadge}>
+                    <Feather name="bar-chart-2" size={17} color="#F3C769" />
+                  </View>
+                  <Text style={styles.featureCardText}>Grow{'\n'}Together</Text>
                 </View>
               </View>
             </View>
 
-            {/* ─── FORM CARD ─── */}
-            <View style={styles.formCard}>
+            {/* ─── MAIN AUTH CARD (Glassmorphic) ─── */}
+            <View style={styles.mainAuthCard}>
               {/* In-App Notification Banner */}
               {bannerNotice && (
                 <View style={[
@@ -480,8 +538,8 @@ export default function LoginScreen() {
                   <View style={styles.bannerIconCol}>
                     <Feather
                       name={bannerNotice.type === 'error' ? 'alert-circle' : bannerNotice.type === 'success' ? 'check-circle' : 'info'}
-                      size={20}
-                      color={bannerNotice.type === 'error' ? '#DC2626' : bannerNotice.type === 'success' ? '#16A34A' : '#2563EB'}
+                      size={18}
+                      color={bannerNotice.type === 'error' ? '#EF4444' : bannerNotice.type === 'success' ? '#10B981' : '#3B82F6'}
                     />
                   </View>
                   <View style={styles.bannerTextCol}>
@@ -515,7 +573,7 @@ export default function LoginScreen() {
                     style={styles.bannerCloseBtn}
                     onPress={() => setBannerNotice(null)}
                   >
-                    <Feather name="x" size={16} color="#64748B" />
+                    <Feather name="x" size={16} color="#94A3B8" />
                   </TouchableOpacity>
                 </View>
               )}
@@ -523,71 +581,79 @@ export default function LoginScreen() {
               {authMode === 'phone' ? (
                 /* ================= PHONE NUMBER + OTP FLOW ================= */
                 <>
-                  {/* Phone Number Input */}
-                  <View style={styles.inputGroup}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <Text style={styles.label}>Mobile Number <Text style={styles.req}>*</Text></Text>
-                      {otpSent && (
-                        <TouchableOpacity
-                          onPress={() => {
-                            setOtpSent(false);
-                            setOtpCode('');
-                            setConfirmationResult(null);
-                            setBannerNotice(null);
-                          }}
-                        >
-                          <Text style={{ fontSize: 12, color: COLORS.teal, fontWeight: '700' }}>
-                            Change number
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-
-                    <View style={[
-                      styles.inputWrap,
-                      phoneError ? styles.inputWrapError : isPhoneFocused ? styles.inputWrapActive : styles.inputWrapInactive
-                    ]}>
-                      <View style={styles.countryCodeBadge}>
-                        <Text style={styles.countryCodeText}>🇮🇳 +91</Text>
-                      </View>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Enter 10-digit mobile number"
-                        placeholderTextColor={COLORS.textMuted}
-                        keyboardType="phone-pad"
-                        maxLength={10}
-                        value={phoneNumber}
-                        onChangeText={(txt) => {
-                          setPhoneNumber(txt.replace(/\D/g, ''));
-                          if (phoneError) setPhoneError(null);
-                          if (otpSent) setOtpSent(false);
+                  {/* Header Row */}
+                  <View style={styles.cardHeaderRow}>
+                    <Text style={styles.cardHeaderTitle}>Mobile Number</Text>
+                    {otpSent ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setOtpSent(false);
+                          setOtpCode('');
+                          setConfirmationResult(null);
+                          setBannerNotice(null);
                         }}
-                        onFocus={() => setIsPhoneFocused(true)}
-                        onBlur={() => setIsPhoneFocused(false)}
-                        editable={!isLoading && !otpSent}
-                      />
-                      {phoneNumber.length === 10 && !otpSent && !phoneError && (
-                        <Feather name="check-circle" size={18} color="#16A34A" style={{ marginRight: 12 }} />
-                      )}
-                    </View>
-
-                    {phoneError && (
-                      <Text style={styles.inlineErrorText}>{phoneError}</Text>
+                      >
+                        <Text style={styles.changeNumberText}>Change number</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.cardHeaderSubtitle}>We’ll send you a 6-digit OTP</Text>
                     )}
                   </View>
 
+                  {/* Phone Input Box */}
+                  <View style={[
+                    styles.phoneInputWrap,
+                    phoneError ? styles.phoneInputWrapError : isPhoneFocused ? styles.phoneInputWrapFocused : null
+                  ]}>
+                    <View style={styles.countryBadge}>
+                      <View style={styles.miniFlag}>
+                        <View style={{ height: 3.5, backgroundColor: '#FF9933' }} />
+                        <View style={{ height: 3.5, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center' }}>
+                          <View style={{ width: 2.5, height: 2.5, borderRadius: 1.25, backgroundColor: '#000080' }} />
+                        </View>
+                        <View style={{ height: 3.5, backgroundColor: '#138808' }} />
+                      </View>
+                      <Text style={styles.countryCode}>+91</Text>
+                      <Feather name="chevron-down" size={13} color="#94A3B8" />
+                    </View>
+                    <View style={styles.countryDivider} />
+                    <TextInput
+                      style={styles.phoneInput}
+                      placeholder="Enter 10-digit mobile number"
+                      placeholderTextColor="#64748B"
+                      keyboardType="phone-pad"
+                      maxLength={10}
+                      value={phoneNumber}
+                      onChangeText={(txt) => {
+                        setPhoneNumber(txt.replace(/\D/g, ''));
+                        if (phoneError) setPhoneError(null);
+                        if (otpSent) setOtpSent(false);
+                      }}
+                      onFocus={() => setIsPhoneFocused(true)}
+                      onBlur={() => setIsPhoneFocused(false)}
+                      editable={!isLoading && !otpSent}
+                    />
+                    {phoneNumber.length === 10 && !otpSent && !phoneError && (
+                      <Feather name="check-circle" size={18} color="#10B981" style={{ marginRight: 14 }} />
+                    )}
+                  </View>
+
+                  {phoneError && (
+                    <Text style={styles.inlineErrorText}>{phoneError}</Text>
+                  )}
+
                   {/* OTP Input Field (Shows after OTP is sent) */}
                   {otpSent && (
-                    <View style={styles.inputGroup}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text style={styles.label}>Enter 6-digit OTP <Text style={styles.req}>*</Text></Text>
+                    <View style={{ marginTop: 14 }}>
+                      <View style={styles.cardHeaderRow}>
+                        <Text style={styles.cardHeaderTitle}>Enter 6-digit OTP</Text>
                         {resendTimer > 0 ? (
-                          <Text style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: '600' }}>
+                          <Text style={styles.cardHeaderSubtitle}>
                             Resend in {resendTimer}s
                           </Text>
                         ) : (
                           <TouchableOpacity onPress={handleSendOtp} disabled={isLoading}>
-                            <Text style={{ fontSize: 12, color: COLORS.teal, fontWeight: '700' }}>
+                            <Text style={styles.changeNumberText}>
                               Resend OTP
                             </Text>
                           </TouchableOpacity>
@@ -595,14 +661,14 @@ export default function LoginScreen() {
                       </View>
 
                       <View style={[
-                        styles.inputWrap,
-                        isOtpFocused ? styles.inputWrapActive : styles.inputWrapInactive
+                        styles.phoneInputWrap,
+                        isOtpFocused ? styles.phoneInputWrapFocused : null
                       ]}>
-                        <Feather name="shield" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+                        <Feather name="shield" size={18} color="#94A3B8" style={{ marginLeft: 16, marginRight: 10 }} />
                         <TextInput
-                          style={[styles.input, { letterSpacing: 4, fontSize: 16, fontWeight: '700' }]}
+                          style={[styles.phoneInput, { letterSpacing: 6, fontSize: 18, fontWeight: '700' }]}
                           placeholder="••••••"
-                          placeholderTextColor={COLORS.textMuted}
+                          placeholderTextColor="#64748B"
                           keyboardType="numeric"
                           maxLength={6}
                           value={otpCode}
@@ -615,149 +681,161 @@ export default function LoginScreen() {
                     </View>
                   )}
 
-                  {/* Submit Action Button */}
+                  {/* Primary Emerald Action Button */}
                   <TouchableOpacity
-                    style={[styles.primaryBtn, isLoading && { opacity: 0.7 }]}
+                    style={[styles.emeraldPrimaryBtn, isLoading && { opacity: 0.7 }]}
                     onPress={otpSent ? handleVerifyOtpAndLogin : handleSendOtp}
                     disabled={isLoading}
-                    activeOpacity={0.85}
+                    activeOpacity={0.88}
                   >
                     {isLoading ? (
-                      <ActivityIndicator size="small" color={COLORS.white} />
+                      <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                       <>
-                        <Text style={styles.primaryBtnText}>
+                        <Text style={styles.emeraldPrimaryBtnText}>
                           {otpSent ? 'Verify & Log In' : 'Get OTP on SMS'}
                         </Text>
-                        <View style={styles.arrowCircle}>
-                          <Feather name="arrow-right" size={16} color={COLORS.gold} />
+                        <View style={styles.emeraldArrowCircle}>
+                          <Feather name="arrow-right" size={16} color="#FFFFFF" />
                         </View>
                       </>
                     )}
                   </TouchableOpacity>
 
-                  {/* Toggle Mode Link */}
+                  {/* OR Divider */}
+                  <View style={styles.orDividerWrap}>
+                    <View style={styles.orLine} />
+                    <Text style={styles.orText}>OR</Text>
+                    <View style={styles.orLine} />
+                  </View>
+
+                  {/* Continue with Email Button */}
                   <TouchableOpacity
-                    style={{ alignSelf: 'center', marginTop: 16 }}
+                    style={styles.secondaryOutlineBtn}
                     onPress={() => setAuthMode('email')}
-                    activeOpacity={0.7}
+                    activeOpacity={0.8}
                   >
-                    <Text style={{ fontSize: 12, color: COLORS.textMuted, fontWeight: '600' }}>
-                      Or log in with <Text style={{ color: COLORS.teal, fontWeight: '700' }}>Email & Password</Text>
-                    </Text>
+                    <Feather name="mail" size={18} color="#FFFFFF" style={{ marginRight: 10 }} />
+                    <Text style={styles.secondaryOutlineBtnText}>Continue with Email</Text>
                   </TouchableOpacity>
                 </>
               ) : (
                 /* ================= EMAIL + PASSWORD FLOW ================= */
                 <>
-                  {/* Email */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>{t('email') || 'Email'} <Text style={styles.req}>*</Text></Text>
-                    <View style={[
-                      styles.inputWrap,
-                      isEmailFocused ? styles.inputWrapActive : styles.inputWrapInactive
-                    ]}>
-                      <Feather name="mail" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
-                      <TextInput
-                        style={styles.input}
-                        placeholder={t('enterEmail') || 'Enter your email'}
-                        placeholderTextColor={COLORS.textMuted}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                        value={email}
-                        onChangeText={setEmail}
-                        onFocus={() => setIsEmailFocused(true)}
-                        onBlur={() => setIsEmailFocused(false)}
-                      />
-                    </View>
+                  <View style={styles.cardHeaderRow}>
+                    <Text style={styles.cardHeaderTitle}>Email Address</Text>
                   </View>
- 
-                  {/* Password */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>{t('password') || 'Password'} <Text style={styles.req}>*</Text></Text>
-                    <View style={[
-                      styles.inputWrap,
-                      isPasswordFocused ? styles.inputWrapActive : styles.inputWrapInactive
-                    ]}>
-                      <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
-                      <TextInput
-                        style={styles.input}
-                        placeholder={t('enterPassword') || 'Enter your password'}
-                        placeholderTextColor={COLORS.textMuted}
-                        secureTextEntry={!showPassword}
-                        value={password}
-                        onChangeText={setPassword}
-                        onFocus={() => setIsPasswordFocused(true)}
-                        onBlur={() => setIsPasswordFocused(false)}
-                      />
-                      <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
-                        <Feather name={showPassword ? 'eye' : 'eye-off'} size={18} color={COLORS.textMuted} />
-                      </TouchableOpacity>
-                    </View>
+
+                  <View style={[
+                    styles.phoneInputWrap,
+                    isEmailFocused ? styles.phoneInputWrapFocused : null
+                  ]}>
+                    <Feather name="mail" size={18} color="#94A3B8" style={{ marginLeft: 16, marginRight: 10 }} />
+                    <TextInput
+                      style={styles.phoneInput}
+                      placeholder="Enter your email"
+                      placeholderTextColor="#64748B"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      value={email}
+                      onChangeText={setEmail}
+                      onFocus={() => setIsEmailFocused(true)}
+                      onBlur={() => setIsEmailFocused(false)}
+                    />
                   </View>
- 
-                  {/* Forgot Password */}
-                  <TouchableOpacity style={styles.forgotBtn} onPress={() => setResetModalVisible(true)}>
-                    <Text style={styles.forgotText}>{t('forgotPassword') || 'Forgot Password?'}</Text>
-                  </TouchableOpacity>
- 
-                  {/* Login Button */}
+
+                  <View style={[styles.cardHeaderRow, { marginTop: 14 }]}>
+                    <Text style={styles.cardHeaderTitle}>Password</Text>
+                    <TouchableOpacity onPress={() => setResetModalVisible(true)}>
+                      <Text style={styles.forgotPasswordLink}>Forgot Password?</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={[
+                    styles.phoneInputWrap,
+                    isPasswordFocused ? styles.phoneInputWrapFocused : null
+                  ]}>
+                    <Feather name="lock" size={18} color="#94A3B8" style={{ marginLeft: 16, marginRight: 10 }} />
+                    <TextInput
+                      style={styles.phoneInput}
+                      placeholder="Enter your password"
+                      placeholderTextColor="#64748B"
+                      secureTextEntry={!showPassword}
+                      value={password}
+                      onChangeText={setPassword}
+                      onFocus={() => setIsPasswordFocused(true)}
+                      onBlur={() => setIsPasswordFocused(false)}
+                    />
+                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ paddingHorizontal: 14 }}>
+                      <Feather name={showPassword ? 'eye' : 'eye-off'} size={18} color="#94A3B8" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Primary Login Button */}
                   <TouchableOpacity
-                    style={[styles.primaryBtn, isLoading && { opacity: 0.7 }]}
+                    style={[styles.emeraldPrimaryBtn, isLoading && { opacity: 0.7 }, { marginTop: 20 }]}
                     onPress={handleEmailLogin}
                     disabled={isLoading}
-                    activeOpacity={0.85}
+                    activeOpacity={0.88}
                   >
-                    <Text style={styles.primaryBtnText}>
-                      {isLoading ? (t('loggingIn') || 'Logging In...') : (t('login') || 'Log In')}
-                    </Text>
-                    {!isLoading && (
-                      <View style={styles.arrowCircle}>
-                        <Feather name="arrow-right" size={16} color={COLORS.gold} />
-                      </View>
+                    {isLoading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Text style={styles.emeraldPrimaryBtnText}>Log In</Text>
+                        <View style={styles.emeraldArrowCircle}>
+                          <Feather name="arrow-right" size={16} color="#FFFFFF" />
+                        </View>
+                      </>
                     )}
                   </TouchableOpacity>
 
-                  {/* Toggle Mode Link */}
+                  {/* OR Divider */}
+                  <View style={styles.orDividerWrap}>
+                    <View style={styles.orLine} />
+                    <Text style={styles.orText}>OR</Text>
+                    <View style={styles.orLine} />
+                  </View>
+
+                  {/* Continue with Phone OTP Button */}
                   <TouchableOpacity
-                    style={{ alignSelf: 'center', marginTop: 16 }}
+                    style={styles.secondaryOutlineBtn}
                     onPress={() => setAuthMode('phone')}
-                    activeOpacity={0.7}
+                    activeOpacity={0.8}
                   >
-                    <Text style={{ fontSize: 12, color: COLORS.textMuted, fontWeight: '600' }}>
-                      Log in with <Text style={{ color: COLORS.teal, fontWeight: '700' }}>Phone OTP SMS</Text>
-                    </Text>
+                    <Feather name="phone" size={18} color="#FFFFFF" style={{ marginRight: 10 }} />
+                    <Text style={styles.secondaryOutlineBtnText}>Continue with Phone OTP</Text>
                   </TouchableOpacity>
                 </>
               )}
+
+              {/* Sign Up Prompt inside card */}
+              <View style={styles.signupRow}>
+                <Text style={styles.signupText}>Don’t have an account? </Text>
+                <Link href="/signup" asChild>
+                  <TouchableOpacity>
+                    <Text style={styles.signupLink}>Sign Up</Text>
+                  </TouchableOpacity>
+                </Link>
+              </View>
             </View>
 
-            {/* Footer */}
-            <View style={styles.footerRow}>
-              <Link href="/signup" asChild>
-                <TouchableOpacity>
-                  <Text style={styles.footerLink}>{t('dontHaveAccount')}</Text>
-                </TouchableOpacity>
-              </Link>
-            </View>
-
-            {/* Legal & Info Links */}
-            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 18, marginBottom: 8 }}>
-              <TouchableOpacity onPress={() => router.push('/about')}>
-                <Text style={{ fontSize: 11, color: COLORS.textMuted }}>About</Text>
-              </TouchableOpacity>
-              <Text style={{ fontSize: 10, color: '#CBD5E1' }}>•</Text>
-              <TouchableOpacity onPress={() => router.push('/contact')}>
-                <Text style={{ fontSize: 11, color: COLORS.textMuted }}>Contact</Text>
-              </TouchableOpacity>
-              <Text style={{ fontSize: 10, color: '#CBD5E1' }}>•</Text>
-              <TouchableOpacity onPress={() => router.push('/privacy-policy')}>
-                <Text style={{ fontSize: 11, color: COLORS.textMuted }}>Privacy</Text>
-              </TouchableOpacity>
-              <Text style={{ fontSize: 10, color: '#CBD5E1' }}>•</Text>
-              <TouchableOpacity onPress={() => router.push('/terms')}>
-                <Text style={{ fontSize: 11, color: COLORS.textMuted }}>Terms</Text>
-              </TouchableOpacity>
+            {/* Bottom Trust Badges Footer */}
+            <View style={styles.bottomTrustRow}>
+              <View style={styles.trustBadgeItem}>
+                <Feather name="shield" size={14} color="#7D8B9B" />
+                <Text style={styles.trustBadgeText}>Secure</Text>
+              </View>
+              <Text style={styles.trustBadgeDivider}>|</Text>
+              <View style={styles.trustBadgeItem}>
+                <Feather name="users" size={14} color="#7D8B9B" />
+                <Text style={styles.trustBadgeText}>Trusted</Text>
+              </View>
+              <Text style={styles.trustBadgeDivider}>|</Text>
+              <View style={styles.trustBadgeItem}>
+                <Feather name="feather" size={14} color="#7D8B9B" />
+                <Text style={styles.trustBadgeText}>For a Better Built India</Text>
+              </View>
             </View>
 
 
@@ -771,45 +849,47 @@ export default function LoginScreen() {
             >
               <View style={{
                 flex: 1,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                backgroundColor: 'rgba(4, 7, 13, 0.85)',
                 justifyContent: 'center',
                 alignItems: 'center',
                 padding: 20
               }}>
                 <View style={{
-                  backgroundColor: COLORS.white,
-                  borderRadius: 16,
+                  backgroundColor: '#101726',
+                  borderRadius: 20,
                   padding: 24,
                   width: '100%',
                   maxWidth: 380,
+                  borderWidth: 1,
+                  borderColor: '#1E293B',
                   shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.2,
-                  shadowRadius: 8,
-                  elevation: 8
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.4,
+                  shadowRadius: 16,
+                  elevation: 10
                 }}>
-                  <Text style={{ fontSize: 18, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 8 }}>
                     Reset Password
                   </Text>
-                  <Text style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 16, lineHeight: 18 }}>
+                  <Text style={{ fontSize: 13, color: '#94A3B8', marginBottom: 16, lineHeight: 18 }}>
                     Enter your registered email address and new password.
                   </Text>
 
                   <View style={{ marginBottom: 14 }}>
-                    <Text style={styles.label}>Email Address</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#CBD5E1', marginBottom: 6 }}>Email Address</Text>
                     <TextInput
                       style={{
-                        backgroundColor: COLORS.inputBg,
-                        borderRadius: 10,
+                        backgroundColor: '#141C2B',
+                        borderRadius: 12,
                         borderWidth: 1,
-                        borderColor: COLORS.inputBorder,
-                        paddingHorizontal: 12,
-                        paddingVertical: 10,
+                        borderColor: '#233247',
+                        paddingHorizontal: 14,
+                        paddingVertical: 12,
                         fontSize: 14,
-                        color: COLORS.textDark
+                        color: '#FFFFFF'
                       }}
                       placeholder="Enter your email"
-                      placeholderTextColor={COLORS.textMuted}
+                      placeholderTextColor="#64748B"
                       keyboardType="email-address"
                       autoCapitalize="none"
                       value={resetEmail}
@@ -818,20 +898,20 @@ export default function LoginScreen() {
                   </View>
 
                   <View style={{ marginBottom: 20 }}>
-                    <Text style={styles.label}>New Password</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#CBD5E1', marginBottom: 6 }}>New Password</Text>
                     <TextInput
                       style={{
-                        backgroundColor: COLORS.inputBg,
-                        borderRadius: 10,
+                        backgroundColor: '#141C2B',
+                        borderRadius: 12,
                         borderWidth: 1,
-                        borderColor: COLORS.inputBorder,
-                        paddingHorizontal: 12,
-                        paddingVertical: 10,
+                        borderColor: '#233247',
+                        paddingHorizontal: 14,
+                        paddingVertical: 12,
                         fontSize: 14,
-                        color: COLORS.textDark
+                        color: '#FFFFFF'
                       }}
                       placeholder="Enter new password"
-                      placeholderTextColor={COLORS.textMuted}
+                      placeholderTextColor="#64748B"
                       secureTextEntry
                       value={resetNewPassword}
                       onChangeText={setResetNewPassword}
@@ -843,15 +923,15 @@ export default function LoginScreen() {
                       style={{ paddingVertical: 10, paddingHorizontal: 16 }}
                       onPress={() => setResetModalVisible(false)}
                     >
-                      <Text style={{ fontSize: 14, color: COLORS.textMuted, fontWeight: '600' }}>Cancel</Text>
+                      <Text style={{ fontSize: 14, color: '#94A3B8', fontWeight: '600' }}>Cancel</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={{
-                        backgroundColor: COLORS.teal,
-                        paddingVertical: 10,
-                        paddingHorizontal: 20,
-                        borderRadius: 8
+                        backgroundColor: '#0B6D57',
+                        paddingVertical: 11,
+                        paddingHorizontal: 22,
+                        borderRadius: 12
                       }}
                       onPress={async () => {
                         if (!resetEmail || !resetNewPassword) {
@@ -986,7 +1066,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   outerWrap: {
     flex: 1,
-    backgroundColor: COLORS.darkBg,
+    backgroundColor: '#070C15',
   },
   safeArea: {
     flex: 1,
@@ -998,76 +1078,203 @@ const styles = StyleSheet.create({
     maxWidth: 480,
   },
   scrollContent: {
-    paddingHorizontal: 0,
-    paddingTop: 0,
-    paddingBottom: 40,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 10 : 16,
+    paddingBottom: 36,
     flexGrow: 1,
   },
 
-  /* Top header section covering full width/height above card */
-  topHeaderSection: {
-    height: 280,
-    width: '100%',
-    position: 'relative',
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  topBgImage: {
+  /* Ambient radial and curved ribbons */
+  topAmbientGlow: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: '100%',
-    height: '100%',
+    top: -100,
+    left: '15%',
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: 'rgba(21, 55, 75, 0.22)',
+    opacity: 0.6,
   },
-  topOverlayContent: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'ios' ? 44 : 24,
-    paddingBottom: 16,
+  goldCurvedSweep: {
+    position: 'absolute',
+    bottom: 80,
+    left: -120,
+    width: 380,
+    height: 480,
+    borderRadius: 240,
+    borderTopWidth: 2,
+    borderRightWidth: 1.5,
+    borderTopColor: 'rgba(218, 165, 68, 0.28)',
+    borderRightColor: 'rgba(184, 137, 50, 0.16)',
+    backgroundColor: 'rgba(184, 137, 50, 0.02)',
+    transform: [{ rotate: '-25deg' }],
+  },
+  goldCurvedSweepInner: {
+    position: 'absolute',
+    bottom: 120,
+    left: -90,
+    width: 320,
+    height: 420,
+    borderRadius: 210,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(218, 165, 68, 0.15)',
+    transform: [{ rotate: '-28deg' }],
+  },
+  emeraldCurvedRibbon: {
+    position: 'absolute',
+    top: 60,
+    right: -130,
+    width: 320,
+    height: 480,
+    borderRadius: 240,
+    borderLeftWidth: 1.8,
+    borderBottomWidth: 1,
+    borderLeftColor: 'rgba(1, 107, 79, 0.28)',
+    borderBottomColor: 'rgba(1, 107, 79, 0.14)',
+    backgroundColor: 'rgba(1, 107, 79, 0.02)',
+    transform: [{ rotate: '38deg' }],
+  },
+  emeraldCurvedRibbonInner: {
+    position: 'absolute',
+    top: 130,
+    right: -100,
+    width: 260,
+    height: 400,
+    borderRadius: 200,
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(1, 107, 79, 0.16)',
+    transform: [{ rotate: '42deg' }],
+  },
+  fineAccentLine: {
+    position: 'absolute',
+    width: 1,
+    backgroundColor: '#F3C769',
+    opacity: 0.12,
   },
 
-  /* Gold lines decorative background */
-  goldLine: {
-    position: 'absolute',
-    width: 1.2,
-    backgroundColor: COLORS.gold,
-    opacity: 0.15,
+  /* Top Navigation: Back Circle & Skip for now */
+  topNavRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+    zIndex: 10,
   },
-
-  /* Back button */
-  backBtn: {
+  topBackCircle: {
     width: 44,
     height: 44,
-    borderRadius: 14,
-    backgroundColor: '#EAE5DB',
-    borderColor: '#DFD5C6',
-    borderWidth: 1.5,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
-    alignSelf: 'flex-start',
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 4 },
-      android: { elevation: 4 },
-    }),
+  },
+  skipBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  skipBtnText: {
+    color: '#8E9CAE',
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: 0.2,
   },
 
-  /* ── FORM CARD SECTION ── */
-  formCard: {
-    backgroundColor: COLORS.cardBg,
-    borderRadius: 28,
-    padding: 24,
-    gap: 20,
+  /* Brand Logo & Tagline */
+  brandContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    marginBottom: 18,
+  },
+  brandLogoImage: {
+    width: 170,
+    height: 80,
+  },
+  brandTagline: {
+    color: '#8E9CAE',
+    fontSize: 10.5,
+    fontWeight: '600',
+    letterSpacing: 3.5,
+    marginTop: 6,
+  },
+
+  /* Welcome Section */
+  heroSection: {
+    marginBottom: 16,
+  },
+  heroTitle: {
+    color: '#FFFFFF',
+    fontSize: 34,
+    fontWeight: '800',
+    lineHeight: 40,
+    letterSpacing: -0.5,
+  },
+  heroTitleGold: {
+    color: '#F3C769',
+  },
+  heroSubtitle: {
+    color: '#8E9CAE',
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 6,
+    fontWeight: '400',
+    maxWidth: '90%',
+  },
+
+  /* Value Proposition Chips + Motivational Brand Element */
+  featuresWrap: {
+    marginBottom: 20,
+    width: '100%',
+  },
+  featureCardsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  featureCard: {
     flex: 1,
+    backgroundColor: 'rgba(13, 19, 30, 0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    justifyContent: 'center',
+    minHeight: 68,
+  },
+  featureIconBadge: {
+    marginBottom: 6,
+  },
+  featureCardText: {
+    color: '#D1D9E0',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+
+  /* ── MAIN AUTH CARD (Glassmorphic) ── */
+  mainAuthCard: {
+    backgroundColor: 'rgba(12, 18, 30, 0.95)',
+    borderWidth: 1,
+    borderColor: '#1C2738',
+    borderRadius: 26,
+    padding: 22,
     ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.08, shadowRadius: 16 },
-      android: { elevation: 8 },
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.45,
+        shadowRadius: 20,
+      },
+      android: {
+        elevation: 10,
+      },
     }),
   },
 
-  /* In-App Notification Banner Styles */
+  /* In-App Notification Banner */
   bannerContainer: {
     flexDirection: 'row',
     borderRadius: 12,
@@ -1075,19 +1282,19 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     borderWidth: 1,
     gap: 10,
-    marginBottom: 4,
+    marginBottom: 14,
   },
   bannerError: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
   },
   bannerSuccess: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
+    backgroundColor: 'rgba(1, 107, 79, 0.14)',
+    borderColor: 'rgba(1, 107, 79, 0.35)',
   },
   bannerInfo: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#BFDBFE',
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    borderColor: 'rgba(59, 130, 246, 0.3)',
   },
   bannerIconCol: {
     marginTop: 2,
@@ -1106,18 +1313,18 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   bannerTextError: {
-    color: '#991B1B',
+    color: '#FCA5A5',
   },
   bannerTextSuccess: {
-    color: '#166534',
+    color: '#6EE7B7',
   },
   bannerTextInfo: {
-    color: '#1E40AF',
+    color: '#93C5FD',
   },
   bannerActionBtn: {
     marginTop: 8,
     alignSelf: 'flex-start',
-    backgroundColor: '#DC2626',
+    backgroundColor: '#EF4444',
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 6,
@@ -1131,158 +1338,232 @@ const styles = StyleSheet.create({
     padding: 2,
   },
 
-  /* Inline Error */
+  /* Card Header Row */
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  cardHeaderTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  cardHeaderSubtitle: {
+    color: '#7C8B9E',
+    fontSize: 12,
+    fontWeight: '400',
+  },
+  changeNumberText: {
+    color: '#10B981',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  forgotPasswordLink: {
+    color: '#F3C769',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  /* Phone Input Wrap */
+  phoneInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#101725',
+    borderWidth: 1,
+    borderColor: '#1E2B3E',
+    borderRadius: 14,
+    height: 54,
+  },
+  phoneInputWrapFocused: {
+    borderColor: '#01805D',
+  },
+  phoneInputWrapError: {
+    borderColor: '#EF4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+  },
+  countryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: 14,
+    paddingRight: 8,
+    gap: 6,
+  },
+  miniFlag: {
+    width: 18,
+    height: 11,
+    borderRadius: 2,
+    overflow: 'hidden',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    marginRight: 2,
+  },
+  countryCode: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  countryDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#223147',
+    marginRight: 10,
+  },
+  phoneInput: {
+    flex: 1,
+    height: '100%',
+    color: '#FFFFFF',
+    fontSize: 15,
+    paddingRight: 12,
+  },
   inlineErrorText: {
-    color: '#DC2626',
+    color: '#EF4444',
     fontSize: 12,
     fontWeight: '600',
     marginTop: 6,
     marginLeft: 4,
   },
 
-  /* Input Group */
-  inputGroup: {},
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.textLabel,
-    marginBottom: 8,
-    letterSpacing: 0.2,
-  },
-  req: { color: COLORS.red },
-  inputWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.inputBg,
-    borderRadius: 16,
-    height: 56,
-    borderWidth: 1.5,
-  },
-  inputWrapInactive: {
-    borderColor: COLORS.inputBg,
-  },
-  inputWrapActive: {
-    borderColor: COLORS.teal,
-  },
-  inputWrapError: {
-    borderColor: '#DC2626',
-    backgroundColor: '#FEF2F2',
-  },
-  countryCodeBadge: {
-    paddingLeft: 14,
-    paddingRight: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  countryCodeText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textDark,
-  },
-  inputIcon: {
-    paddingHorizontal: 14,
-  },
-  input: {
-    flex: 1,
-    fontSize: 15,
-    color: COLORS.textDark,
-    height: '100%',
-  },
-  eyeBtn: {
-    paddingHorizontal: 14,
-    height: '100%',
-    justifyContent: 'center',
-  },
-
-  /* Forgot Password */
-  forgotBtn: {
-    alignSelf: 'flex-end',
-    marginTop: -4,
-  },
-  forgotText: {
-    color: COLORS.teal,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-
-  /* Primary Button */
-  primaryBtn: {
-    backgroundColor: COLORS.teal,
-    borderRadius: 24,
+  /* Primary Emerald Button */
+  emeraldPrimaryBtn: {
+    backgroundColor: '#016B4F',
+    borderRadius: 27,
+    height: 54,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 56,
-    marginTop: 8,
+    marginTop: 20,
     position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.25)',
     ...Platform.select({
-      ios: { shadowColor: COLORS.teal, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 10 },
-      android: { elevation: 6 },
+      ios: {
+        shadowColor: '#016B4F',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.4,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 6,
+      },
+      web: {
+        backgroundImage: 'linear-gradient(180deg, #02805E 0%, #016B4F 60%, #014E3A 100%)',
+        boxShadow: '0 6px 20px rgba(1, 107, 79, 0.4)',
+      },
     }),
   },
-  primaryBtnText: {
-    color: COLORS.white,
-    fontSize: 17,
+  emeraldPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
     fontWeight: '700',
-    textAlign: 'center',
+    letterSpacing: 0.3,
   },
-  arrowCircle: {
+  emeraldArrowCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#C4A94D',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.28)',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'absolute',
-    right: 16,
+    right: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
 
-  /* Footer */
-  footerRow: {
+  /* OR Divider */
+  orDividerWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 18,
+    gap: 12,
+  },
+  orLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#1C2738',
+  },
+  orText: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+
+  /* Secondary Outline Button */
+  secondaryOutlineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+  },
+  secondaryOutlineBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+
+  /* Sign Up Prompt inside card */
+  signupRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 28,
-    marginBottom: 10,
+    alignItems: 'center',
+    marginTop: 18,
   },
-  footerText: {
-    color: COLORS.textMuted,
+  signupText: {
+    color: '#8E9CAE',
     fontSize: 14,
+    fontWeight: '500',
   },
-  footerLink: {
-    color: '#1BC47D', // Cyan/green link color to stand out on dark background
+  signupLink: {
+    color: '#F3C769',
     fontSize: 14,
     fontWeight: '700',
   },
-  welcomeTextContainer: {
-    marginTop: 'auto',
-    paddingTop: 24,
-    marginBottom: 8,
+
+  /* Bottom Trust Badges Footer */
+  bottomTrustRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 22,
+    marginBottom: 6,
+    gap: 12,
   },
-  welcomeText: {
-    color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
+  trustBadgeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  sloganText: {
-    color: '#DFD5C6', // Metallic gold shade
-    fontSize: 14,
+  trustBadgeText: {
+    color: '#7D8B9B',
+    fontSize: 12,
     fontWeight: '500',
-    marginTop: 2,
-    letterSpacing: 1,
+  },
+  trustBadgeDivider: {
+    color: '#1C2738',
+    fontSize: 12,
   },
 
   /* Unregistered Phone / New User Modal Styles */
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(10, 22, 40, 0.72)',
+    backgroundColor: 'rgba(4, 7, 13, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
   unregisteredCard: {
-    backgroundColor: COLORS.white,
+    backgroundColor: '#0C121E',
+    borderWidth: 1,
+    borderColor: '#1C2738',
     borderRadius: 24,
     paddingHorizontal: 24,
     paddingVertical: 28,
@@ -1293,8 +1574,8 @@ const styles = StyleSheet.create({
       ios: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.25,
-        shadowRadius: 18,
+        shadowOpacity: 0.45,
+        shadowRadius: 20,
       },
       android: {
         elevation: 10,
@@ -1308,9 +1589,9 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: '#E6FFFA',
+    backgroundColor: 'rgba(1, 107, 79, 0.15)',
     borderWidth: 2,
-    borderColor: '#99F6E4',
+    borderColor: '#016B4F',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1318,9 +1599,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: 'rgba(1, 107, 79, 0.14)',
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: 'rgba(1, 107, 79, 0.35)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
@@ -1329,13 +1610,13 @@ const styles = StyleSheet.create({
   phoneBadgeText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#065F46',
+    color: '#10B981',
     letterSpacing: 0.5,
   },
   unregTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: COLORS.textDark,
+    color: '#FFFFFF',
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: 8,
@@ -1343,13 +1624,13 @@ const styles = StyleSheet.create({
   unregSubtitle: {
     fontSize: 14,
     fontWeight: '500',
-    color: COLORS.textMuted,
+    color: '#8E9CAE',
     textAlign: 'center',
     lineHeight: 20,
     paddingHorizontal: 8,
   },
   unregCreateBtn: {
-    backgroundColor: COLORS.teal,
+    backgroundColor: '#016B4F',
     borderRadius: 16,
     height: 52,
     flexDirection: 'row',
@@ -1357,20 +1638,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     width: '100%',
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.teal,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
   },
   unregCreateBtnText: {
-    color: COLORS.white,
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
   },
@@ -1381,7 +1651,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   unregCancelBtnText: {
-    color: COLORS.textMuted,
+    color: '#8E9CAE',
     fontSize: 14,
     fontWeight: '600',
   },

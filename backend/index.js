@@ -3319,18 +3319,19 @@ app.delete('/api/professional/:id/team/:memberId', async (req, res) => {
 });
 
 // ===================== FEATURED PROFESSIONALS (Smart Ranking) =====================
-app.get('/api/featured-professionals/:userId', async (req, res) => {
+app.get(['/api/featured-professionals', '/api/featured-professionals/:userId'], async (req, res) => {
   try {
     const { userId } = req.params;
-    const requestingUser = await User.findById(userId, '-password');
-    if (!requestingUser) {
-      return res.status(404).json({ message: 'User not found' });
+    const isGuest = !userId || userId === 'guest' || !mongoose.Types.ObjectId.isValid(userId);
+    let requestingUser = null;
+    if (!isGuest) {
+      requestingUser = await User.findById(userId, '-password');
     }
 
-    const userCity = (requestingUser.city || '').toLowerCase().trim();
-    const userState = (requestingUser.state || '').toLowerCase().trim();
-    const userArea = (requestingUser.area || '').toLowerCase().trim();
-    const userSpecializations = (requestingUser.specialization || []).map(s => s.toLowerCase());
+    const userCity = (requestingUser?.city || '').toLowerCase().trim();
+    const userState = (requestingUser?.state || '').toLowerCase().trim();
+    const userArea = (requestingUser?.area || '').toLowerCase().trim();
+    const userSpecializations = (requestingUser?.specialization || []).map(s => s.toLowerCase());
 
     const calculateScore = (user) => {
       const rating = user.rating || 0;
@@ -3369,7 +3370,8 @@ app.get('/api/featured-professionals/:userId', async (req, res) => {
     }
     const preferredTypes = [...preferred];
 
-    const allContractors = await User.find({ role: 'Contractor', _id: { $ne: userId } }, '-password').lean();
+    const contractorFilter = isGuest ? { role: 'Contractor' } : { role: 'Contractor', _id: { $ne: userId } };
+    const allContractors = await User.find(contractorFilter, '-password').lean();
     const scoredContractors = allContractors.map(c => {
       let score = calculateScore(c);
       if (preferredTypes.length > 0) {
@@ -3395,14 +3397,16 @@ app.get('/api/featured-professionals/:userId', async (req, res) => {
     clientResults.sort((a, b) => b.featuredScore - a.featuredScore);
     const topClients = clientResults.slice(0, 3);
 
-    const allArchitects = await User.find({ role: 'Architect', _id: { $ne: userId }, rating: { $gte: 4.5 } }, '-password').lean();
+    const architectFilter = isGuest ? { role: 'Architect', rating: { $gte: 4.5 } } : { role: 'Architect', _id: { $ne: userId }, rating: { $gte: 4.5 } };
+    const allArchitects = await User.find(architectFilter, '-password').lean();
     const nonCompetitors = allArchitects.filter(a => {
+      if (!requestingUser) return true;
       const aSpecs = (a.specialization || []).map(s => s.toLowerCase());
       return !aSpecs.some(s => userSpecializations.includes(s));
     });
     const scoredArchitects = nonCompetitors.map(a => ({ ...a, featuredScore: calculateScore(a), type: 'professional' }));
     scoredArchitects.sort((a, b) => b.featuredScore - a.featuredScore);
-    const topArchitects = scoredArchitects.slice(0, 1);
+    const topArchitects = scoredArchitects.slice(0, 2);
 
     const featured = [...topContractors, ...topClients, ...topArchitects].slice(0, 10);
     const mappedFeatured = featured.map(item => {
@@ -3546,6 +3550,15 @@ app.post('/api/contract-requests', async (req, res) => {
     
     if (!client || !title || !location || !budget) {
       return res.status(400).json({ message: 'Missing required project details' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(client)) {
+      return res.status(401).json({ message: 'Authentication required. Please log in to continue.' });
+    }
+
+    const clientUser = await User.findById(client);
+    if (!clientUser) {
+      return res.status(401).json({ message: 'Authentication required. Please log in to continue.' });
     }
 
     const newRequest = new ContractRequest({

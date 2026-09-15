@@ -7,6 +7,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import SocketService from '../utils/SocketService';
+import { isGuestUser } from '../constants/Auth';
+import LoginRequiredModal from '../components/LoginRequiredModal';
 
 
 const { width } = Dimensions.get('window');
@@ -204,6 +206,8 @@ export default function ContractorDetailScreen() {
   const [projectTimeline, setProjectTimeline] = useState('');
   const [projectDetails, setProjectDetails] = useState('');
   const [isHiring, setIsHiring] = useState(false);
+  const [guestModalVisible, setGuestModalVisible] = useState(false);
+  const [guestModalAction, setGuestModalAction] = useState('');
 
   // Set default location when professional location becomes available
   useEffect(() => {
@@ -441,8 +445,9 @@ export default function ContractorDetailScreen() {
   };
 
   const handleFollowPress = () => {
-    if (!currentUser) {
-      Alert.alert('Login Required', 'Please log in to follow other users.');
+    if (isGuestUser(currentUser)) {
+      setGuestModalAction('Following Professionals');
+      setGuestModalVisible(true);
       return;
     }
 
@@ -517,10 +522,20 @@ export default function ContractorDetailScreen() {
   };
 
   const handleWhatsApp = () => {
+    if (isGuestUser(currentUser)) {
+      setGuestModalAction('Contacting a Professional');
+      setGuestModalVisible(true);
+      return;
+    }
     Linking.openURL(`whatsapp://send?phone=${phone}&text=Hello ${name}, I saw your contractor profile on Allver and wanted to discuss a construction project.`);
   };
 
   const handleCall = () => {
+    if (isGuestUser(currentUser)) {
+      setGuestModalAction('Calling a Professional');
+      setGuestModalVisible(true);
+      return;
+    }
     Linking.openURL(`tel:${phone}`);
   };
 
@@ -565,7 +580,17 @@ export default function ContractorDetailScreen() {
           <TouchableOpacity onPress={handleShare} style={styles.circleHeaderBtn}>
             <Feather name="share-2" size={20} color={COLORS.textDark} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setIsBookmarked(!isBookmarked)} style={styles.circleHeaderBtn}>
+          <TouchableOpacity 
+            onPress={() => {
+              if (isGuestUser(currentUser)) {
+                setGuestModalAction('Saving Favorites');
+                setGuestModalVisible(true);
+                return;
+              }
+              setIsBookmarked(!isBookmarked);
+            }} 
+            style={styles.circleHeaderBtn}
+          >
             <Feather name="bookmark" size={20} color={isBookmarked ? COLORS.green : COLORS.textDark} style={isBookmarked && { fill: COLORS.green }} />
           </TouchableOpacity>
           <TouchableOpacity style={styles.circleHeaderBtn}>
@@ -574,53 +599,66 @@ export default function ContractorDetailScreen() {
         </View>
       </View>
 
-      <ScrollView bounces={true} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        
-        {/* Cover & Profile Avatar Container */}
-        <View style={styles.coverContainer}>
-          <Image source={{ uri: displayCoverImage }} style={styles.coverImage} contentFit="cover" />
-          <View style={styles.avatarWrapper}>
-            <Image source={displayAvatar ? { uri: displayAvatar } : require('../assets/android-icon-foreground.png')} style={styles.avatarImage} contentFit={displayAvatar ? "cover" : "contain"} />
-            <View style={styles.verifiedBadge}>
-              <Feather name="check" size={12} color={COLORS.white} />
-            </View>
-          </View>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {/* Cover Photo */}
+        <View style={styles.coverPhotoContainer}>
+          <Image 
+            source={{ uri: displayCoverImage }} 
+            style={styles.coverPhoto} 
+            contentFit="cover"
+            transition={300}
+          />
+          <View style={styles.coverOverlay} />
         </View>
 
-        {/* Profile Info Details Block */}
-        <View style={styles.profileDetailsBlock}>
-          <View style={styles.nameSection}>
-            <Text style={styles.profileName}>{name}</Text>
-            <TouchableOpacity 
-              style={styles.followersContainer}
-              onPress={() => {
-                router.push({
-                  pathname: '/followers-list',
-                  params: { userId: id, type: 'followers', userName: name }
-                });
-              }}
-            >
-              <Feather name="users" size={14} color={COLORS.textMuted} />
-              <Text style={styles.followersText}>{followerCountVal} Networks</Text>
-            </TouchableOpacity>
+        {/* Profile Card Header */}
+        <View style={styles.profileHeaderCard}>
+          <View style={styles.avatarRow}>
+            <View style={styles.avatarContainer}>
+              <Image 
+                source={{ uri: displayAvatar || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=300&auto=format&fit=crop' }} 
+                style={styles.avatarImage} 
+                contentFit="cover" 
+              />
+              <View style={styles.verifiedBadge}>
+                <Feather name="check" size={10} color={COLORS.white} />
+              </View>
+            </View>
+
+            <View style={styles.statsSummaryContainer}>
+              <View style={styles.statBox}>
+                <Text style={styles.statNumber}>{realProjects.length > 0 ? realProjects.length : projects}</Text>
+                <Text style={styles.statLabel}>{t('projects')}</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statBox}>
+                <Text style={styles.statNumber}>{followerCountVal}</Text>
+                <Text style={styles.statLabel}>{t('followers')}</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statBox}>
+                <View style={styles.ratingRow}>
+                  <Feather name="star" size={12} color={COLORS.gold} />
+                  <Text style={styles.statNumber}> {rating}</Text>
+                </View>
+                <Text style={styles.statLabel}>({reviewsList.length > 0 ? reviewsList.length : reviews})</Text>
+              </View>
+            </View>
           </View>
+
+          {/* Name & Headline */}
+          <Text style={styles.profileName}>{name}</Text>
+          <Text style={styles.firmName}>{firmName}</Text>
           
-          <Text style={styles.subtitleText}>Residential Contractor | {location.split(',')[0]}</Text>
-          
-          {/* Quick Info Tags Row */}
-          <View style={styles.quickInfoRow}>
-            <View style={styles.infoTag}>
-              <Feather name="award" size={14} color={COLORS.gold} />
-              <Text style={styles.infoTagText}>{experience} Experience</Text>
-            </View>
-            <View style={styles.infoTag}>
-              <Feather name="users" size={14} color={COLORS.blue} />
-              <Text style={styles.infoTagText}>{workerCount.split(' ')[0]} Workers</Text>
-            </View>
-            <View style={styles.infoTag}>
-              <Feather name="map-pin" size={14} color={COLORS.green} />
-              <Text style={styles.infoTagText}>{serviceAreas.split(',')[0]}</Text>
-            </View>
+          <View style={styles.locationContainer}>
+            <Feather name="map-pin" size={12} color={COLORS.textMuted} />
+            <Text style={styles.locationText}>{location}</Text>
+            <Text style={styles.dotSeparator}>•</Text>
+            <Feather name="clock" size={12} color={COLORS.textMuted} />
+            <Text style={styles.locationText}>{experience}</Text>
           </View>
 
           {/* Core Action/Edit Buttons */}
@@ -656,10 +694,17 @@ export default function ContractorDetailScreen() {
                 </Text>
               </TouchableOpacity>
 
-              {currentUser?.role === 'Client' ? (
+              {currentUser?.role === 'Client' || isGuestUser(currentUser) ? (
                 <TouchableOpacity 
                   style={[styles.outlineActionBtn, { borderColor: COLORS.green, backgroundColor: COLORS.greenLight }]} 
-                  onPress={() => setIsHireModalVisible(true)}
+                  onPress={() => {
+                    if (isGuestUser(currentUser)) {
+                      setGuestModalAction('Hiring a Contractor');
+                      setGuestModalVisible(true);
+                      return;
+                    }
+                    setIsHireModalVisible(true);
+                  }}
                 >
                   <Feather name="briefcase" size={12} color={COLORS.green} style={{ marginRight: 4 }} />
                   <Text style={[styles.outlineActionText, { color: COLORS.green, fontWeight: '700' }]}>{t('hire')}</Text>
@@ -674,8 +719,9 @@ export default function ContractorDetailScreen() {
               <TouchableOpacity 
                 style={[styles.outlineActionBtn, { borderColor: COLORS.blue, backgroundColor: '#EFF6FF' }]} 
                 onPress={() => {
-                  if (!currentUser) {
-                    Alert.alert('Login Required', 'Please log in to send messages.');
+                  if (isGuestUser(currentUser) || !currentUser) {
+                    setGuestModalAction('Messaging a Contractor');
+                    setGuestModalVisible(true);
                     return;
                   }
                   router.push({
@@ -1178,6 +1224,14 @@ export default function ContractorDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      <LoginRequiredModal
+        visible={guestModalVisible}
+        onClose={() => setGuestModalVisible(false)}
+        title="Login required"
+        message="Create an account or login to continue."
+        actionSource={guestModalAction}
+      />
     </SafeAreaView>
   );
 }
