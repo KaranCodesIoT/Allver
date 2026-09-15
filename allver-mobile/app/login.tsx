@@ -868,16 +868,23 @@ export default function LoginScreen() {
                               newPassword: resetNewPassword
                             })
                           });
-                          const resData = await res.json();
+                          let resData: any = {};
+                          try {
+                            resData = await res.json();
+                          } catch (parseErr) {
+                            console.error('[ResetPassword] Non-JSON response:', parseErr);
+                          }
+
                           if (res.ok) {
-                            showAlert('Success', 'Password has been updated. You can now log in.');
+                            showAlert('Success', resData.message || 'Password has been updated. You can now log in.');
                             setResetModalVisible(false);
                             setResetEmail('');
                             setResetNewPassword('');
                           } else {
-                            showAlert('Failed', resData.message || 'Error resetting password.');
+                            showAlert('Failed', resData.message || `Error resetting password (HTTP ${res.status}).`);
                           }
-                        } catch (e) {
+                        } catch (e: any) {
+                          console.error('[ResetPassword] Error:', e);
                           showAlert('Error', 'Could not connect to server.');
                         } finally {
                           setIsResetting(false);

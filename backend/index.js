@@ -2658,14 +2658,29 @@ app.post('/api/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    // Find the user by email
-    const user = await User.findOne({ email });
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required.' });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    // Find the user by email (case-insensitive)
+    const user = await User.findOne({
+      $or: [
+        { email: cleanEmail },
+        { email: new RegExp(`^${cleanEmail}$`, 'i') }
+      ]
+    });
     if (!user) {
       return res.status(400).json({ message: 'No account registered with this email.' });
     }
     
     // Validate password
     if (user.password !== password) {
+      if (user.password === 'firebase_auth_verified') {
+        return res.status(400).json({ 
+          message: 'This account was registered via Mobile OTP. Please log in with your Mobile Number, or use "Forgot Password?" below to create a password.' 
+        });
+      }
       return res.status(400).json({ message: 'Incorrect password. Please try again.' });
     }
     
@@ -2819,29 +2834,43 @@ app.post('/auth/verify-email-otp', authLimiter, async (req, res) => {
   }
 });
 
-// Reset Password Route (Email + New Password)
-app.post('/api/reset-password', async (req, res) => {
+// Reset Password Route (Email + New Password) - supports both /api/reset-password and /api/user/reset-password
+const handleResetPassword = async (req, res) => {
   try {
     const { email, newPassword } = req.body;
     
     if (!email || !newPassword) {
-      return res.status(400).json({ message: 'Email and new password are required.' });
+      return res.status(400).json({ success: false, message: 'Email and new password are required.' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long.' });
     }
     
-    const user = await User.findOne({ email });
+    const cleanEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ 
+      $or: [
+        { email: cleanEmail },
+        { email: new RegExp(`^${cleanEmail}$`, 'i') }
+      ]
+    });
+
     if (!user) {
-      return res.status(404).json({ message: 'No account registered with this email.' });
+      return res.status(404).json({ success: false, message: 'No account registered with this email.' });
     }
     
-    user.password = newPassword;
+    user.password = newPassword.trim();
     await user.save();
     
-    res.status(200).json({ message: 'Password reset successfully.' });
+    return res.status(200).json({ success: true, message: 'Password reset successfully. You can now log in.' });
   } catch (error) {
     console.error('Reset password error:', error);
-    res.status(500).json({ message: 'Error resetting password: ' + (error.message || error) });
+    return res.status(500).json({ success: false, message: 'Error resetting password: ' + (error.message || error) });
   }
-});
+};
+
+app.post('/api/reset-password', handleResetPassword);
+app.post('/api/user/reset-password', handleResetPassword);
 
 // Get all professionals by role
 app.get('/api/professionals/:role', async (req, res) => {
