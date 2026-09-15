@@ -8,9 +8,8 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { BACKEND_URL } from '../../constants/Config';
-import { getToken, saveStoredUser, removeToken, removeStoredUser, getStoredUser } from '../../constants/Auth';
+import { getToken, saveStoredUser, removeToken, removeStoredUser, getStoredUser, clearAuthSession } from '../../constants/Auth';
 import CallKeepService from '../../utils/CallKeepService';
-import ActiveJobBanner from '../../components/ActiveJobBanner';
 
 const COLORS = {
   green: '#16A34A',
@@ -255,10 +254,7 @@ export default function TabLayout() {
             }
           } else if (res.status === 404 || res.status === 401) {
             console.log('[BOOT] [TabLayout] validateSession: Session validation failed (unauthorized). Logging out...');
-            await removeToken();
-            await removeStoredUser();
-            (global as any).currentUser = null;
-            import('../../utils/SocketService').then(({ default: s }) => s.disconnect());
+            await clearAuthSession();
             router.replace('/login');
           }
         } catch (err) {
@@ -448,7 +444,6 @@ export default function TabLayout() {
 
   return (
     <View style={{ flex: 1 }}>
-      <ActiveJobBanner />
       <Tabs
         screenOptions={{
         tabBarActiveTintColor: COLORS.green,

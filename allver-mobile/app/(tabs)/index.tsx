@@ -328,6 +328,36 @@ export default function DashboardScreen() {
           console.error('Error fetching invitations:', invErr);
         }
 
+        // Fetch active direct booking jobs for this professional/worker
+        try {
+          const activeJobsRes = await fetch(`${BACKEND_URL}/api/jobs/active/user/${currentUser._id}`);
+          if (activeJobsRes.ok) {
+            const activeJobsData = await activeJobsRes.json();
+            if (activeJobsData.success && Array.isArray(activeJobsData.jobs)) {
+              const activeDirect = activeJobsData.jobs.map((j: any) => ({
+                _id: j.jobId || j._id,
+                jobId: j.jobId,
+                title: `${j.service} Service`,
+                location: j.clientLocation?.address || 'Mumbai',
+                status: 'In Progress',
+                rawStatus: j.status,
+                isDirectBooking: true,
+                workspaceId: null,
+                timeline: j.status === 'WORK_STARTED' ? 'Work Started' : (j.status === 'WORKER_ARRIVED' ? 'Worker Arrived' : 'In Progress'),
+                description: `Ongoing job for ${j.clientId?.fullName || j.clientName || 'Client'}`,
+                budget: j.finalAmount ? `₹${j.finalAmount}` : (j.estimatedCost ? `₹${j.estimatedCost}` : '₹500'),
+                requirements: [j.service],
+                startedAt: j.startedAt || j.createdAt || new Date(),
+                createdAt: j.createdAt || new Date(),
+                updates: []
+              }));
+              mapped.unshift(...activeDirect);
+            }
+          }
+        } catch (actErr) {
+          console.warn('Error fetching active direct jobs for home:', actErr);
+        }
+
         const sortedMapped = mapped.sort((a: any, b: any) => {
           const aFinished = a.status === 'Completed' || a.status === 'Cancelled';
           const bFinished = b.status === 'Completed' || b.status === 'Cancelled';
@@ -979,7 +1009,9 @@ export default function DashboardScreen() {
         <View style={styles.sectionContainer}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>{t('myProjects')}</Text>
-            <TouchableOpacity><Text style={styles.viewAllText}>{t('viewAll')}</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/my-projects')}>
+              <Text style={styles.viewAllText}>{t('viewAll')}</Text>
+            </TouchableOpacity>
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalCardsScroll}>
@@ -995,7 +1027,43 @@ export default function DashboardScreen() {
                     ]}
                     activeOpacity={0.9}
                     onPress={() => {
-                      if (proj.status === 'Invitation') {
+                      if (currentUser?.role === 'Client' && (proj.status === 'Completed' || proj.status === 'Cancelled')) {
+                        router.push({
+                          pathname: '/client-project-detail',
+                          params: {
+                            projectId: proj._id || proj.jobId,
+                            projectData: JSON.stringify(proj)
+                          }
+                        });
+                      } else if (proj.isDirectBooking || proj.jobId) {
+                        if (currentUser?.role === 'Client') {
+                          let targetStep: number = 8;
+                          const st = (proj.rawStatus || proj.status || '').toUpperCase();
+                          if (st === 'SEARCHING') targetStep = 5;
+                          else if (['WORKER_ASSIGNED', 'ASSIGNED', 'WORKER_ACCEPTED', 'ACCEPTED'].includes(st)) targetStep = 7;
+                          else if (['WORK_COMPLETION_REQUESTED', 'COMPLETION_SUBMITTED', 'CLIENT_CONFIRMED', 'PAYMENT_PENDING', 'PAYMENT_FAILED'].includes(st)) targetStep = 9;
+                          else if (['PAYMENT_CONFIRMED', 'PAYMENT_COMPLETED'].includes(st)) targetStep = 10;
+
+                          router.push({
+                            pathname: '/booking-flow',
+                            params: {
+                              jobId: proj.jobId || proj._id,
+                              step: targetStep.toString(),
+                              service: proj.title || 'Painting',
+                              location: proj.location || '',
+                              price: proj.budget || '₹900'
+                            }
+                          });
+                        } else {
+                          router.push({
+                            pathname: '/active-job',
+                            params: {
+                              jobId: proj.jobId || proj._id,
+                              role: 'worker'
+                            }
+                          });
+                        }
+                      } else if (proj.status === 'Invitation') {
                         router.push({
                           pathname: '/project-detail',
                           params: {

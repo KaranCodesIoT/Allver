@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
-import { getStoredLanguage, getToken, getStoredUser, removeToken, removeStoredUser, saveStoredUser } from '../constants/Auth';
+import { getStoredLanguage, getToken, getStoredUser, removeToken, removeStoredUser, saveStoredUser, clearAuthSession } from '../constants/Auth';
 import { BACKEND_URL } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 
@@ -37,9 +37,7 @@ export default function Index() {
               console.log('[BOOT] [Step 27] Successfully parsed and cached stored user.');
             } catch (e) {
               console.error('[BOOT] [Step 27 Error] Stored user parsing failed:', e);
-              await removeToken();
-              await removeStoredUser();
-              (global as any).currentUser = null;
+              await clearAuthSession();
               console.log('[BOOT] [Step 28 Fallback] Routing to /login after parse failure.');
               router.replace('/login');
               return;
@@ -84,10 +82,23 @@ export default function Index() {
                   } as any);
                   return;
                 } else {
+                  let targetStep: number = 8;
+                  const st = (job.status || '').toUpperCase();
+                  if (st === 'SEARCHING') {
+                    targetStep = 5;
+                  } else if (['WORKER_ASSIGNED', 'ASSIGNED', 'WORKER_ACCEPTED', 'ACCEPTED'].includes(st)) {
+                    targetStep = 7;
+                  } else if (['WORK_COMPLETION_REQUESTED', 'COMPLETION_SUBMITTED', 'CLIENT_CONFIRMED', 'PAYMENT_PENDING', 'PAYMENT_FAILED'].includes(st)) {
+                    targetStep = 9;
+                  } else if (['PAYMENT_CONFIRMED', 'PAYMENT_COMPLETED'].includes(st)) {
+                    targetStep = 10;
+                  }
+
                   router.replace({
                     pathname: '/booking-flow',
                     params: {
                       jobId: job.jobId,
+                      step: targetStep.toString(),
                       service: job.service,
                       location: job.clientLocation?.address || job.location || '',
                       price: job.price || '₹900'

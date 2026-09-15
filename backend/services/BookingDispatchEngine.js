@@ -1486,8 +1486,8 @@ class BookingDispatchEngine {
     if (!userId) return null;
     const uStr = userId.toString();
     for (const [, job] of this.jobs.entries()) {
-      if (job.status !== 'ARCHIVED' && job.status !== 'COMPLETED' && job.status !== 'CANCELLED_BY_CLIENT' && job.status !== 'CANCELLED_BY_WORKER') {
-        if (job.clientUserId === uStr || job.workerUserId === uStr) {
+      if (job.status !== 'ARCHIVED' && job.status !== 'COMPLETED' && job.status !== 'CANCELLED_BY_CLIENT' && job.status !== 'CANCELLED_BY_WORKER' && job.status !== 'SETTLED') {
+        if (job.clientUserId === uStr || job.workerUserId === uStr || (job.workerId && job.workerId.toString() === uStr) || (job.clientId && job.clientId.toString() === uStr)) {
           return this.toSafeJob(job);
         }
       }
@@ -1495,10 +1495,26 @@ class BookingDispatchEngine {
     if (!this.options?.skipDb && mongoose.connection && mongoose.connection.readyState === 1) {
       try {
         const Job = mongoose.model('Job');
+        const userObjId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : null;
+        const queryOr = [
+          { workerUserId: uStr },
+          { clientUserId: uStr },
+          { workerId: uStr },
+          { clientId: uStr },
+          { assignedWorkerId: uStr }
+        ];
+        if (userObjId) {
+          queryOr.push(
+            { workerId: userObjId },
+            { clientId: userObjId },
+            { assignedWorkerId: userObjId },
+            { workerUserId: userObjId }
+          );
+        }
         const dbJob = await Job.findOne({
-          $or: [{ clientId: userId }, { workerId: userId }],
-          status: { $nin: ['ARCHIVED', 'COMPLETED', 'CANCELLED_BY_CLIENT', 'CANCELLED_BY_WORKER', 'NO_WORKER_AVAILABLE'] }
-        }).sort({ createdAt: -1 }).lean();
+          $or: queryOr,
+          status: { $nin: ['ARCHIVED', 'COMPLETED', 'CANCELLED_BY_CLIENT', 'CANCELLED_BY_WORKER', 'NO_WORKER_AVAILABLE', 'SETTLED', 'EXPIRED', 'REJECTED', 'CANCELLED'] }
+        }).sort({ updatedAt: -1, createdAt: -1 }).lean();
         return dbJob;
       } catch (err) {
         console.error('[DispatchEngine] Error fetching active job from DB:', err);
@@ -1509,8 +1525,30 @@ class BookingDispatchEngine {
 
   // --- Client Cancels Job ---
   async cancelJob(jobId) {
-    const job = this.jobs.get(jobId);
-    if (!job) return false;
+    let job = this.jobs.get(jobId);
+    if (!job) {
+      if (!this.options?.skipDb && mongoose.connection && mongoose.connection.readyState === 1) {
+        try {
+          const Job = mongoose.model('Job');
+          const dbJob = await Job.findOne({ jobId });
+          if (dbJob) {
+            dbJob.status = 'CANCELLED_BY_CLIENT';
+            await dbJob.save();
+            console.log(`[DispatchEngine] Client cancelled DB Job ${jobId}`);
+            if (this.io) {
+              this.io.emit('job_status_changed', { jobId, status: 'CANCELLED_BY_CLIENT' });
+              this.io.emit(`job_status_changed_${jobId}`, { jobId, status: 'CANCELLED_BY_CLIENT' });
+              this.io.emit('job_cancelled_success', { jobId, status: 'CANCELLED_BY_CLIENT' });
+              this.io.emit(`job_cancelled_success_${jobId}`, { jobId, status: 'CANCELLED_BY_CLIENT' });
+            }
+            return true;
+          }
+        } catch (e) {
+          console.error('[DispatchEngine] Error cancelling DB job:', e);
+        }
+      }
+      return false;
+    }
 
     job.status = 'CANCELLED_BY_CLIENT';
     this.clearJobTimers(job);

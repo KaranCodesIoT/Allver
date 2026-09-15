@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Animated, Dimensions, Alert, Modal, Linking, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Animated, Dimensions, Alert, Modal, Linking, TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, BackHandler, AppState } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { Fonts } from '../constants/theme';
 import { openRazorpayCheckout } from '../utils/PaymentCheckout';
 import { getToken, getStoredUser } from '../constants/Auth';
@@ -18,6 +19,14 @@ type FlowStep = 5 | 6 | 7 | 8 | 9 | 10;
 
 export default function BookingFlowScreen() {
   const router = useRouter();
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  isFocusedRef.current = isFocused;
+
+  const hasAlertedCancelRef = useRef(false);
+  const userInitiatedCancelRef = useRef(false);
+  const syncIntervalRef = useRef<any>(null);
+
   const params = useLocalSearchParams();
 
   const jobId = (params.jobId as string) || `job_${Date.now()}`;
@@ -158,7 +167,7 @@ export default function BookingFlowScreen() {
       if (res.ok && data.success) {
         setRatedSubmitted(true);
         Alert.alert('⭐ Thank You!', `Thank you for rating ${assignedWorker.name} ${userRating} stars!`, [
-          { text: 'Done', onPress: () => router.push('/(tabs)') }
+          { text: 'Done', onPress: () => router.replace('/(tabs)') }
         ]);
       } else {
         Alert.alert('Rating', data.message || 'Could not submit rating.');
@@ -181,6 +190,95 @@ export default function BookingFlowScreen() {
   const [waveSecondsLeft, setWaveSecondsLeft] = useState(20);
   const [noWorkersAvailable, setNoWorkersAvailable] = useState(false);
 
+  // Authoritative server sync for active job state
+  const applyAuthoritativeJobData = useCallback((j: any) => {
+    if (!j) return;
+    if (j.workerInfo || j.assignedWorker || j.workerId) {
+      const w = j.workerInfo || j.assignedWorker || j.workerId;
+      setAssignedWorker((prev: any) => ({
+        ...prev,
+        name: w.name || w.fullName || prev.name,
+        avatar: w.avatar || w.avatarUrl || prev.avatar,
+        rating: w.rating || prev.rating,
+        phone: w.phone || prev.phone,
+        id: w.id || w.userId || w._id || prev.id,
+        distanceKm: j.route?.distance || prev.distanceKm,
+      }));
+    }
+    if (j.status) {
+      const st = String(j.status).toUpperCase();
+      setWorkerJobStatus(st);
+      if (st === 'SEARCHING') {
+        setCurrentStep(5);
+      } else if (['WORKER_ACCEPTED', 'JOB_ACCEPTED', 'WORKER_ASSIGNED', 'ASSIGNED', 'ACCEPTED'].includes(st)) {
+        setCurrentStep((prev) => (prev < 6 ? 6 : prev));
+      } else if (['WORKER_EN_ROUTE', 'TRAVELLING', 'WORKER_ON_WAY', 'WORKER_ARRIVED', 'ARRIVED'].includes(st)) {
+        setCurrentStep(8);
+      } else if (
+        ['WORK_STARTED', 'WORK_IN_PROGRESS', 'IN_PROGRESS', 'WORK_COMPLETION_REQUESTED', 'COMPLETION_SUBMITTED', 'CLIENT_CONFIRMED', 'PAYMENT_PENDING', 'PAYMENT_FAILED'].includes(st)
+      ) {
+        setCurrentStep(9);
+      } else if (['COMPLETED', 'PAYMENT_COMPLETED', 'PAYMENT_CONFIRMED', 'SETTLED'].includes(st)) {
+        setPaymentConfirmed(true);
+        setCurrentStep(10);
+      }
+    }
+    if (j.route?.distance !== undefined && j.route?.distance !== null) setLiveDistanceKm(j.route.distance);
+    if (j.route?.duration !== undefined && j.route?.duration !== null) setEtaMinutes(j.route.duration);
+    if (j.startedAt) setWorkStartedAt(new Date(j.startedAt).getTime());
+    if (j.completionData) setCompletionData(j.completionData);
+    if (j.chatId) setActiveJobChatId(j.chatId);
+    if (j.workerLocation?.latitude) {
+      setWorkerCoords({
+        latitude: j.workerLocation.latitude,
+        longitude: j.workerLocation.longitude
+      });
+    }
+  }, []);
+
+  const fetchAuthoritativeJobFromApi = useCallback(async () => {
+    try {
+      const token = await getToken();
+      let url = `${BACKEND_URL}/api/customer/active-job`;
+      if (jobId && !jobId.startsWith('job_') && jobId.length > 5) {
+        url = `${BACKEND_URL}/api/jobs/${jobId}`;
+      }
+
+      const res = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const j = data.activeJob || data.job;
+        if (j) {
+          applyAuthoritativeJobData(j);
+        }
+      }
+    } catch (e) {
+      console.warn('[BookingFlow] HTTP active job sync failed:', e);
+    }
+  }, [jobId, applyAuthoritativeJobData]);
+
+  // Android hardware back protection: safely navigate away without abandoning active job
+  useEffect(() => {
+    const onBackPress = () => {
+      userInitiatedCancelRef.current = true;
+      hasAlertedCancelRef.current = true;
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
+      router.replace('/(tabs)');
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [router]);
+
   // Lifecycle socket event listeners
   useEffect(() => {
     let currentUser = (global as any).currentUser;
@@ -195,55 +293,24 @@ export default function BookingFlowScreen() {
       SocketService.joinRoom(`job:${jobId}`);
     }
 
-    // 1. Hydrate authoritative job state from server on mount
+    // 1. Initial Authoritative sync via HTTP API immediately
+    fetchAuthoritativeJobFromApi();
+
+    // Recheck when app returns from background
+    const appStateSub = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        fetchAuthoritativeJobFromApi();
+      }
+    });
+
+    // Recheck when socket reconnects
+    SocketService.on('connect', fetchAuthoritativeJobFromApi);
+    SocketService.on('reconnect', fetchAuthoritativeJobFromApi);
+
+    // 2. Hydrate authoritative job state via socket
     SocketService.emit('get_active_job', { jobId }, (res: any) => {
       if (res && res.success && res.job) {
-        const j = res.job;
-        if (j.workerInfo || j.assignedWorker) {
-          const w = j.workerInfo || j.assignedWorker;
-          setAssignedWorker((prev: any) => ({
-            ...prev,
-            name: w.name || w.fullName || prev.name,
-            avatar: w.avatar || w.avatarUrl || prev.avatar,
-            rating: w.rating || prev.rating,
-            phone: w.phone || prev.phone,
-            id: w.id || w.userId || w._id,
-            distanceKm: j.route?.distance || prev.distanceKm,
-          }));
-        }
-        if (j.status) {
-          setWorkerJobStatus(j.status);
-          if (j.status === 'WORKER_ACCEPTED' || j.status === 'JOB_ACCEPTED') {
-            setCurrentStep(6);
-          } else if (
-            j.status === 'WORKER_EN_ROUTE' ||
-            j.status === 'TRAVELLING' ||
-            j.status === 'WORKER_ARRIVED' ||
-            j.status === 'ARRIVED'
-          ) {
-            setCurrentStep(8);
-          } else if (
-            j.status === 'WORK_STARTED' ||
-            j.status === 'WORK_IN_PROGRESS' ||
-            j.status === 'WORK_COMPLETION_REQUESTED' ||
-            j.status === 'COMPLETION_SUBMITTED'
-          ) {
-            setCurrentStep(9);
-          } else if (j.status === 'COMPLETED' || j.status === 'PAYMENT_COMPLETED') {
-            setCurrentStep(10);
-          }
-        }
-        if (j.route?.distance) setLiveDistanceKm(j.route.distance);
-        if (j.route?.duration) setEtaMinutes(j.route.duration);
-        if (j.startedAt) setWorkStartedAt(new Date(j.startedAt).getTime());
-        if (j.completionData) setCompletionData(j.completionData);
-        if (j.chatId) setActiveJobChatId(j.chatId);
-        if (j.workerLocation?.latitude) {
-          setWorkerCoords({
-            latitude: j.workerLocation.latitude,
-            longitude: j.workerLocation.longitude
-          });
-        }
+        applyAuthoritativeJobData(res.job);
       }
     });
 
@@ -265,6 +332,33 @@ export default function BookingFlowScreen() {
             phone: w.phone || prev.phone,
             id: w.id || w.userId || w._id,
           }));
+        }
+        if (data.status === 'CANCELLED' || data.status === 'CANCELLED_BY_CLIENT' || data.status === 'CANCELLED_BY_WORKER') {
+          // Immediately stop background polling interval and clean up listeners
+          if (syncIntervalRef.current) {
+            clearInterval(syncIntervalRef.current);
+            syncIntervalRef.current = null;
+          }
+          SocketService.off('job_status_changed', handleJobStatusChanged);
+          SocketService.leaveRoom(`job:${jobId}`);
+
+          const isWorkerCancel = data.status === 'CANCELLED_BY_WORKER';
+          const shouldAlert = isWorkerCancel && !userInitiatedCancelRef.current && !hasAlertedCancelRef.current && isFocusedRef.current;
+          hasAlertedCancelRef.current = true;
+
+          if (isFocusedRef.current) {
+            router.replace('/(tabs)');
+          }
+
+          if (shouldAlert) {
+            Alert.alert(
+              'Booking Cancelled',
+              data.reason || 'The worker has cancelled this booking.',
+              [{ text: 'OK' }],
+              { cancelable: true }
+            );
+          }
+          return;
         }
         if (data.status === 'WORKER_ACCEPTED' || data.status === 'JOB_ACCEPTED') {
           setCurrentStep(6);
@@ -399,11 +493,18 @@ export default function BookingFlowScreen() {
 
     syncActiveJob();
     SocketService.on('connect', syncActiveJob);
-    const syncInterval = setInterval(syncActiveJob, 4000);
+    if (syncIntervalRef.current) clearInterval(syncIntervalRef.current);
+    syncIntervalRef.current = setInterval(syncActiveJob, 4000);
 
     return () => {
+      appStateSub.remove();
+      SocketService.off('connect', fetchAuthoritativeJobFromApi);
+      SocketService.off('reconnect', fetchAuthoritativeJobFromApi);
       SocketService.off('connect', syncActiveJob);
-      clearInterval(syncInterval);
+      if (syncIntervalRef.current) {
+        clearInterval(syncIntervalRef.current);
+        syncIntervalRef.current = null;
+      }
       SocketService.off('job_status_changed', handleJobStatusChanged);
       SocketService.off('worker_location_updated', handleLocationUpdated);
       SocketService.off('job_status_updated', handleStatusUpdated);
@@ -821,8 +922,18 @@ export default function BookingFlowScreen() {
             <View style={styles.headerBar}>
               <TouchableOpacity 
                 onPress={() => {
+                  userInitiatedCancelRef.current = true;
+                  hasAlertedCancelRef.current = true;
+                  if (syncIntervalRef.current) {
+                    clearInterval(syncIntervalRef.current);
+                    syncIntervalRef.current = null;
+                  }
                   SocketService.emit('client_cancel_job_request', { jobId });
-                  router.back();
+                  if (router.canGoBack()) {
+                    router.back();
+                  } else {
+                    router.replace('/(tabs)');
+                  }
                 }} 
                 style={styles.backBtn}
               >
@@ -927,8 +1038,35 @@ export default function BookingFlowScreen() {
             <TouchableOpacity 
               style={styles.cancelRequestBtn}
               onPress={() => {
-                SocketService.emit('client_cancel_job_request', { jobId });
-                router.back();
+                Alert.alert(
+                  'Cancel Search',
+                  'Are you sure you want to cancel searching for workers?',
+                  [
+                    { text: 'Keep Searching', style: 'cancel' },
+                    {
+                      text: 'Cancel Search',
+                      style: 'destructive',
+                      onPress: async () => {
+                        userInitiatedCancelRef.current = true;
+                        hasAlertedCancelRef.current = true;
+                        if (syncIntervalRef.current) {
+                          clearInterval(syncIntervalRef.current);
+                          syncIntervalRef.current = null;
+                        }
+                        try {
+                          SocketService.emit('client_cancel_job_request', { jobId });
+                          SocketService.emit('cancel_job', { jobId, reason: 'Client cancelled search' });
+                          await fetch(`${BACKEND_URL}/api/jobs/${jobId}/cancel`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ reason: 'Client cancelled search', cancelledBy: 'client' })
+                          }).catch(() => {});
+                        } catch (e) {}
+                        router.replace('/(tabs)');
+                      }
+                    }
+                  ]
+                );
               }}
             >
               <Text style={styles.cancelRequestText}>Cancel Request</Text>
@@ -941,7 +1079,7 @@ export default function BookingFlowScreen() {
         return (
           <View style={styles.stepContainer}>
             <View style={styles.headerBar}>
-              <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={styles.backBtn}>
                 <Feather name="arrow-left" size={24} color="#111827" />
               </TouchableOpacity>
               <View style={{ flex: 1 }} />
@@ -1120,7 +1258,7 @@ export default function BookingFlowScreen() {
         return (
           <View style={styles.stepContainer}>
             <View style={styles.headerBar}>
-              <TouchableOpacity onPress={() => setCurrentStep(6)} style={styles.backBtn}>
+              <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={styles.backBtn}>
                 <Feather name="arrow-left" size={24} color="#111827" />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>Your {serviceName}</Text>
@@ -1220,7 +1358,7 @@ export default function BookingFlowScreen() {
         return (
           <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.stepContainerScroll}>
             <View style={styles.headerBar}>
-              <TouchableOpacity onPress={() => setCurrentStep(8)} style={styles.backBtn}>
+              <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={styles.backBtn}>
                 <Feather name="arrow-left" size={24} color="#111827" />
               </TouchableOpacity>
               <Text style={styles.headerTitle}>Job Status</Text>
@@ -1564,10 +1702,11 @@ export default function BookingFlowScreen() {
         return (
           <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.stepContainerScroll}>
             <View style={styles.headerBar}>
-              <TouchableOpacity onPress={() => router.push('/(tabs)')} style={styles.backBtn}>
-                <Feather name="x" size={24} color="#111827" />
+              <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={styles.backBtn}>
+                <Feather name="arrow-left" size={24} color="#111827" />
               </TouchableOpacity>
-              <View style={{ flex: 1 }} />
+              <Text style={styles.headerTitle}>Job Completed</Text>
+              <View style={{ width: 24 }} />
             </View>
 
             <View style={styles.centerHeroGraphic}>
@@ -1690,7 +1829,7 @@ export default function BookingFlowScreen() {
 
             <TouchableOpacity 
               style={styles.secondaryWhiteBtn}
-              onPress={() => router.push('/(tabs)')}
+              onPress={() => router.replace('/(tabs)')}
             >
               <Text style={styles.secondaryWhiteBtnText}>Return to Home</Text>
             </TouchableOpacity>

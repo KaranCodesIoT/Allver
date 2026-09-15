@@ -126,7 +126,10 @@ export default function LabourDetailScreen() {
     },
   ];
 
-  const [professionalData, setProfessionalData] = useState<any>(null);
+  const [completedWorkHistory, setCompletedWorkHistory] = useState<any[]>([]);
+  const [selectedWorkHistoryJob, setSelectedWorkHistoryJob] = useState<any | null>(null);
+  const [showWorkDetailsModal, setShowWorkDetailsModal] = useState(false);
+  const [activeDirectCount, setActiveDirectCount] = useState(0);
 
   // Listen for real-time profile updates
   useEffect(() => {
@@ -258,6 +261,16 @@ export default function LabourDetailScreen() {
           }
         })
         .catch(err => console.error("Error fetching professional info:", err));
+
+      // Fetch authoritative completed jobs history
+      fetch(`${BACKEND_URL}/api/jobs/history/user/${id}?role=worker`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && Array.isArray(data.jobs)) {
+            setCompletedWorkHistory(data.jobs);
+          }
+        })
+        .catch(err => console.error("Error fetching worker work history:", err));
     }
   }, [currentUser, id]);
 
@@ -375,6 +388,20 @@ export default function LabourDetailScreen() {
         }
       })
       .catch(err => console.error("Error fetching labour workspaces:", err));
+
+    // Also fetch active direct jobs count
+    fetch(`${BACKEND_URL}/api/jobs/active/user/${id}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.jobs)) {
+          setActiveDirectCount(data.jobs.length);
+        } else if (data.success && data.hasActiveJob) {
+          setActiveDirectCount(1);
+        } else {
+          setActiveDirectCount(0);
+        }
+      })
+      .catch(() => setActiveDirectCount(0));
   };
 
   useEffect(() => {
@@ -394,9 +421,9 @@ export default function LabourDetailScreen() {
     }
   }, [currentUser, allWorkspaces, tabInitialized, isOwner]);
 
-  const totalProjects = allWorkspaces.length;
+  const totalProjects = allWorkspaces.length + activeDirectCount;
   const completedProjects = allWorkspaces.filter(w => w.status === 'Completed').length;
-  const ongoingProjects = allWorkspaces.filter(w => w.status !== 'Completed' && w.status !== 'Cancelled').length;
+  const ongoingProjects = allWorkspaces.filter(w => w.status !== 'Completed' && w.status !== 'Cancelled').length + activeDirectCount;
 
   let totalPaidAmount = 0;
   let totalAdvanceAmount = 0;
@@ -735,113 +762,136 @@ export default function LabourDetailScreen() {
 
             {/* Jobs List */}
             <View style={styles.labourJobsList}>
-              {(() => {
-                let allJobs = allWorkspaces.filter((w: any) => w.projectType !== 'Team').length > 0
-                  ? allWorkspaces.filter((w: any) => w.projectType !== 'Team').map((w: any, idx: number) => ({
-                      id: w._id || `lj-${idx}`,
-                      title: w.title || 'General Construction',
-                      location: w.contractRequest?.location || 'Mumbai, Maharashtra',
-                      date: w.contractRequest?.timeline && w.contractRequest.timeline.includes('202') ? w.contractRequest.timeline : `${12 + idx * 3} Sep 2026`,
-                      status: w.status === 'Completed' ? 'Completed' : (idx === 0 ? 'In Progress' : idx === 1 ? 'Accepted' : 'Pending'),
-                      image: (idx === 0
-                        ? 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=400&q=80'
-                        : idx === 1
-                          ? 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=400&q=80'
-                          : idx === 2
-                            ? 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?auto=format&fit=crop&w=400&q=80'
-                            : 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=400&q=80'),
-                      workspaceId: w._id
-                    }))
-                  : DEFAULT_LABOUR_JOBS;
+              {labourWorkSubTab === 'Completed' ? (
+                <View style={{ width: '100%' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: '#64748B', letterSpacing: 0.8 }}>
+                      WORK HISTORY
+                    </Text>
+                    <View style={{ flex: 1, height: 1, backgroundColor: '#E2E8F0', marginLeft: 10 }} />
+                  </View>
 
-                let filteredJobs = allJobs.filter((job: any) =>
-                  labourWorkSubTab === 'Active'
-                    ? job.status !== 'Completed' && job.status !== 'Cancelled'
-                    : job.status === 'Completed'
-                );
-
-                if (labourWorkSubTab === 'Completed' && filteredJobs.length === 0 && allWorkspaces.filter((w: any) => w.projectType !== 'Team').length === 0) {
-                  filteredJobs = DEFAULT_LABOUR_COMPLETED_JOBS;
-                }
-
-                if (filteredJobs.length === 0) {
-                  return (
+                  {completedWorkHistory.length === 0 ? (
                     <View style={styles.labourJobsEmptyBox}>
-                      <Feather name="briefcase" size={36} color="#CBD5E1" style={{ marginBottom: 10 }} />
-                      <Text style={styles.labourJobsEmptyTitle}>
-                        {labourWorkSubTab === 'Active' ? 'No active jobs right now' : 'No completed jobs yet'}
-                      </Text>
+                      <Feather name="award" size={36} color="#CBD5E1" style={{ marginBottom: 10 }} />
+                      <Text style={styles.labourJobsEmptyTitle}>No completed work history yet</Text>
                       <Text style={styles.labourJobsEmptySub}>
-                        {labourWorkSubTab === 'Active'
-                          ? 'New project assignments and accepted work will appear here.'
-                          : 'Completed projects and contracts will be listed here.'}
+                        Completed work with verified reviews will appear here automatically.
                       </Text>
                     </View>
-                  );
-                }
+                  ) : (
+                    completedWorkHistory.map((job: any) => (
+                      <View key={job.id || job.jobId} style={styles.workHistoryCard}>
+                        {/* Service Title + Completed Date */}
+                        <View style={styles.workHistoryCardTop}>
+                          <Text style={styles.workHistoryCardTitle} numberOfLines={1}>
+                            {job.service || job.title || 'Painting Service'}
+                          </Text>
+                          <View style={styles.workHistoryStatusBadge}>
+                            <View style={styles.workHistoryStatusDot} />
+                            <Text style={styles.workHistoryStatusBadgeText}>
+                              Completed · {job.completedDateFormatted || 'Recently'}
+                            </Text>
+                          </View>
+                        </View>
 
-                return filteredJobs.map((job: any) => {
-                  let badgeBg = '#FEF3C7';
-                  let badgeColor = '#D97706';
-                  if (job.status === 'In Progress') {
-                    badgeBg = '#DCFCE7';
-                    badgeColor = '#16A34A';
-                  } else if (job.status === 'Accepted') {
-                    badgeBg = '#DBEAFE';
-                    badgeColor = '#2563EB';
-                  } else if (job.status === 'Completed') {
-                    badgeBg = '#DCFCE7';
-                    badgeColor = '#16A34A';
+                        {/* Duration, Location, Project value, Rating */}
+                        <View style={styles.workHistoryMetaContainer}>
+                          <View style={styles.workHistoryMetaRow}>
+                            <Text style={styles.workHistoryMetaLabel}>Duration:</Text>
+                            <Text style={styles.workHistoryMetaVal}>{job.duration || 'Completed'}</Text>
+                          </View>
+                          <View style={styles.workHistoryMetaRow}>
+                            <Text style={styles.workHistoryMetaLabel}>Location:</Text>
+                            <Text style={styles.workHistoryMetaVal}>{job.location || 'Mumbai'}</Text>
+                          </View>
+                          <View style={styles.workHistoryMetaRow}>
+                            <Text style={styles.workHistoryMetaLabel}>Project value:</Text>
+                            <Text style={styles.workHistoryMetaValBold}>
+                              {job.projectValueFormatted || `₹${(job.projectValue || job.finalAmount || 0).toLocaleString('en-IN')}`}
+                            </Text>
+                          </View>
+                          <View style={styles.workHistoryMetaRow}>
+                            <Text style={styles.workHistoryMetaLabel}>Rating:</Text>
+                            <Text style={styles.workHistoryMetaVal}>⭐ {job.rating || 4.8}</Text>
+                          </View>
+                        </View>
+
+                        {/* [View Work Details] Button */}
+                        <TouchableOpacity
+                          style={styles.viewWorkDetailsBtn}
+                          onPress={() => {
+                            setSelectedWorkHistoryJob(job);
+                            setShowWorkDetailsModal(true);
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.viewWorkDetailsBtnText}>View Work Details</Text>
+                          <Feather name="arrow-right" size={15} color="#2563EB" />
+                        </TouchableOpacity>
+                      </View>
+                    ))
+                  )}
+                </View>
+              ) : (
+                (() => {
+                  let activeJobs = allWorkspaces.filter((w: any) => w.projectType !== 'Team' && w.status !== 'Completed');
+                  if (activeJobs.length === 0) {
+                    return (
+                      <View style={styles.labourJobsEmptyBox}>
+                        <Feather name="briefcase" size={36} color="#CBD5E1" style={{ marginBottom: 10 }} />
+                        <Text style={styles.labourJobsEmptyTitle}>No active jobs right now</Text>
+                        <Text style={styles.labourJobsEmptySub}>
+                          New project assignments and accepted work will appear here.
+                        </Text>
+                      </View>
+                    );
                   }
 
-                  return (
-                    <TouchableOpacity
-                      key={job.id}
-                      style={styles.labourJobCard}
-                      activeOpacity={0.85}
-                      onPress={() => {
-                        if (job.workspaceId && isOwner) {
-                          router.push({
-                            pathname: '/project-progress',
-                            params: {
-                              name: job.title,
-                              location: job.location,
-                              status: job.status,
-                              progress: job.status === 'Completed' ? '100' : '60',
-                              workspaceId: job.workspaceId
-                            }
-                          });
-                        }
-                      }}
-                    >
-                      {/* Thumbnail Image */}
-                      <Image source={{ uri: job.image }} style={styles.labourJobThumbnail} contentFit="cover" />
-
-                      {/* Details Col */}
-                      <View style={styles.labourJobDetailsCol}>
-                        <Text style={styles.labourJobTitle} numberOfLines={1}>{job.title}</Text>
-                        
-                        <View style={styles.labourJobMetaRow}>
-                          <Ionicons name="location-sharp" size={13} color="#2563EB" style={{ marginRight: 4 }} />
-                          <Text style={styles.labourJobMetaText} numberOfLines={1}>{job.location}</Text>
+                  return activeJobs.map((w: any, idx: number) => {
+                    let badgeBg = '#DCFCE7';
+                    let badgeColor = '#16A34A';
+                    return (
+                      <TouchableOpacity
+                        key={w._id || idx}
+                        style={styles.labourJobCard}
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          if (w._id && isOwner) {
+                            router.push({
+                              pathname: '/project-progress',
+                              params: {
+                                name: w.title,
+                                location: w.contractRequest?.location || 'Mumbai',
+                                status: w.status,
+                                progress: '60',
+                                workspaceId: w._id
+                              }
+                            });
+                          }
+                        }}
+                      >
+                        <Image source={{ uri: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=400&q=80' }} style={styles.labourJobThumbnail} contentFit="cover" />
+                        <View style={styles.labourJobDetailsCol}>
+                          <Text style={styles.labourJobTitle} numberOfLines={1}>{w.title}</Text>
+                          <View style={styles.labourJobMetaRow}>
+                            <Ionicons name="location-sharp" size={13} color="#2563EB" style={{ marginRight: 4 }} />
+                            <Text style={styles.labourJobMetaText} numberOfLines={1}>{w.contractRequest?.location || 'Mumbai'}</Text>
+                          </View>
+                          <View style={styles.labourJobMetaRow}>
+                            <Ionicons name="calendar-outline" size={13} color="#2563EB" style={{ marginRight: 4 }} />
+                            <Text style={styles.labourJobMetaText}>{w.contractRequest?.timeline || 'Ongoing'}</Text>
+                          </View>
+                          <View style={[styles.labourJobStatusBadge, { backgroundColor: badgeBg }]}>
+                            <Text style={[styles.labourJobStatusText, { color: badgeColor }]}>{w.status || 'In Progress'}</Text>
+                          </View>
                         </View>
-
-                        <View style={styles.labourJobMetaRow}>
-                          <Ionicons name="calendar-outline" size={13} color="#2563EB" style={{ marginRight: 4 }} />
-                          <Text style={styles.labourJobMetaText}>{job.date}</Text>
-                        </View>
-
-                        <View style={[styles.labourJobStatusBadge, { backgroundColor: badgeBg }]}>
-                          <Text style={[styles.labourJobStatusText, { color: badgeColor }]}>{job.status}</Text>
-                        </View>
-                      </View>
-
-                      {/* Chevron Arrow */}
-                      <Feather name="chevron-right" size={18} color="#94A3B8" style={{ marginLeft: 6 }} />
-                    </TouchableOpacity>
-                  );
-                });
-              })()}
+                        <Feather name="chevron-right" size={18} color="#94A3B8" style={{ marginLeft: 6 }} />
+                      </TouchableOpacity>
+                    );
+                  });
+                })()
+              )}
             </View>
           </View>
         )}
@@ -938,6 +988,120 @@ export default function LabourDetailScreen() {
                 <Text style={styles.modalConfirmBtnText}>Remove</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ===== COMPACT WORK HISTORY DETAILS MODAL ===== */}
+      <Modal
+        visible={showWorkDetailsModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowWorkDetailsModal(false)}
+      >
+        <View style={styles.workModalOverlay}>
+          <View style={styles.workDetailsModalCard}>
+            <View style={styles.workDetailsModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.workDetailsModalTitle}>Completed Work Details</Text>
+                <Text style={styles.workDetailsModalSub}>Verified Service Record</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowWorkDetailsModal(false)} style={styles.workDetailsModalCloseBtn}>
+                <Feather name="x" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+              {selectedWorkHistoryJob && (
+                <>
+                  <View style={styles.workDetailsTopHero}>
+                    <View style={styles.workDetailsCheckIconWrap}>
+                      <Feather name="check" size={24} color="#16A34A" />
+                    </View>
+                    <Text style={styles.workDetailsServiceName}>
+                      {selectedWorkHistoryJob.service || selectedWorkHistoryJob.title || 'Service'}
+                    </Text>
+                    <Text style={styles.workDetailsCompletedBadge}>
+                      Completed · {selectedWorkHistoryJob.completedDateFormatted || '10 Jul 2024'}
+                    </Text>
+                  </View>
+
+                  {/* Summary Grid */}
+                  <View style={styles.workDetailsInfoCard}>
+                    <View style={styles.workDetailsRow}>
+                      <Text style={styles.workDetailsLabel}>Duration</Text>
+                      <Text style={styles.workDetailsVal}>{selectedWorkHistoryJob.duration || 'Completed'}</Text>
+                    </View>
+                    <View style={styles.workDetailsDivider} />
+                    <View style={styles.workDetailsRow}>
+                      <Text style={styles.workDetailsLabel}>Location</Text>
+                      <Text style={styles.workDetailsVal}>{selectedWorkHistoryJob.location || 'Mumbai'}</Text>
+                    </View>
+                    <View style={styles.workDetailsDivider} />
+                    <View style={styles.workDetailsRow}>
+                      <Text style={styles.workDetailsLabel}>Project Value</Text>
+                      <Text style={[styles.workDetailsVal, { color: '#0F172A', fontWeight: '800' }]}>
+                        {selectedWorkHistoryJob.projectValueFormatted || `₹${(selectedWorkHistoryJob.projectValue || 0).toLocaleString('en-IN')}`}
+                      </Text>
+                    </View>
+                    <View style={styles.workDetailsDivider} />
+                    <View style={styles.workDetailsRow}>
+                      <Text style={styles.workDetailsLabel}>Rating</Text>
+                      <Text style={[styles.workDetailsVal, { color: '#D97706', fontWeight: '700' }]}>
+                        ⭐ {selectedWorkHistoryJob.rating || 4.8} / 5.0
+                      </Text>
+                    </View>
+                    {selectedWorkHistoryJob.receiptNumber ? (
+                      <>
+                        <View style={styles.workDetailsDivider} />
+                        <View style={styles.workDetailsRow}>
+                          <Text style={styles.workDetailsLabel}>Receipt No.</Text>
+                          <Text style={[styles.workDetailsVal, { color: '#2563EB', fontWeight: '700' }]}>
+                            {selectedWorkHistoryJob.receiptNumber}
+                          </Text>
+                        </View>
+                      </>
+                    ) : null}
+                    {selectedWorkHistoryJob.paymentMethod ? (
+                      <>
+                        <View style={styles.workDetailsDivider} />
+                        <View style={styles.workDetailsRow}>
+                          <Text style={styles.workDetailsLabel}>Payment Method</Text>
+                          <Text style={styles.workDetailsVal}>{selectedWorkHistoryJob.paymentMethod}</Text>
+                        </View>
+                      </>
+                    ) : null}
+                  </View>
+
+                  {/* Customer Review if available */}
+                  {selectedWorkHistoryJob.review ? (
+                    <View style={styles.workDetailsSectionBlock}>
+                      <Text style={styles.workDetailsSectionHeading}>Customer Review</Text>
+                      <View style={styles.workDetailsQuoteBox}>
+                        <Text style={styles.workDetailsQuoteText}>"{selectedWorkHistoryJob.review}"</Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* Notes if available */}
+                  {selectedWorkHistoryJob.notes ? (
+                    <View style={styles.workDetailsSectionBlock}>
+                      <Text style={styles.workDetailsSectionHeading}>Completion Summary</Text>
+                      <View style={styles.workDetailsQuoteBox}>
+                        <Text style={styles.workDetailsQuoteText}>{selectedWorkHistoryJob.notes}</Text>
+                      </View>
+                    </View>
+                  ) : null}
+                </>
+              )}
+
+              <TouchableOpacity
+                style={styles.workDetailsPrimaryCloseBtn}
+                onPress={() => setShowWorkDetailsModal(false)}
+              >
+                <Text style={styles.workDetailsPrimaryCloseBtnText}>Close</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2238,5 +2402,226 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     textAlign: 'center',
     paddingHorizontal: 20,
+  },
+
+  // ===== COMPACT WORK HISTORY CARD STYLES =====
+  workHistoryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    marginBottom: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  workHistoryCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  workHistoryCardTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    flex: 1,
+    marginRight: 8,
+  },
+  workHistoryStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  workHistoryStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#16A34A',
+    marginRight: 5,
+  },
+  workHistoryStatusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  workHistoryMetaContainer: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  workHistoryMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  workHistoryMetaLabel: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  workHistoryMetaVal: {
+    fontSize: 13,
+    color: '#1E293B',
+    fontWeight: '600',
+  },
+  workHistoryMetaValBold: {
+    fontSize: 14,
+    color: '#0F172A',
+    fontWeight: '800',
+  },
+  viewWorkDetailsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  viewWorkDetailsBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2563EB',
+    marginRight: 4,
+  },
+
+  // ===== WORK DETAILS MODAL STYLES =====
+  workModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  workDetailsModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 24,
+    maxHeight: '85%',
+  },
+  workDetailsModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  workDetailsModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  workDetailsModalSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  workDetailsModalCloseBtn: {
+    padding: 6,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 16,
+  },
+  workDetailsTopHero: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  workDetailsCheckIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#DCFCE7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  workDetailsServiceName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  workDetailsCompletedBadge: {
+    fontSize: 13,
+    color: '#16A34A',
+    fontWeight: '700',
+  },
+  workDetailsInfoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginBottom: 16,
+  },
+  workDetailsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  workDetailsLabel: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  workDetailsVal: {
+    fontSize: 13,
+    color: '#1E293B',
+    fontWeight: '600',
+  },
+  workDetailsDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 4,
+  },
+  workDetailsSectionBlock: {
+    marginBottom: 16,
+  },
+  workDetailsSectionHeading: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
+  },
+  workDetailsQuoteBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#10B981',
+  },
+  workDetailsQuoteText: {
+    fontSize: 13,
+    color: '#334155',
+    fontStyle: 'italic',
+    lineHeight: 18,
+  },
+  workDetailsPrimaryCloseBtn: {
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  workDetailsPrimaryCloseBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 });

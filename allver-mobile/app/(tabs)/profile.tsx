@@ -12,6 +12,7 @@ import { BACKEND_URL, resolveAvatarUrl } from '../../constants/Config';
 import { useTranslation } from '../../utils/i18n';
 import SocketService from '../../utils/SocketService';
 import { forwardGeocodeAddress, findCoordinatesForLocationText } from '../../utils/GeocodingService';
+import { clearAuthSession } from '../../constants/Auth';
 
 const { width } = Dimensions.get('window');
 
@@ -109,6 +110,9 @@ export default function ProfileScreen() {
   const [workAreaRadiusInput, setWorkAreaRadiusInput] = useState('15');
   const [savingAvailability, setSavingAvailability] = useState(false);
   const [labourWorkSubTab, setLabourWorkSubTab] = useState<'Active' | 'Completed'>('Active');
+  const [completedWorkHistory, setCompletedWorkHistory] = useState<any[]>([]);
+  const [selectedWorkHistoryJob, setSelectedWorkHistoryJob] = useState<any | null>(null);
+  const [showWorkDetailsModal, setShowWorkDetailsModal] = useState(false);
 
   const DEFAULT_LABOUR_JOBS = [
     {
@@ -295,6 +299,19 @@ export default function ProfileScreen() {
     return null;
   };
 
+  const getServiceThumbnail = (title: string, image?: string) => {
+    if (image && !image.includes('placeholder') && !image.includes('default') && !image.includes('via.placeholder')) {
+      return image;
+    }
+    const t = (title || '').toLowerCase();
+    if (t.includes('paint')) return 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?q=80&w=300&auto=format&fit=crop';
+    if (t.includes('mason') || t.includes('brick')) return 'https://images.unsplash.com/photo-1541888946425-d0fbb186f5f7?q=80&w=300&auto=format&fit=crop';
+    if (t.includes('plumb')) return 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?q=80&w=300&auto=format&fit=crop';
+    if (t.includes('electr')) return 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=300&auto=format&fit=crop';
+    if (t.includes('carpent')) return 'https://images.unsplash.com/photo-1588854337236-6889d631faa8?q=80&w=300&auto=format&fit=crop';
+    return 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?q=80&w=300&auto=format&fit=crop';
+  };
+
   const isVideoUrl = (url: string) => {
     if (!url) return false;
     return /\.(mp4|mov|m4v|3gp|avi|webm|mkv)/i.test(url) || url.includes('/video/') || url.includes('video') || url.includes('mp4');
@@ -357,27 +374,61 @@ export default function ProfileScreen() {
         if (jobsRes.ok) {
           const jobsData = await jobsRes.json();
           if (jobsData.success && jobsData.jobs) {
-            directJobsMapped = jobsData.jobs.map((j: any) => ({
+            setCompletedWorkHistory(jobsData.jobs);
+            const compMapped = jobsData.jobs.map((j: any) => ({
               id: j.jobId,
               title: `${j.service} Service`,
-              location: j.clientLocation?.address || 'Mumbai',
-              status: (j.status === 'COMPLETED' || j.status === 'SETTLED') ? 'Completed' : 'In Progress',
+              location: j.location || j.clientLocation?.address || 'Mumbai',
+              status: (j.status === 'COMPLETED' || j.status === 'SETTLED' || j.status === 'Completed') ? 'Completed' : 'In Progress',
               workspaceId: null,
               jobId: j.jobId,
               isDirectBooking: true,
               projectType: 'Direct Booking',
               description: `Completed by ${j.workerName || 'Worker'} for ${j.clientName || 'Client'}. Paid ₹${j.finalAmount} via ${j.paymentMethod || 'Online'}`,
               budget: `₹${j.finalAmount}`,
-              timeline: 'Direct Booking',
+              timeline: j.duration || 'Direct Booking',
               requirements: [j.service],
               updates: [],
               image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=400&q=80',
               completedAt: j.completedAt || j.createdAt
             }));
+            directJobsMapped.push(...compMapped);
           }
         }
       } catch (jErr) {
         console.warn('Error fetching direct booking jobs history in profile:', jErr);
+      }
+
+      // Fetch active/ongoing direct booking jobs for this user
+      try {
+        const activeRes = await fetch(`${BACKEND_URL}/api/jobs/active/user/${userId}`);
+        if (activeRes.ok) {
+          const activeData = await activeRes.json();
+          if (activeData.success && Array.isArray(activeData.jobs)) {
+            const activeMapped = activeData.jobs.map((j: any) => ({
+              id: j.jobId,
+              title: `${j.service} Service`,
+              location: j.clientLocation?.address || j.location || 'Mumbai',
+              status: 'In Progress',
+              rawStatus: j.status,
+              workspaceId: null,
+              jobId: j.jobId,
+              isDirectBooking: true,
+              projectType: 'Direct Booking',
+              description: `Active ongoing job. Client: ${j.clientId?.fullName || j.clientName || 'Client'}. Location: ${j.clientLocation?.address || 'Mumbai'}`,
+              budget: j.finalAmount ? `₹${j.finalAmount}` : (j.estimatedCost ? `₹${j.estimatedCost}` : '₹500'),
+              timeline: j.status === 'WORK_STARTED' ? 'Work Started' : (j.status === 'WORKER_ARRIVED' ? 'Worker Arrived' : 'In Progress'),
+              requirements: [j.service],
+              updates: [],
+              image: getServiceThumbnail(j.service),
+              startedAt: j.startedAt || j.createdAt || new Date(),
+              createdAt: j.createdAt || new Date()
+            }));
+            directJobsMapped.unshift(...activeMapped);
+          }
+        }
+      } catch (actErr) {
+        console.warn('Error fetching active direct booking jobs in profile:', actErr);
       }
 
       const wsRes = await fetch(`${BACKEND_URL}/api/project-workspaces/user/${userId}`);
@@ -1060,15 +1111,10 @@ export default function ProfileScreen() {
         (global as any).currentFcmToken = null;
       }
 
-      await removeToken();
-      await removeStoredUser();
+      await clearAuthSession();
     } catch (e) {
       console.warn('Logout secure storage clear failed:', e);
     }
-    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-      localStorage.removeItem('currentUser');
-    }
-    (global as any).currentUser = null;
     router.replace('/login');
   };
 
@@ -1079,10 +1125,7 @@ export default function ProfileScreen() {
         method: 'DELETE',
       });
       if (res.ok) {
-        if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-          localStorage.removeItem('currentUser');
-        }
-        (global as any).currentUser = null;
+        await clearAuthSession();
         router.replace('/login');
         if (Platform.OS === 'web') {
           alert('Your account has been deleted successfully.');
@@ -1777,173 +1820,379 @@ export default function ProfileScreen() {
 
                   {/* Jobs List */}
                   <View style={styles.labourJobsList}>
-                    {(() => {
-                      let allJobs = clientProjects.length > 0
-                        ? clientProjects.map((item, idx) => ({
-                            id: item.id || item.workspaceId || `lj-${idx}`,
-                            title: item.title || 'General Construction',
-                            location: item.location || 'Mumbai, Maharashtra',
-                            date: item.timeline && item.timeline.includes('202') ? item.timeline : `${12 + idx * 3} Sep 2026`,
-                            status: item.status === 'Completed' ? 'Completed' : (idx === 0 ? 'In Progress' : idx === 1 ? 'Accepted' : 'Pending'),
-                            image: (idx === 0
-                              ? 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=400&q=80'
-                              : idx === 1
-                                ? 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=400&q=80'
-                                : idx === 2
-                                  ? 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?auto=format&fit=crop&w=400&q=80'
-                                  : 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=400&q=80'),
-                            workspaceId: item.workspaceId
-                          }))
-                        : DEFAULT_LABOUR_JOBS;
+                    {labourWorkSubTab === 'Completed' ? (
+                      <View style={{ width: '100%' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 14 }}>
+                          <Text style={{ fontSize: 13, fontWeight: '800', color: '#64748B', letterSpacing: 0.8 }}>
+                            WORK HISTORY
+                          </Text>
+                          <View style={{ flex: 1, height: 1, backgroundColor: '#E2E8F0', marginLeft: 10 }} />
+                        </View>
 
-                      let filteredJobs = allJobs.filter((job: any) =>
-                        labourWorkSubTab === 'Active'
-                          ? job.status !== 'Completed' && job.status !== 'Cancelled'
-                          : job.status === 'Completed'
-                      );
-
-                      if (labourWorkSubTab === 'Completed' && filteredJobs.length === 0 && clientProjects.length === 0) {
-                        filteredJobs = DEFAULT_LABOUR_COMPLETED_JOBS;
-                      }
-
-                      if (filteredJobs.length === 0) {
-                        return (
+                        {completedWorkHistory.length === 0 ? (
                           <View style={styles.labourJobsEmptyBox}>
-                            <Feather name="briefcase" size={36} color="#CBD5E1" style={{ marginBottom: 10 }} />
-                            <Text style={styles.labourJobsEmptyTitle}>
-                              {labourWorkSubTab === 'Active' ? 'No active jobs right now' : 'No completed jobs yet'}
-                            </Text>
+                            <Feather name="award" size={36} color="#CBD5E1" style={{ marginBottom: 10 }} />
+                            <Text style={styles.labourJobsEmptyTitle}>No completed work history yet</Text>
                             <Text style={styles.labourJobsEmptySub}>
-                              {labourWorkSubTab === 'Active'
-                                ? 'New project assignments and accepted work will appear here.'
-                                : 'Completed projects and contracts will be listed here.'}
+                              Jobs completed through Allver will be automatically recorded here with verified ratings and completion summaries.
                             </Text>
                           </View>
-                        );
-                      }
+                        ) : (
+                          completedWorkHistory.map((job: any) => (
+                            <View key={job.id || job.jobId} style={styles.workHistoryCard}>
+                              {/* Service Title + Completed Date */}
+                              <View style={styles.workHistoryCardTop}>
+                                <Text style={styles.workHistoryCardTitle} numberOfLines={1}>
+                                  {job.service || job.title || 'Painting Service'}
+                                </Text>
+                                <View style={styles.workHistoryStatusBadge}>
+                                  <View style={styles.workHistoryStatusDot} />
+                                  <Text style={styles.workHistoryStatusBadgeText}>
+                                    Completed · {job.completedDateFormatted || 'Recently'}
+                                  </Text>
+                                </View>
+                              </View>
 
-                      return filteredJobs.map((job: any) => {
-                        let badgeBg = '#FEF3C7';
-                        let badgeColor = '#D97706';
-                        if (job.status === 'In Progress') {
-                          badgeBg = '#ECFDF5';
-                          badgeColor = '#10B981';
-                        } else if (job.status === 'Accepted') {
-                          badgeBg = '#EFF6FF';
-                          badgeColor = '#2563EB';
-                        } else if (job.status === 'Completed') {
-                          badgeBg = '#ECFDF5';
-                          badgeColor = '#10B981';
+                              {/* Duration, Location, Project value, Rating */}
+                              <View style={styles.workHistoryMetaContainer}>
+                                <View style={styles.workHistoryMetaRow}>
+                                  <Text style={styles.workHistoryMetaLabel}>Duration:</Text>
+                                  <Text style={styles.workHistoryMetaVal}>{job.duration || 'Completed'}</Text>
+                                </View>
+                                <View style={styles.workHistoryMetaRow}>
+                                  <Text style={styles.workHistoryMetaLabel}>Location:</Text>
+                                  <Text style={styles.workHistoryMetaVal}>{job.location || 'Mumbai'}</Text>
+                                </View>
+                                <View style={styles.workHistoryMetaRow}>
+                                  <Text style={styles.workHistoryMetaLabel}>Project value:</Text>
+                                  <Text style={styles.workHistoryMetaValBold}>
+                                    {job.projectValueFormatted || `₹${(job.projectValue || job.finalAmount || 0).toLocaleString('en-IN')}`}
+                                  </Text>
+                                </View>
+                                <View style={styles.workHistoryMetaRow}>
+                                  <Text style={styles.workHistoryMetaLabel}>Rating:</Text>
+                                  <Text style={styles.workHistoryMetaVal}>⭐ {job.rating || 4.8}</Text>
+                                </View>
+                              </View>
+
+                              {/* [View Work Details] Button */}
+                              <TouchableOpacity
+                                style={styles.viewWorkDetailsBtn}
+                                onPress={() => {
+                                  setSelectedWorkHistoryJob(job);
+                                  setShowWorkDetailsModal(true);
+                                }}
+                                activeOpacity={0.8}
+                              >
+                                <Text style={styles.viewWorkDetailsBtnText}>View Work Details</Text>
+                                <Feather name="arrow-right" size={15} color="#2563EB" />
+                              </TouchableOpacity>
+                            </View>
+                          ))
+                        )}
+                      </View>
+                    ) : (
+                      (() => {
+                        let activeJobs = clientProjects.filter((item) => item.status !== 'Completed' && item.status !== 'Cancelled');
+                        if (activeJobs.length === 0) {
+                          return (
+                            <View style={styles.labourJobsEmptyBox}>
+                              <Feather name="briefcase" size={36} color="#CBD5E1" style={{ marginBottom: 10 }} />
+                              <Text style={styles.labourJobsEmptyTitle}>No active jobs right now</Text>
+                              <Text style={styles.labourJobsEmptySub}>
+                                New project assignments and accepted work will appear here.
+                              </Text>
+                            </View>
+                          );
                         }
 
-                        return (
-                          <TouchableOpacity
-                            key={job.id}
-                            style={styles.labourJobCard}
-                            activeOpacity={0.85}
-                            onPress={() => {
-                              if (job.workspaceId) {
-                                router.push({
-                                  pathname: '/project-progress',
-                                  params: {
-                                    name: job.title,
-                                    location: job.location,
-                                    status: job.status,
-                                    progress: job.status === 'Completed' ? '100' : '60',
-                                    workspaceId: job.workspaceId
+                        return activeJobs.map((job: any) => {
+                          const thumbUrl = getServiceThumbnail(job.title, job.image);
+                          const dateObj = job.startedAt || job.createdAt;
+                          const formattedDate = dateObj 
+                            ? new Date(dateObj).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                            : '12 Mar 2024';
+
+                          return (
+                            <TouchableOpacity
+                              key={job.id}
+                              style={styles.activeJobBannerCard}
+                              activeOpacity={0.88}
+                              onPress={() => {
+                                if (job.isDirectBooking || job.jobId) {
+                                  if (currentUser?.role === 'Client') {
+                                    let targetStep: number = 8;
+                                    const st = (job.rawStatus || job.status || '').toUpperCase();
+                                    if (st === 'SEARCHING') targetStep = 5;
+                                    else if (['WORKER_ASSIGNED', 'ASSIGNED', 'WORKER_ACCEPTED', 'ACCEPTED'].includes(st)) targetStep = 7;
+                                    else if (['WORK_COMPLETION_REQUESTED', 'COMPLETION_SUBMITTED', 'CLIENT_CONFIRMED', 'PAYMENT_PENDING', 'PAYMENT_FAILED'].includes(st)) targetStep = 9;
+                                    else if (['PAYMENT_CONFIRMED', 'PAYMENT_COMPLETED'].includes(st)) targetStep = 10;
+
+                                    router.push({
+                                      pathname: '/booking-flow',
+                                      params: {
+                                        jobId: job.jobId || job.id,
+                                        step: targetStep.toString(),
+                                        service: job.title || 'Painting',
+                                        location: job.location || '',
+                                        price: job.budget || '₹900'
+                                      }
+                                    });
+                                  } else {
+                                    router.push({
+                                      pathname: '/active-job',
+                                      params: {
+                                        jobId: job.jobId || job.id,
+                                        role: 'worker'
+                                      }
+                                    });
                                   }
-                                });
-                              }
-                            }}
-                          >
-                            {/* Thumbnail Image */}
-                            <Image source={{ uri: job.image }} style={styles.labourJobThumbnail} contentFit="cover" />
-
-                            {/* Details Col */}
-                            <View style={styles.labourJobDetailsCol}>
-                              <Text style={styles.labourJobTitle} numberOfLines={1}>{job.title}</Text>
+                                } else if (job.workspaceId) {
+                                  router.push({
+                                    pathname: '/project-progress',
+                                    params: {
+                                      name: job.title,
+                                      location: job.location,
+                                      status: job.status,
+                                      progress: '60',
+                                      workspaceId: job.workspaceId
+                                    }
+                                  });
+                                }
+                              }}
+                            >
+                              <Image source={{ uri: thumbUrl }} style={styles.activeJobBannerThumb} contentFit="cover" />
                               
-                              <View style={styles.labourJobMetaRow}>
-                                <Ionicons name="location-sharp" size={13} color="#2563EB" style={{ marginRight: 4 }} />
-                                <Text style={styles.labourJobMetaText} numberOfLines={1}>{job.location}</Text>
+                              <View style={styles.activeJobBannerCenterCol}>
+                                <Text style={styles.activeJobBannerCategoryText}>ACTIVE JOB</Text>
+                                <Text style={styles.activeJobBannerTitle} numberOfLines={1}>{job.title}</Text>
+                                <Text style={styles.activeJobBannerStartedDate}>Started on {formattedDate}</Text>
                               </View>
 
-                              <View style={styles.labourJobMetaRow}>
-                                <Ionicons name="calendar-outline" size={13} color="#2563EB" style={{ marginRight: 4 }} />
-                                <Text style={styles.labourJobMetaText}>{job.date}</Text>
+                              <View style={styles.activeJobBannerRightCol}>
+                                <View style={styles.activeJobBannerStatusPill}>
+                                  <View style={styles.activeJobBannerStatusDot} />
+                                  <Text style={styles.activeJobBannerStatusText}>In Progress</Text>
+                                </View>
+                                <View style={styles.activeJobBannerViewDetailsBtn}>
+                                  <Text style={styles.activeJobBannerViewDetailsText}>View Details</Text>
+                                </View>
                               </View>
 
-                              <View style={[styles.labourJobStatusBadge, { backgroundColor: badgeBg }]}>
-                                <Text style={[styles.labourJobStatusText, { color: badgeColor }]}>{job.status}</Text>
-                              </View>
-                            </View>
-
-                            {/* Chevron Arrow */}
-                            <Feather name="chevron-right" size={18} color="#94A3B8" style={{ marginLeft: 6 }} />
-                          </TouchableOpacity>
-                        );
-                      });
-                    })()}
+                              <Feather name="chevron-right" size={20} color="#0F172A" style={{ marginLeft: 6 }} />
+                            </TouchableOpacity>
+                          );
+                        });
+                      })()
+                    )}
                   </View>
                 </View>
               ) : (
                 <View style={styles.projectsListCol}>
                   {clientProjects
                     .filter((item) => currentUser?.role !== 'Client' || item.status !== 'Hiring')
-                    .map((item, idx) => (
-                      <TouchableOpacity
-                        key={item.id || idx}
-                        style={[
-                          styles.clientProjectCard,
-                          item.status === 'Completed' && styles.completedProjectCard,
-                          item.status === 'Cancelled' && styles.cancelledProjectCard
-                        ]}
-                        activeOpacity={0.7}
-                        onPress={() => {
-                          router.push({
-                            pathname: '/project-progress',
-                            params: {
-                              name: item.title,
-                              location: item.location,
-                              status: item.status,
-                              progress: (item.status === 'Completed' ? '100' : '60'),
-                              workspaceId: item.workspaceId || ''
-                            }
-                          });
-                        }}
-                      >
-                        {/* NEW UPDATE BADGE */}
-                        {checkNewUpdates(item.workspaceId, item.updates) && (
-                          <View style={styles.newUpdateBadge}>
-                            <View style={styles.newUpdateDot} />
-                            <Text style={styles.newUpdateText}>New Update</Text>
-                          </View>
-                        )}
+                    .map((item, idx) => {
+                      const isCompleted = item.status === 'Completed';
+                      const isInProgress = item.status === 'In Progress';
+                      const isCancelled = item.status === 'Cancelled';
 
-                        <Text style={styles.clientProjectCardName}>{item.title}</Text>
-                        <Text style={styles.clientProjectCardLoc}>{item.location}</Text>
-                        <View style={styles.projectStatusRow}>
-                          <View style={[styles.projectStatusDot, { 
-                            backgroundColor: item.status === 'Completed' 
-                              ? COLORS.green 
-                              : item.status === 'Cancelled'
-                                ? COLORS.red
-                                : item.status === 'In Progress' 
-                                  ? COLORS.blue 
-                                  : '#F59E0B' 
-                          }]} />
-                          <Text style={[styles.projectStatusText, { 
-                            color: item.status === 'Completed' 
-                              ? COLORS.green 
-                              : item.status === 'Cancelled'
-                                ? COLORS.red
-                                : item.status === 'In Progress' 
-                                  ? COLORS.blue 
-                                  : '#F59E0B' 
-                          }]}>{item.status}</Text>
+                      if (isInProgress) {
+                        const thumbUrl = getServiceThumbnail(item.title, item.image);
+                        const dateObj = item.startedAt || item.createdAt;
+                        const formattedDate = dateObj 
+                          ? new Date(dateObj).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+                          : (item.startDateFormatted || '12 Mar 2024');
+
+                        return (
+                          <TouchableOpacity
+                            key={item.id || idx}
+                            style={styles.activeJobBannerCard}
+                            activeOpacity={0.88}
+                            onPress={() => {
+                              if (item.isDirectBooking || item.jobId) {
+                                if (currentUser?.role === 'Client') {
+                                  let targetStep: number = 8;
+                                  const st = (item.rawStatus || item.status || '').toUpperCase();
+                                  if (st === 'SEARCHING') targetStep = 5;
+                                  else if (['WORKER_ASSIGNED', 'ASSIGNED', 'WORKER_ACCEPTED', 'ACCEPTED'].includes(st)) targetStep = 7;
+                                  else if (['WORK_COMPLETION_REQUESTED', 'COMPLETION_SUBMITTED', 'CLIENT_CONFIRMED', 'PAYMENT_PENDING', 'PAYMENT_FAILED'].includes(st)) targetStep = 9;
+                                  else if (['PAYMENT_CONFIRMED', 'PAYMENT_COMPLETED'].includes(st)) targetStep = 10;
+
+                                  router.push({
+                                    pathname: '/booking-flow',
+                                    params: {
+                                      jobId: item.jobId || item.id,
+                                      step: targetStep.toString(),
+                                      service: item.title || 'Painting',
+                                      location: item.location || '',
+                                      price: item.budget || '₹900'
+                                    }
+                                  });
+                                } else {
+                                  router.push({
+                                    pathname: '/active-job',
+                                    params: {
+                                      jobId: item.jobId || item.id,
+                                      role: 'worker'
+                                    }
+                                  });
+                                }
+                              } else {
+                                router.push({
+                                  pathname: '/project-progress',
+                                  params: {
+                                    name: item.title,
+                                    location: item.location,
+                                    status: item.status,
+                                    progress: '60',
+                                    workspaceId: item.workspaceId || ''
+                                  }
+                                });
+                              }
+                            }}
+                          >
+                            <Image source={{ uri: thumbUrl }} style={styles.activeJobBannerThumb} contentFit="cover" />
+                            
+                            <View style={styles.activeJobBannerCenterCol}>
+                              <Text style={styles.activeJobBannerCategoryText}>ACTIVE JOB</Text>
+                              <Text style={styles.activeJobBannerTitle} numberOfLines={1}>{item.title}</Text>
+                              <Text style={styles.activeJobBannerStartedDate}>Started on {formattedDate}</Text>
+                            </View>
+
+                            <View style={styles.activeJobBannerRightCol}>
+                              <View style={styles.activeJobBannerStatusPill}>
+                                <View style={styles.activeJobBannerStatusDot} />
+                                <Text style={styles.activeJobBannerStatusText}>In Progress</Text>
+                              </View>
+                              <View style={styles.activeJobBannerViewDetailsBtn}>
+                                <Text style={styles.activeJobBannerViewDetailsText}>View Details</Text>
+                              </View>
+                            </View>
+
+                            <Feather name="chevron-right" size={20} color="#0F172A" style={{ marginLeft: 6 }} />
+                          </TouchableOpacity>
+                        );
+                      }
+
+                      return (
+                        <TouchableOpacity
+                          key={item.id || idx}
+                          style={styles.cleanProjectCard}
+                          activeOpacity={0.88}
+                          onPress={() => {
+                            if (currentUser?.role === 'Client') {
+                              if (isCompleted || isCancelled) {
+                                router.push({
+                                  pathname: '/client-project-detail',
+                                  params: {
+                                    projectId: item.id || item.jobId,
+                                    projectData: JSON.stringify(item)
+                                  }
+                                });
+                              } else if (item.isDirectBooking || item.jobId) {
+                                let targetStep: number = 8;
+                                const st = (item.rawStatus || item.status || '').toUpperCase();
+                                if (st === 'SEARCHING') targetStep = 5;
+                                else if (['WORKER_ASSIGNED', 'ASSIGNED', 'WORKER_ACCEPTED', 'ACCEPTED'].includes(st)) targetStep = 7;
+                                else if (['WORK_COMPLETION_REQUESTED', 'COMPLETION_SUBMITTED', 'CLIENT_CONFIRMED', 'PAYMENT_PENDING', 'PAYMENT_FAILED'].includes(st)) targetStep = 9;
+                                else if (['PAYMENT_CONFIRMED', 'PAYMENT_COMPLETED'].includes(st)) targetStep = 10;
+
+                                router.push({
+                                  pathname: '/booking-flow',
+                                  params: {
+                                    jobId: item.jobId || item.id,
+                                    step: targetStep.toString(),
+                                    service: item.title || 'Painting',
+                                    location: item.location || '',
+                                    price: item.budget || '₹900'
+                                  }
+                                });
+                              } else {
+                                router.push({
+                                  pathname: '/client-project-detail',
+                                  params: {
+                                    projectId: item.id || item.workspaceId,
+                                    projectData: JSON.stringify(item)
+                                  }
+                                });
+                              }
+                            } else {
+                              if (item.isDirectBooking || item.jobId) {
+                                router.push({
+                                  pathname: '/active-job',
+                                  params: {
+                                    jobId: item.jobId || item.id,
+                                    role: 'worker'
+                                  }
+                                });
+                              } else {
+                                router.push({
+                                  pathname: '/project-progress',
+                                  params: {
+                                    name: item.title,
+                                    location: item.location,
+                                    status: item.status,
+                                    progress: (item.status === 'Completed' ? '100' : '60'),
+                                    workspaceId: item.workspaceId || ''
+                                  }
+                                });
+                              }
+                            }
+                          }}
+                        >
+                          <View style={styles.cleanCardMainRow}>
+                            <Image
+                              source={{ uri: item.image || 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?q=80&w=400&auto=format&fit=crop' }}
+                              style={styles.cleanCardImage}
+                              contentFit="cover"
+                            />
+                            <View style={styles.cleanCardDetailsCol}>
+                              <Text style={styles.cleanCardTitle} numberOfLines={1}>{item.title}</Text>
+                              <Text style={styles.cleanCardWorkerName} numberOfLines={1}>
+                                {item.workerName || item.workerInfo?.name || 'Service Professional'}
+                              </Text>
+                              <View style={styles.cleanCardLocRow}>
+                                <Ionicons name="location-sharp" size={12} color="#64748B" style={{ marginRight: 3 }} />
+                                <Text style={styles.cleanCardLocText} numberOfLines={1}>{item.location}</Text>
+                              </View>
+                              <View style={styles.cleanCardStatusRow}>
+                                <View style={[
+                                  styles.cleanStatusPill,
+                                  isCompleted && styles.cleanStatusPillCompleted,
+                                  isInProgress && styles.cleanStatusPillInProgress,
+                                  isCancelled && styles.cleanStatusPillCancelled
+                                ]}>
+                                <View style={[
+                                  styles.cleanStatusDot,
+                                  isCompleted && { backgroundColor: '#10B981' },
+                                  isInProgress && { backgroundColor: '#2563EB' },
+                                  isCancelled && { backgroundColor: '#64748B' }
+                                ]} />
+                                <Text style={[
+                                  styles.cleanStatusText,
+                                  isCompleted && { color: '#10B981' },
+                                  isInProgress && { color: '#2563EB' },
+                                  isCancelled && { color: '#64748B' }
+                                ]}>
+                                  {item.status}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                          <Feather name="chevron-right" size={20} color="#94A3B8" />
+                        </View>
+
+                        <View style={styles.cleanCardBottomRow}>
+                          <Text style={styles.cleanCardDateText}>
+                            {item.dateLabel || (isCompleted ? `Completed: ${item.endDateFormatted || '10 Feb 2024'}` : `Started: ${item.startDateFormatted || '12 Mar 2024'}`)}
+                          </Text>
+                          <Text style={styles.cleanCardPriceText}>
+                            {item.priceFormatted || item.budget || '₹12,500'}
+                          </Text>
                         </View>
                       </TouchableOpacity>
-                    ))}
+                    );
+                    })}
                   {clientProjects.filter((item) => currentUser?.role !== 'Client' || item.status !== 'Hiring').length === 0 && (
                     <View style={{ padding: 30, alignItems: 'center' }}>
                       <Text style={{ color: COLORS.textMuted, fontSize: 14 }}>
@@ -3016,6 +3265,120 @@ export default function ProfileScreen() {
         </View>
       </Modal>
 
+      {/* ===== COMPACT WORK HISTORY DETAILS MODAL ===== */}
+      <Modal
+        visible={showWorkDetailsModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowWorkDetailsModal(false)}
+      >
+        <View style={styles.workModalOverlay}>
+          <View style={styles.workDetailsModalCard}>
+            <View style={styles.workDetailsModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.workDetailsModalTitle}>Completed Work Details</Text>
+                <Text style={styles.workDetailsModalSub}>Verified Service Record</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowWorkDetailsModal(false)} style={styles.workDetailsModalCloseBtn}>
+                <Feather name="x" size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+              {selectedWorkHistoryJob && (
+                <>
+                  <View style={styles.workDetailsTopHero}>
+                    <View style={styles.workDetailsCheckIconWrap}>
+                      <Feather name="check" size={24} color="#16A34A" />
+                    </View>
+                    <Text style={styles.workDetailsServiceName}>
+                      {selectedWorkHistoryJob.service || selectedWorkHistoryJob.title || 'Service'}
+                    </Text>
+                    <Text style={styles.workDetailsCompletedBadge}>
+                      Completed · {selectedWorkHistoryJob.completedDateFormatted || '10 Jul 2024'}
+                    </Text>
+                  </View>
+
+                  {/* Summary Grid */}
+                  <View style={styles.workDetailsInfoCard}>
+                    <View style={styles.workDetailsRow}>
+                      <Text style={styles.workDetailsLabel}>Duration</Text>
+                      <Text style={styles.workDetailsVal}>{selectedWorkHistoryJob.duration || 'Completed'}</Text>
+                    </View>
+                    <View style={styles.workDetailsDivider} />
+                    <View style={styles.workDetailsRow}>
+                      <Text style={styles.workDetailsLabel}>Location</Text>
+                      <Text style={styles.workDetailsVal}>{selectedWorkHistoryJob.location || 'Mumbai'}</Text>
+                    </View>
+                    <View style={styles.workDetailsDivider} />
+                    <View style={styles.workDetailsRow}>
+                      <Text style={styles.workDetailsLabel}>Project Value</Text>
+                      <Text style={[styles.workDetailsVal, { color: '#0F172A', fontWeight: '800' }]}>
+                        {selectedWorkHistoryJob.projectValueFormatted || `₹${(selectedWorkHistoryJob.projectValue || 0).toLocaleString('en-IN')}`}
+                      </Text>
+                    </View>
+                    <View style={styles.workDetailsDivider} />
+                    <View style={styles.workDetailsRow}>
+                      <Text style={styles.workDetailsLabel}>Rating</Text>
+                      <Text style={[styles.workDetailsVal, { color: '#D97706', fontWeight: '700' }]}>
+                        ⭐ {selectedWorkHistoryJob.rating || 4.8} / 5.0
+                      </Text>
+                    </View>
+                    {selectedWorkHistoryJob.receiptNumber ? (
+                      <>
+                        <View style={styles.workDetailsDivider} />
+                        <View style={styles.workDetailsRow}>
+                          <Text style={styles.workDetailsLabel}>Receipt No.</Text>
+                          <Text style={[styles.workDetailsVal, { color: '#2563EB', fontWeight: '700' }]}>
+                            {selectedWorkHistoryJob.receiptNumber}
+                          </Text>
+                        </View>
+                      </>
+                    ) : null}
+                    {selectedWorkHistoryJob.paymentMethod ? (
+                      <>
+                        <View style={styles.workDetailsDivider} />
+                        <View style={styles.workDetailsRow}>
+                          <Text style={styles.workDetailsLabel}>Payment Method</Text>
+                          <Text style={styles.workDetailsVal}>{selectedWorkHistoryJob.paymentMethod}</Text>
+                        </View>
+                      </>
+                    ) : null}
+                  </View>
+
+                  {/* Customer Feedback if available */}
+                  {selectedWorkHistoryJob.review ? (
+                    <View style={styles.workDetailsSectionBlock}>
+                      <Text style={styles.workDetailsSectionHeading}>Customer Review</Text>
+                      <View style={styles.workDetailsQuoteBox}>
+                        <Text style={styles.workDetailsQuoteText}>"{selectedWorkHistoryJob.review}"</Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {/* Notes if available */}
+                  {selectedWorkHistoryJob.notes ? (
+                    <View style={styles.workDetailsSectionBlock}>
+                      <Text style={styles.workDetailsSectionHeading}>Completion Summary</Text>
+                      <View style={styles.workDetailsQuoteBox}>
+                        <Text style={styles.workDetailsQuoteText}>{selectedWorkHistoryJob.notes}</Text>
+                      </View>
+                    </View>
+                  ) : null}
+                </>
+              )}
+
+              <TouchableOpacity
+                style={styles.workDetailsPrimaryCloseBtn}
+                onPress={() => setShowWorkDetailsModal(false)}
+              >
+                <Text style={styles.workDetailsPrimaryCloseBtnText}>Close</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -3271,8 +3634,95 @@ const styles = StyleSheet.create({
     backgroundColor: '#16A34A',
     borderRadius: 2,
   },
-  labourJobsList: {
-    gap: 12,
+  activeJobBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F6FEF9',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#86EFAC',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 14,
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  activeJobBannerThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  activeJobBannerCenterCol: {
+    flex: 1,
+    marginLeft: 14,
+    marginRight: 8,
+    justifyContent: 'center',
+  },
+  activeJobBannerCategoryText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#16A34A',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  activeJobBannerTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  activeJobBannerStartedDate: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  activeJobBannerRightCol: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  activeJobBannerStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+  },
+  activeJobBannerStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#16A34A',
+    marginRight: 6,
+  },
+  activeJobBannerStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  activeJobBannerViewDetailsBtn: {
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    shadowColor: '#16A34A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  activeJobBannerViewDetailsText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   labourJobCard: {
     flexDirection: 'row',
@@ -4385,5 +4835,320 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#2563EB',
     fontWeight: '700',
+  },
+
+  // ===== COMPACT WORK HISTORY CARD STYLES =====
+  workHistoryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
+    marginBottom: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  workHistoryCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  workHistoryCardTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    flex: 1,
+    marginRight: 8,
+  },
+  workHistoryStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  workHistoryStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#16A34A',
+    marginRight: 5,
+  },
+  workHistoryStatusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  workHistoryMetaContainer: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  workHistoryMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  workHistoryMetaLabel: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  workHistoryMetaVal: {
+    fontSize: 13,
+    color: '#1E293B',
+    fontWeight: '600',
+  },
+  workHistoryMetaValBold: {
+    fontSize: 14,
+    color: '#0F172A',
+    fontWeight: '800',
+  },
+  viewWorkDetailsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  viewWorkDetailsBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2563EB',
+    marginRight: 4,
+  },
+
+  // ===== WORK DETAILS MODAL STYLES =====
+  workModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  workDetailsModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 24,
+    maxHeight: '85%',
+  },
+  workDetailsModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  workDetailsModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  workDetailsModalSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  workDetailsModalCloseBtn: {
+    padding: 6,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 16,
+  },
+  workDetailsTopHero: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    marginBottom: 16,
+  },
+  workDetailsCheckIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#DCFCE7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  workDetailsServiceName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  workDetailsCompletedBadge: {
+    fontSize: 13,
+    color: '#16A34A',
+    fontWeight: '700',
+  },
+  workDetailsInfoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginBottom: 16,
+  },
+  workDetailsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  workDetailsLabel: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  workDetailsVal: {
+    fontSize: 13,
+    color: '#1E293B',
+    fontWeight: '600',
+  },
+  workDetailsDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 4,
+  },
+  workDetailsSectionBlock: {
+    marginBottom: 16,
+  },
+  workDetailsSectionHeading: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
+  },
+  workDetailsQuoteBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#10B981',
+  },
+  workDetailsQuoteText: {
+    fontSize: 13,
+    color: '#334155',
+    fontStyle: 'italic',
+    lineHeight: 18,
+  },
+  workDetailsPrimaryCloseBtn: {
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  workDetailsPrimaryCloseBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  cleanProjectCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  cleanCardMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cleanCardImage: {
+    width: 82,
+    height: 82,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    marginRight: 12,
+  },
+  cleanCardDetailsCol: {
+    flex: 1,
+  },
+  cleanCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  cleanCardWorkerName: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  cleanCardLocRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  cleanCardLocText: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  cleanCardStatusRow: {
+    flexDirection: 'row',
+  },
+  cleanStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  cleanStatusPillCompleted: {
+    backgroundColor: '#ECFDF5',
+  },
+  cleanStatusPillInProgress: {
+    backgroundColor: '#EFF6FF',
+  },
+  cleanStatusPillCancelled: {
+    backgroundColor: '#F1F5F9',
+  },
+  cleanStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 5,
+  },
+  cleanStatusText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  cleanCardBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F8FAFC',
+  },
+  cleanCardDateText: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  cleanCardPriceText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
   },
 });

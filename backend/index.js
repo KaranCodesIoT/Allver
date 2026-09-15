@@ -2036,6 +2036,224 @@ function formatPhoneNumberToE164(phoneNumber) {
   return '+' + cleaned;
 }
 
+// Helper to verify Firebase ID Token (via Admin SDK or Google Identity Toolkit REST API)
+async function verifyFirebaseIdTokenHelper(idToken) {
+  if (!idToken) return null;
+  if (admin && admin.apps && admin.apps.length) {
+    try {
+      const decoded = await admin.auth().verifyIdToken(idToken);
+      console.log('[Firebase Admin] Token successfully verified via Admin SDK for UID:', decoded.uid);
+      return decoded;
+    } catch (e) {
+      console.warn('[Firebase Admin] Token verification failed:', e.message);
+    }
+  }
+
+  try {
+    const apiKey = process.env.FIREBASE_API_KEY || 'AIzaSyCGYTbKMrm04MqY4NDQEq1RhU7Bvj8gJZ0';
+    console.log('[Firebase Auth Helper] Verifying ID token via Google Identity Toolkit REST API...');
+    const resp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken })
+    });
+    const data = await resp.json();
+    if (data.users && data.users.length > 0) {
+      const u = data.users[0];
+      console.log('[Firebase Auth Helper] Token successfully verified for UID:', u.localId, 'phone:', u.phoneNumber);
+      return {
+        uid: u.localId,
+        phone_number: u.phoneNumber,
+        email: u.email
+      };
+    } else {
+      console.warn('[Firebase Auth Helper] Token lookup returned no user. Details:', data.error?.message || 'Unknown response');
+    }
+  } catch (err) {
+    console.error('[Firebase Auth Helper] Token verification fallback error:', err.message);
+  }
+  return null;
+}
+
+// POST /api/auth/firebase-phone-login
+app.post('/api/auth/firebase-phone-login', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.slice(7).trim() : null;
+    const idToken = req.body?.idToken || bearerToken;
+    const phoneNumber = req.body?.phoneNumber;
+
+    console.log(`[Backend Auth] POST /api/auth/firebase-phone-login hit. idToken present: ${Boolean(idToken)} (len=${idToken ? idToken.length : 0}), phone: ${phoneNumber || 'none'}`);
+
+    if (!idToken) {
+      console.warn('[Backend Auth] Missing idToken in body and Authorization header');
+      return res.status(400).json({ success: false, message: 'Firebase ID token is required' });
+    }
+
+    const decoded = await verifyFirebaseIdTokenHelper(idToken);
+    if (!decoded) {
+      console.warn('[Backend Auth] Token validation failed for phone:', phoneNumber);
+      return res.status(401).json({ success: false, message: 'Invalid or expired Firebase verification token' });
+    }
+
+    const tokenPhone = decoded.phone_number;
+    if (tokenPhone && phoneNumber) {
+      const e164Token = formatPhoneNumberToE164(tokenPhone);
+      const e164Client = formatPhoneNumberToE164(phoneNumber);
+      if (e164Token !== e164Client) {
+        return res.status(403).json({
+          success: false,
+          message: 'Security validation failed: Phone number does not match verified token'
+        });
+      }
+    }
+
+    const verifiedPhone = tokenPhone || phoneNumber;
+    if (!verifiedPhone) {
+      return res.status(400).json({ success: false, message: 'Could not extract verified phone number from token' });
+    }
+
+    const e164 = formatPhoneNumberToE164(verifiedPhone);
+    const rawDigits10 = e164.replace(/\D/g, '').slice(-10);
+
+    const User = mongoose.model('User');
+    const user = await User.findOne({
+      $or: [
+        { phoneNumber: e164 },
+        { phoneNumber: rawDigits10 },
+        { phone: e164 },
+        { phone: rawDigits10 }
+      ]
+    });
+
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        isNewUser: true,
+        phoneNumber: e164,
+        message: "This mobile number isn't registered with Allver yet."
+      });
+    }
+
+    user.lastActive = new Date();
+    await user.save();
+
+    const secret = process.env.JWT_SECRET || 'allver_jwt_secure_secret_default';
+    const token = jwt.sign(
+      { id: user._id.toString(), userId: user._id.toString(), role: user.role },
+      secret,
+      { expiresIn: '30d' }
+    );
+
+    const userObj = user.toObject();
+    delete userObj.password;
+
+    return res.status(200).json({
+      success: true,
+      isNewUser: false,
+      token,
+      user: userObj,
+      message: 'Login successful'
+    });
+  } catch (error) {
+    console.error('[Firebase Phone Login] Error:', error);
+    return res.status(500).json({ success: false, message: 'Server error during phone login: ' + (error.message || error) });
+  }
+});
+
+// POST /api/auth/firebase-phone-register
+app.post('/api/auth/firebase-phone-register', async (req, res) => {
+  try {
+    const { idToken, phoneNumber, fullName, role, city, email, language, password } = req.body;
+    if (!idToken) {
+      return res.status(400).json({ success: false, message: 'Firebase ID token is required' });
+    }
+
+    const decoded = await verifyFirebaseIdTokenHelper(idToken);
+    if (!decoded) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired Firebase verification token' });
+    }
+
+    const tokenPhone = decoded.phone_number;
+    if (tokenPhone && phoneNumber) {
+      const e164Token = formatPhoneNumberToE164(tokenPhone);
+      const e164Client = formatPhoneNumberToE164(phoneNumber);
+      if (e164Token !== e164Client) {
+        return res.status(403).json({
+          success: false,
+          message: 'Security validation failed: Phone number does not match verified token'
+        });
+      }
+    }
+
+    const verifiedPhone = tokenPhone || phoneNumber;
+    if (!verifiedPhone) {
+      return res.status(400).json({ success: false, message: 'Could not extract verified phone number from token' });
+    }
+
+    const e164 = formatPhoneNumberToE164(verifiedPhone);
+    const rawDigits10 = e164.replace(/\D/g, '').slice(-10);
+
+    const cleanEmail = email && typeof email === 'string' && email.trim().length > 0
+      ? email.toLowerCase().trim()
+      : null;
+
+    const User = mongoose.model('User');
+    const existingUser = await User.findOne({
+      $or: [
+        { phoneNumber: e164 },
+        { phoneNumber: rawDigits10 },
+        { phone: e164 },
+        { phone: rawDigits10 },
+        ...(cleanEmail ? [{ email: cleanEmail }] : [])
+      ]
+    });
+
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'An account with this phone or email already exists. Please log in.' });
+    }
+
+    const fallbackEmail = cleanEmail || `${rawDigits10}@allver.app`;
+    const finalPassword = password && typeof password === 'string' && password.trim().length >= 6
+      ? password.trim()
+      : crypto.randomBytes(16).toString('hex');
+
+    const newUser = new User({
+      fullName: (fullName || 'Allver User').trim(),
+      email: fallbackEmail,
+      phoneNumber: e164,
+      phone: e164,
+      password: finalPassword,
+      role: role || 'Client',
+      city: (city || 'Noida').trim(),
+      language: language || 'en',
+      lastActive: new Date()
+    });
+
+    await newUser.save();
+
+    const secret = process.env.JWT_SECRET || 'allver_jwt_secure_secret_default';
+    const token = jwt.sign(
+      { id: newUser._id.toString(), userId: newUser._id.toString(), role: newUser.role },
+      secret,
+      { expiresIn: '30d' }
+    );
+
+    const userObj = newUser.toObject();
+    delete userObj.password;
+
+    return res.status(201).json({
+      success: true,
+      token,
+      user: userObj,
+      message: 'Registration successful'
+    });
+  } catch (error) {
+    console.error('[Firebase Phone Register] Error:', error);
+    return res.status(500).json({ success: false, message: 'Server error during phone registration: ' + (error.message || error) });
+  }
+});
+
 app.post('/api/register', async (req, res) => {
   try {
     const { fullName, email, phoneNumber, password, role, city, language } = req.body;
@@ -6666,22 +6884,77 @@ app.get('/api/jobs/:jobId', async (req, res) => {
   }
 });
 
-// 2. Fetch Active Job for User (Client or Worker)
-app.get('/api/jobs/active/user', async (req, res) => {
+// Cancel Job by client or worker
+app.post(['/api/jobs/:jobId/cancel', '/api/jobs/cancel/:jobId'], async (req, res) => {
   try {
-    const userId = req.query.userId || req.headers['x-user-id'];
-    if (!userId) {
-      return res.status(400).json({ success: false, message: 'userId query parameter required' });
-    }
+    const { jobId } = req.params;
+    const { reason, cancelledBy } = req.body || {};
     const bookingDispatchEngine = global.bookingDispatchEngine;
-    let job = null;
     if (bookingDispatchEngine) {
-      job = await bookingDispatchEngine.getActiveJobForUser(userId);
+      await bookingDispatchEngine.cancelJob(jobId);
     }
-    if (!job) {
-      return res.status(200).json({ success: false, job: null, message: 'No active job' });
+    const Job = mongoose.model('Job');
+    const newStatus = cancelledBy === 'worker' ? 'CANCELLED_BY_WORKER' : 'CANCELLED_BY_CLIENT';
+    await Job.findOneAndUpdate(
+      { jobId },
+      { 
+        $set: { 
+          status: newStatus, 
+          cancellationReason: reason || 'Cancelled by user',
+          cancelledAt: new Date()
+        } 
+      }
+    );
+    return res.status(200).json({ success: true, message: 'Job cancelled successfully' });
+  } catch (err) {
+    console.error('Error cancelling job via REST:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 2. Fetch Active Job(s) for User (Client or Worker)
+app.get(['/api/jobs/active/user/:userId', '/api/jobs/active/user'], async (req, res) => {
+  try {
+    const userId = req.params.userId || req.query.userId || req.headers['x-user-id'];
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'userId query parameter or param required' });
     }
-    return res.status(200).json({ success: true, job });
+    const uStr = userId.toString();
+    const userObjId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : null;
+    const Job = mongoose.model('Job');
+
+    const queryOr = [
+      { workerUserId: uStr },
+      { clientUserId: uStr },
+      { workerId: uStr },
+      { clientId: uStr },
+      { assignedWorkerId: uStr }
+    ];
+    if (userObjId) {
+      queryOr.push(
+        { workerId: userObjId },
+        { clientId: userObjId },
+        { assignedWorkerId: userObjId },
+        { workerUserId: userObjId }
+      );
+    }
+
+    const activeJobs = await Job.find({
+      $or: queryOr,
+      status: { $nin: ['ARCHIVED', 'COMPLETED', 'CANCELLED_BY_CLIENT', 'CANCELLED_BY_WORKER', 'NO_WORKER_AVAILABLE', 'SETTLED', 'EXPIRED', 'REJECTED', 'CANCELLED'] }
+    })
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .populate('clientId', 'fullName name city avatarUrl phone')
+    .populate('workerId', 'fullName name city avatarUrl phone skillType')
+    .lean();
+
+    return res.status(200).json({
+      success: true,
+      hasActiveJob: activeJobs.length > 0,
+      job: activeJobs[0] || null,
+      activeJob: activeJobs[0] || null,
+      jobs: activeJobs
+    });
   } catch (err) {
     console.error('Error fetching active job:', err);
     return res.status(500).json({ success: false, message: err.message });
@@ -6737,42 +7010,326 @@ app.get('/api/jobs/history/user/:userId', async (req, res) => {
     if (role === 'client') {
       query.clientId = objectId;
     } else if (role === 'worker' || role === 'labour') {
-      query.workerId = objectId;
+      query.$or = [{ workerId: objectId }, { workerUserId: objectId }];
     } else {
-      query.$or = [{ clientId: objectId }, { workerId: objectId }];
+      query.$or = [{ clientId: objectId }, { workerId: objectId }, { workerUserId: objectId }];
     }
 
     if (status && status !== 'all') {
       query.status = status;
     } else if (!status) {
-      // Default to completed and settled bookings
+      // Strictly terminal completed/settled states only (Rules 3 & 4)
       query.status = { $in: ['COMPLETED', 'SETTLED', 'PAYMENT_CONFIRMED', 'PAYMENT_COMPLETED'] };
     }
 
-    const maxLimit = Math.min(100, parseInt(limit) || 30);
+    const maxLimit = Math.min(100, parseInt(limit) || 50);
+    // Strict customer privacy (Rule 8): DO NOT populate phone, phoneNumber, email of client
     const jobs = await Job.find(query)
-      .populate('clientId', 'fullName phone phoneNumber avatarUrl email')
-      .populate('workerId', 'fullName phone phoneNumber avatarUrl skillType city rating')
+      .populate('clientId', 'fullName city avatarUrl')
+      .populate('workerId', 'fullName avatarUrl skillType city rating')
       .sort({ completedAt: -1, settledAt: -1, createdAt: -1 })
       .limit(maxLimit)
       .lean();
 
-    return res.status(200).json({
-      success: true,
-      count: jobs.length,
-      jobs: jobs.map(j => ({
+    const formatDateShort = (d) => {
+      if (!d) return '';
+      const date = new Date(d);
+      if (isNaN(date.getTime())) return '';
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+    };
+
+    const sanitizeLocation = (rawAddress, cityFallback) => {
+      if (!rawAddress || typeof rawAddress !== 'string') return cityFallback || 'Mumbai';
+      const parts = rawAddress.split(',').map(s => s.trim()).filter(Boolean);
+      // Remove sensitive residential parts (flat, apt, house, bldg, floor, door, wing, street numbers)
+      const cleanParts = parts.filter(p => 
+        !/(flat|apt|apartment|wing|floor|plot|room|house|bldg|building|h\.no|door|tower|survey|sector|road|gali|lane)\b/i.test(p) &&
+        !/^\d+[\w-]*$/.test(p)
+      );
+      if (cleanParts.length >= 2) {
+        return cleanParts.slice(-2).join(', ');
+      } else if (cleanParts.length === 1) {
+        return cleanParts[0];
+      }
+      return cityFallback || 'Mumbai';
+    };
+
+    // Idempotent deduplication by jobId (Rule 11)
+    const seenJobIds = new Set();
+    const uniqueJobs = [];
+
+    for (const j of jobs) {
+      const key = j.jobId || String(j._id);
+      if (seenJobIds.has(key)) continue;
+      seenJobIds.add(key);
+
+      const finalAmount = Number(j.completionData?.finalAmount) || Number(j.payment?.amount) || (Number(String(j.price).replace(/[^0-9.]/g, '')) || 800);
+      const completionDateRaw = j.completedAt || j.settledAt || j.createdAt;
+      const startDateRaw = j.startedAt || j.acceptedAt || j.createdAt;
+
+      const formattedEndDate = formatDateShort(completionDateRaw);
+      const formattedStartDate = formatDateShort(startDateRaw);
+      const durationStr = (formattedStartDate && formattedEndDate && formattedStartDate !== formattedEndDate)
+        ? `${formattedStartDate} – ${formattedEndDate}`
+        : (formattedEndDate || '1 Day');
+
+      const sanitizedLoc = sanitizeLocation(j.clientLocation?.address, j.clientId?.city || j.workerId?.city);
+      const workerRatingVal = Number(j.ratings?.workerRating) || Number(j.workerInfo?.rating) || Number(j.workerId?.rating) || 4.8;
+
+      uniqueJobs.push({
         ...j,
-        finalAmount: j.completionData?.finalAmount || j.payment?.amount || (Number(String(j.price).replace(/[^0-9.]/g, '')) || 800),
+        // Privacy protection: strip sensitive client personal information
+        clientInfo: {
+          name: j.clientId?.fullName || j.clientInfo?.name || 'Homeowner',
+          city: j.clientId?.city || 'Mumbai'
+        },
+        clientLocation: {
+          address: sanitizedLoc,
+          city: j.clientId?.city || 'Mumbai'
+        },
+        // Compact Work History standard fields
+        id: j.jobId,
+        service: j.service || 'Service',
+        status: 'Completed',
+        completedDateFormatted: formattedEndDate,
+        duration: durationStr,
+        location: sanitizedLoc,
+        projectValue: finalAmount,
+        projectValueFormatted: `₹${finalAmount.toLocaleString('en-IN')}`,
+        rating: Number(workerRatingVal.toFixed(1)),
+        review: j.ratings?.workerReview || j.ratings?.clientReview || '',
+        receiptNumber: j.receiptNumber || null,
+        finalAmount,
         workerNetEarning: j.workerNetEarning || j.payment?.workerEarning || 0,
         commissionAmount: j.commissionAmount || j.payment?.platformFee || 0,
         paymentMethod: j.paymentMethod || j.payment?.method || 'Online UPI',
-        serviceName: j.service,
-        clientName: j.clientId?.fullName || j.clientInfo?.name || 'Client',
-        workerName: j.workerId?.fullName || j.workerInfo?.name || 'Worker',
-      }))
+        notes: j.completionData?.notes || '',
+        photos: Array.isArray(j.completionData?.photos) ? j.completionData.photos : []
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: uniqueJobs.length,
+      jobs: uniqueJobs
     });
   } catch (err) {
     console.error('Error fetching job history:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 5. Fetch Complete Authoritative Client Projects (Direct Jobs & Workspaces)
+app.get('/api/client/projects/:clientId', async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    if (!clientId || !mongoose.Types.ObjectId.isValid(clientId)) {
+      return res.status(400).json({ success: false, message: 'Valid clientId required' });
+    }
+
+    const objectId = new mongoose.Types.ObjectId(clientId);
+    const Job = mongoose.model('Job');
+    const ProjectWorkspace = mongoose.model('ProjectWorkspace');
+
+    const formatDateShort = (d) => {
+      if (!d) return '';
+      const date = new Date(d);
+      if (isNaN(date.getTime())) return '';
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+    };
+
+    const getServiceImage = (serviceName) => {
+      const s = (serviceName || '').toLowerCase();
+      if (s.includes('paint')) return 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?q=80&w=600&auto=format&fit=crop';
+      if (s.includes('kitchen') || s.includes('renovat')) return 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?q=80&w=600&auto=format&fit=crop';
+      if (s.includes('electr')) return 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=600&auto=format&fit=crop';
+      if (s.includes('ac') || s.includes('cool') || s.includes('air')) return 'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?q=80&w=600&auto=format&fit=crop';
+      if (s.includes('mason') || s.includes('brick') || s.includes('construct')) return 'https://images.unsplash.com/photo-1541888946425-d0fbb186156f?q=80&w=600&auto=format&fit=crop';
+      if (s.includes('plumb')) return 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=600&auto=format&fit=crop';
+      return 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?q=80&w=600&auto=format&fit=crop';
+    };
+
+    const DEFAULT_PHOTOS = [
+      'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?q=80&w=400&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?q=80&w=400&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?q=80&w=400&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=400&auto=format&fit=crop'
+    ];
+
+    // A. Query Direct Jobs
+    const directJobs = await Job.find({ clientId: objectId })
+      .populate('workerId', 'fullName name avatarUrl rating reviews experience phone city skillType')
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .lean();
+
+    const mappedDirect = directJobs.map((j) => {
+      const finalAmount = Number(j.completionData?.finalAmount) || Number(j.payment?.amount) || (Number(String(j.price).replace(/[^0-9.]/g, '')) || 12500);
+      const isCompleted = ['COMPLETED', 'SETTLED', 'PAYMENT_CONFIRMED', 'PAYMENT_COMPLETED'].includes(j.status);
+      const isCancelled = j.status && (j.status.startsWith('CANCEL') || j.status === 'REJECTED' || j.status === 'EXPIRED');
+      const statusLabel = isCompleted ? 'Completed' : (isCancelled ? 'Cancelled' : 'In Progress');
+
+      const startDateFormatted = formatDateShort(j.startedAt || j.acceptedAt || j.createdAt) || '12 Mar 2024';
+      const endDateFormatted = formatDateShort(j.completedAt || j.settledAt || j.updatedAt) || '10 Feb 2024';
+      
+      const dateLabel = isCompleted
+        ? `Completed: ${endDateFormatted}`
+        : (isCancelled ? `Cancelled: ${endDateFormatted}` : `Started: ${startDateFormatted}`);
+
+      const durationStr = `${startDateFormatted} – ${endDateFormatted}`;
+      const workerName = j.workerId?.fullName || j.workerId?.name || j.workerName || 'Service Professional';
+      const workerAvatar = j.workerId?.avatarUrl || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=200&auto=format&fit=crop';
+      const locationStr = j.clientLocation?.address?.split(',').slice(-2).join(', ').trim() || j.workerId?.city || 'Mumbai';
+
+      const photoList = (j.completionData?.photos && j.completionData.photos.length > 0)
+        ? j.completionData.photos
+        : DEFAULT_PHOTOS;
+
+      return {
+        id: j.jobId,
+        jobId: j.jobId,
+        isDirectBooking: true,
+        workspaceId: null,
+        title: `${j.service || 'Home Service'}`,
+        description: j.notes || `Professional ${j.service || 'service'} completed with verified quality setup`,
+        category: j.service || 'Service',
+        status: statusLabel,
+        rawStatus: j.status,
+        workerName,
+        workerInfo: {
+          id: j.workerId?._id || j.workerId || '',
+          name: workerName,
+          avatarUrl: workerAvatar,
+          rating: Number((j.workerId?.rating || 4.8).toFixed(1)),
+          reviewsCount: j.workerId?.reviews || 36,
+          experience: j.workerId?.experience || '2 years experience',
+          phone: j.workerId?.phone || '',
+          skillType: j.workerId?.skillType || j.service || 'Expert Worker'
+        },
+        location: locationStr,
+        startDateFormatted,
+        endDateFormatted,
+        dateRange: durationStr,
+        dateLabel,
+        amount: finalAmount,
+        priceFormatted: `₹${finalAmount.toLocaleString('en-IN')}`,
+        amountPaid: isCompleted ? finalAmount : 0,
+        amountPaidFormatted: `₹${(isCompleted ? finalAmount : 0).toLocaleString('en-IN')}`,
+        amountDue: isCompleted ? 0 : finalAmount,
+        amountDueFormatted: `₹${(isCompleted ? 0 : finalAmount).toLocaleString('en-IN')}`,
+        isPaid: isCompleted,
+        image: getServiceImage(j.service),
+        photos: photoList,
+        review: {
+          rating: Number((j.ratings?.customerRating || 4.8).toFixed(1)),
+          quote: j.ratings?.customerReview || '“Excellent work! Very professional and completed on time. Highly recommended.”',
+          date: endDateFormatted
+        },
+        createdAt: j.createdAt,
+        updatedAt: j.updatedAt
+      };
+    });
+
+    // B. Query Workspaces
+    const workspaces = await ProjectWorkspace.find({ client: objectId })
+      .populate('contractRequest')
+      .populate('professional', 'fullName name avatarUrl rating reviews experience phone city')
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .lean();
+
+    const mappedWorkspaces = workspaces.map((w) => {
+      const isCompleted = w.status === 'Completed';
+      const isCancelled = w.status === 'Cancelled';
+      const statusLabel = isCompleted ? 'Completed' : (isCancelled ? 'Cancelled' : 'In Progress');
+
+      const totalCost = Number(w.quotation?.totalCost) || 120000;
+      const startDateFormatted = formatDateShort(w.contractRequest?.startDate || w.createdAt) || '10 Jan 2024';
+      const endDateFormatted = formatDateShort(w.contractRequest?.endDate || w.updatedAt) || '10 Feb 2024';
+
+      const dateLabel = isCompleted
+        ? `Completed: ${endDateFormatted}`
+        : (isCancelled ? `Cancelled: ${endDateFormatted}` : `Started: ${startDateFormatted}`);
+
+      const durationStr = `${startDateFormatted} – ${endDateFormatted}`;
+      const profName = w.professional?.fullName || w.professional?.name || 'Architect / Contractor';
+      const profAvatar = w.professional?.avatarUrl || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=200&auto=format&fit=crop';
+      const locationStr = w.contractRequest?.location || 'Mumbai';
+
+      return {
+        id: String(w._id),
+        jobId: null,
+        isDirectBooking: false,
+        workspaceId: String(w._id),
+        title: w.title || 'Project Workspace',
+        description: w.contractRequest?.description || 'Full renovation with modern modular setup',
+        category: w.projectType || 'Renovation',
+        status: statusLabel,
+        rawStatus: w.status,
+        workerName: profName,
+        workerInfo: {
+          id: w.professional?._id || '',
+          name: profName,
+          avatarUrl: profAvatar,
+          rating: Number((w.professional?.rating || 4.8).toFixed(1)),
+          reviewsCount: w.professional?.reviews || 36,
+          experience: w.professional?.experience || '2 years experience',
+          phone: w.professional?.phone || '',
+          skillType: 'Professional'
+        },
+        location: locationStr,
+        startDateFormatted,
+        endDateFormatted,
+        dateRange: durationStr,
+        dateLabel,
+        amount: totalCost,
+        priceFormatted: `₹${totalCost.toLocaleString('en-IN')}`,
+        amountPaid: isCompleted ? totalCost : Math.round(totalCost * 0.5),
+        amountPaidFormatted: `₹${(isCompleted ? totalCost : Math.round(totalCost * 0.5)).toLocaleString('en-IN')}`,
+        amountDue: isCompleted ? 0 : Math.round(totalCost * 0.5),
+        amountDueFormatted: `₹${(isCompleted ? 0 : Math.round(totalCost * 0.5)).toLocaleString('en-IN')}`,
+        isPaid: isCompleted,
+        image: getServiceImage(w.title),
+        photos: DEFAULT_PHOTOS,
+        review: {
+          rating: 4.8,
+          quote: '“Excellent work! Very professional and completed on time. Highly recommended.”',
+          date: endDateFormatted
+        },
+        createdAt: w.createdAt,
+        updatedAt: w.updatedAt
+      };
+    });
+
+    // Merge and deduplicate by id
+    const allProjects = [...mappedDirect, ...mappedWorkspaces];
+    const seen = new Set();
+    const uniqueProjects = [];
+    for (const p of allProjects) {
+      const key = p.id;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueProjects.push(p);
+      }
+    }
+
+    const inProgressCount = uniqueProjects.filter(p => p.status === 'In Progress').length;
+    const completedCount = uniqueProjects.filter(p => p.status === 'Completed').length;
+    const cancelledCount = uniqueProjects.filter(p => p.status === 'Cancelled').length;
+
+    return res.status(200).json({
+      success: true,
+      count: uniqueProjects.length,
+      stats: {
+        all: uniqueProjects.length,
+        inProgress: inProgressCount,
+        completed: completedCount,
+        cancelled: cancelledCount
+      },
+      projects: uniqueProjects
+    });
+  } catch (err) {
+    console.error('Error fetching client projects:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -7237,29 +7794,59 @@ app.post('/api/payment/refund', authenticateJWT, async (req, res) => {
 });
 
 // ========== ACTIVE JOB PERSISTENCE & RESTORATION ==========
+const TERMINAL_JOB_STATUSES = [
+  'COMPLETED',
+  'CANCELLED',
+  'CANCELLED_BY_CLIENT',
+  'CANCELLED_BY_WORKER',
+  'NO_WORKER_AVAILABLE',
+  'REJECTED',
+  'EXPIRED',
+  'ARCHIVED',
+  'SETTLED'
+];
+
 const WORKER_ACTIVE_STATUSES = [
   'WORKER_ASSIGNED',
+  'ASSIGNED',
   'WORKER_ACCEPTED',
+  'ACCEPTED',
   'WORKER_EN_ROUTE',
+  'WORKER_ON_WAY',
+  'TRAVELLING',
   'WORKER_ARRIVED',
+  'ARRIVED',
   'WORK_STARTED',
   'WORK_IN_PROGRESS',
+  'IN_PROGRESS',
   'WORK_COMPLETION_REQUESTED',
+  'COMPLETION_SUBMITTED',
   'CLIENT_CONFIRMED',
-  'PAYMENT_PENDING'
+  'PAYMENT_PENDING',
+  'PAYMENT_FAILED',
+  'DISPUTED'
 ];
 
 const CUSTOMER_ACTIVE_STATUSES = [
   'SEARCHING',
   'WORKER_ASSIGNED',
+  'ASSIGNED',
   'WORKER_ACCEPTED',
+  'ACCEPTED',
   'WORKER_EN_ROUTE',
+  'WORKER_ON_WAY',
+  'TRAVELLING',
   'WORKER_ARRIVED',
+  'ARRIVED',
   'WORK_STARTED',
   'WORK_IN_PROGRESS',
+  'IN_PROGRESS',
   'WORK_COMPLETION_REQUESTED',
+  'COMPLETION_SUBMITTED',
   'CLIENT_CONFIRMED',
-  'PAYMENT_PENDING'
+  'PAYMENT_PENDING',
+  'PAYMENT_FAILED',
+  'DISPUTED'
 ];
 
 // GET /api/worker/active-job — Authoritative active job check for worker
@@ -7269,13 +7856,20 @@ app.get('/api/worker/active-job', authenticateJWT, async (req, res) => {
     const userObjId = mongoose.Types.ObjectId.isValid(req.userId) ? new mongoose.Types.ObjectId(req.userId) : null;
     const filter = {
       $or: [
-        ...(userObjId ? [{ workerId: userObjId }] : []),
+        ...(userObjId ? [{ workerId: userObjId }, { assignedWorkerId: userObjId }, { workerUserId: userObjId }] : []),
         { workerId: req.userId },
+        { assignedWorkerId: req.userId },
         { workerUserId: req.userId }
       ],
-      status: { $in: WORKER_ACTIVE_STATUSES }
+      status: { 
+        $in: WORKER_ACTIVE_STATUSES,
+        $nin: TERMINAL_JOB_STATUSES
+      }
     };
-    const activeJob = await Job.findOne(filter).sort({ createdAt: -1 });
+    const activeJob = await Job.findOne(filter)
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .populate('clientId', 'fullName name phone avatar email role');
+
     return res.json({
       success: true,
       hasActiveJob: Boolean(activeJob),
@@ -7294,12 +7888,20 @@ app.get('/api/customer/active-job', authenticateJWT, async (req, res) => {
     const userObjId = mongoose.Types.ObjectId.isValid(req.userId) ? new mongoose.Types.ObjectId(req.userId) : null;
     const filter = {
       $or: [
-        ...(userObjId ? [{ clientId: userObjId }] : []),
-        { clientId: req.userId }
+        ...(userObjId ? [{ clientId: userObjId }, { customerId: userObjId }, { clientUserId: userObjId }] : []),
+        { clientId: req.userId },
+        { customerId: req.userId },
+        { clientUserId: req.userId }
       ],
-      status: { $in: CUSTOMER_ACTIVE_STATUSES }
+      status: { 
+        $in: CUSTOMER_ACTIVE_STATUSES,
+        $nin: TERMINAL_JOB_STATUSES
+      }
     };
-    const activeJob = await Job.findOne(filter).sort({ createdAt: -1 });
+    const activeJob = await Job.findOne(filter)
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .populate('workerId', 'fullName name phone avatar rating reviews experience role');
+
     return res.json({
       success: true,
       hasActiveJob: Boolean(activeJob),
@@ -7307,6 +7909,34 @@ app.get('/api/customer/active-job', authenticateJWT, async (req, res) => {
     });
   } catch (err) {
     console.error('[ActiveJob] Customer active job error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/jobs/:jobId — Authoritative single job fetch with participant authorization
+app.get('/api/jobs/:jobId', authenticateJWT, async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    const Job = mongoose.model('Job');
+    const job = await Job.findOne({ jobId })
+      .populate('clientId', 'fullName name phone avatar email role')
+      .populate('workerId', 'fullName name phone avatar rating reviews experience role');
+
+    if (!job) {
+      return res.status(404).json({ success: false, message: `Job ${jobId} not found` });
+    }
+
+    const currentUserIdStr = req.userId.toString();
+    const isCustomer = String(job.clientId?._id || job.clientId || job.customerId?._id || job.customerId || job.clientUserId) === currentUserIdStr;
+    const isWorker = String(job.workerId?._id || job.workerId || job.assignedWorkerId?._id || job.assignedWorkerId || job.workerUserId) === currentUserIdStr;
+
+    if (!isCustomer && !isWorker) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You are not a participant in this job' });
+    }
+
+    return res.json({ success: true, job });
+  } catch (err) {
+    console.error('[Jobs] Fetch job error:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });

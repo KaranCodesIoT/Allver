@@ -9,6 +9,7 @@ import { useRouter, useLocalSearchParams, Link } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
 import { useTranslation, getLocalLanguage } from '../utils/i18n';
 import { saveToken, saveStoredUser } from '../constants/Auth';
+import { notifyClearActiveJob } from '../context/ActiveJobContext';
 import { sendFirebaseOtp, verifyFirebaseOtp } from '../utils/FirebaseAuthService';
 
 const COLORS = {
@@ -54,6 +55,7 @@ export default function SignupScreen() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState(params.verifiedPhone ? params.verifiedPhone.replace('+91', '').trim() : '');
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [firebaseIdToken, setFirebaseIdToken] = useState(params.idToken || '');
   const [isPhoneVerified, setIsPhoneVerified] = useState(!!params.idToken);
   
@@ -63,6 +65,16 @@ export default function SignupScreen() {
   const [confirmationResult, setConfirmationResult] = useState<any>(null);
   const [resendTimer, setResendTimer] = useState(0);
   const timerRef = useRef<any>(null);
+
+  // In-app banner notice
+  interface BannerNotice {
+    type: 'error' | 'success' | 'info';
+    title?: string;
+    message: string;
+    actionText?: string;
+    onAction?: () => void;
+  }
+  const [bannerNotice, setBannerNotice] = useState<BannerNotice | null>(null);
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -85,36 +97,62 @@ export default function SignupScreen() {
   // Sync params if passed
   useEffect(() => {
     if (params.verifiedPhone) {
-      setPhoneNumber(params.verifiedPhone.replace('+91', '').trim());
+      const raw = String(params.verifiedPhone).replace(/\D/g, '');
+      setPhoneNumber(raw.slice(-10));
       setIsPhoneVerified(true);
     }
     if (params.idToken) {
-      setFirebaseIdToken(params.idToken);
+      setFirebaseIdToken(String(params.idToken));
       setIsPhoneVerified(true);
     }
   }, [params.verifiedPhone, params.idToken]);
 
+  const validateIndianMobile = (num: string): { valid: boolean; error?: string } => {
+    const digits = num.replace(/\D/g, '');
+    if (!digits || digits.length === 0) {
+      return { valid: false, error: 'Please enter a valid 10-digit mobile number.' };
+    }
+    if (digits.length !== 10 || !/^[6-9]\d{9}$/.test(digits)) {
+      return { valid: false, error: 'Please enter a valid 10-digit mobile number.' };
+    }
+    return { valid: true };
+  };
+
   const handleSendOtp = async () => {
-    const rawDigits = phoneNumber.replace(/\D/g, '');
-    if (!rawDigits || rawDigits.length < 10) {
-      showAlert('Invalid Phone', 'Please enter a valid 10-digit mobile number.');
+    const validation = validateIndianMobile(phoneNumber);
+    if (!validation.valid) {
+      setPhoneError(validation.error || 'Please enter a valid 10-digit mobile number.');
       return;
     }
-
+    setPhoneError(null);
+    setBannerNotice(null);
     setIsLoading(true);
+
     try {
       const result = await sendFirebaseOtp(phoneNumber);
       if (result.success && result.confirmation) {
         setConfirmationResult(result.confirmation);
         setOtpSent(true);
         setResendTimer(30);
-        showAlert('OTP Sent', `A 6-digit verification code has been sent to +91 ${rawDigits.slice(-10)}`);
+        setBannerNotice({
+          type: 'success',
+          title: 'OTP Sent',
+          message: `A 6-digit verification code has been sent to +91 ${phoneNumber.replace(/\D/g, '').slice(-10)}`,
+        });
       } else {
-        showAlert('OTP Error', result.message || 'Could not send verification code.');
+        setBannerNotice({
+          type: 'error',
+          title: result.title || 'OTP Error',
+          message: result.message || 'Could not send verification code.',
+        });
       }
     } catch (err: any) {
       console.error('[SignupScreen] Error sending OTP:', err);
-      showAlert('Error', err.message || 'Failed to send OTP.');
+      setBannerNotice({
+        type: 'error',
+        title: 'Something went wrong',
+        message: 'Please check your internet connection and try again.',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -122,147 +160,183 @@ export default function SignupScreen() {
 
   const handleVerifyOtp = async () => {
     if (!otpCode || otpCode.trim().length < 6) {
-      showAlert('Invalid OTP', 'Please enter the 6-digit code received via SMS.');
+      setBannerNotice({
+        type: 'error',
+        title: 'Incorrect OTP',
+        message: 'Please enter the 6-digit code received via SMS.',
+        actionText: 'Try Again',
+        onAction: () => setOtpCode(''),
+      });
       return;
     }
 
+    setBannerNotice(null);
     setIsLoading(true);
+
     try {
       const verifyRes = await verifyFirebaseOtp(confirmationResult, otpCode);
       if (verifyRes.success && verifyRes.idToken) {
         setFirebaseIdToken(verifyRes.idToken);
         setIsPhoneVerified(true);
         setOtpSent(false);
-        showAlert('Verified', 'Phone number verified successfully!');
+        setBannerNotice({
+          type: 'success',
+          title: 'Phone Verified',
+          message: 'Phone number verified successfully! You can now finish creating your account.',
+        });
       } else {
-        showAlert('Verification Failed', verifyRes.message || 'Incorrect OTP code.');
+        const isExpired = verifyRes.code === 'auth/session-expired' || verifyRes.code === 'EXPIRED_OTP';
+        setBannerNotice({
+          type: 'error',
+          title: verifyRes.title || (isExpired ? 'This OTP has expired.' : 'Incorrect OTP'),
+          message: verifyRes.message || (isExpired ? 'Please request a new OTP to continue.' : 'Please check the OTP and try again.'),
+          actionText: isExpired ? 'Resend OTP' : 'Try Again',
+          onAction: isExpired ? () => handleSendOtp() : () => setOtpCode(''),
+        });
       }
     } catch (err: any) {
       console.error('[SignupScreen] OTP verification error:', err);
-      showAlert('Error', err.message || 'Failed to verify OTP.');
+      setBannerNotice({
+        type: 'error',
+        title: 'Something went wrong',
+        message: 'Please check your internet connection and try again.',
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleRegister = async () => {
-    if (!fullName || !city) {
-      showAlert('Missing Fields', 'Please enter your Full Name and City.');
+    setBannerNotice(null);
+
+    if (!fullName || !fullName.trim()) {
+      setBannerNotice({
+        type: 'error',
+        title: 'Missing Field',
+        message: 'Please enter your Full Name.',
+      });
       return;
     }
 
-    // If phone OTP was verified with Firebase
-    if (isPhoneVerified && firebaseIdToken) {
-      setIsLoading(true);
-      try {
-        const response = await fetch(`${BACKEND_URL}/api/auth/firebase-phone-register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            idToken: firebaseIdToken,
-            phoneNumber: phoneNumber.trim(),
-            fullName: fullName.trim(),
-            role,
-            city: city.trim(),
-            email: email.trim().toLowerCase(),
-            language: getLocalLanguage() || 'en',
-          }),
+    const validation = validateIndianMobile(phoneNumber);
+    if (!validation.valid) {
+      setPhoneError(validation.error || 'Please enter a valid 10-digit mobile number.');
+      setBannerNotice({
+        type: 'error',
+        title: 'Invalid Phone Number',
+        message: 'Please enter a valid 10-digit mobile number.',
+      });
+      return;
+    }
+
+    if (!city || !city.trim()) {
+      setBannerNotice({
+        type: 'error',
+        title: 'Missing Field',
+        message: 'Please enter your City.',
+      });
+      return;
+    }
+
+    // Phone verification is COMPULSORY for new account creation
+    if (!isPhoneVerified || !firebaseIdToken) {
+      if (!otpSent) {
+        setBannerNotice({
+          type: 'info',
+          title: 'Verification Required',
+          message: 'Please verify your mobile number with OTP before creating an account.',
+          actionText: 'Get OTP',
+          onAction: handleSendOtp,
         });
-
-        const data = await response.json();
-        if (response.ok && data.success) {
-          const signupToken = data.token || data.user?._id;
-          if (signupToken) {
-            await saveToken(signupToken);
-            await saveStoredUser(data.user);
-            (global as any).currentUser = data.user;
-          }
-
-          showAlert('Success', 'Account created successfully!', [
-            {
-              text: 'OK',
-              onPress: () => {
-                if (data.user?.role === 'Architect') {
-                  router.replace('/architect-profile');
-                } else if (data.user?.role === 'Contractor') {
-                  router.replace('/contractor-profile');
-                } else {
-                  router.replace('/(tabs)');
-                }
-              },
-            },
-          ]);
-        } else {
-          showAlert('Registration Failed', data.message || 'Could not complete registration.');
-        }
-      } catch (err) {
-        console.error('[SignupScreen] Firebase register error:', err);
-        showAlert('Network Error', 'Could not connect to the server.');
-      } finally {
-        setIsLoading(false);
+        return;
       }
+      setBannerNotice({
+        type: 'info',
+        title: 'OTP Required',
+        message: 'Please enter the 6-digit OTP code received on your phone and tap Verify.',
+      });
       return;
     }
 
-    // Standard Email + Password Register
-    if (!email || !password) {
-      showAlert('Missing Fields', 'Please fill in Email and Password, or verify your phone number with OTP.');
+    if (password && password.length < 6) {
+      setBannerNotice({
+        type: 'error',
+        title: 'Weak Password',
+        message: 'Password must be at least 6 characters if provided.',
+      });
       return;
     }
-    if (password.length < 6) {
-      showAlert('Weak Password', 'Password must be at least 6 characters.');
-      return;
-    }
-    if (password !== confirmPassword) {
-      showAlert('Password Mismatch', 'Passwords do not match.');
+
+    if (password && password !== confirmPassword) {
+      setBannerNotice({
+        type: 'error',
+        title: 'Password Mismatch',
+        message: 'Passwords do not match.',
+      });
       return;
     }
 
     setIsLoading(true);
     try {
-      const response = await fetch(`${BACKEND_URL}/api/register`, {
+      const rawDigits = phoneNumber.replace(/\D/g, '');
+      const response = await fetch(`${BACKEND_URL}/api/auth/firebase-phone-register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fullName,
-          email: email.trim().toLowerCase(),
-          phoneNumber,
-          password,
+          idToken: firebaseIdToken,
+          phoneNumber: rawDigits.slice(-10),
+          fullName: fullName.trim(),
           role,
-          city,
-          language: getLocalLanguage() || 'en'
+          city: city.trim(),
+          email: email && email.trim() ? email.trim().toLowerCase() : undefined,
+          password: password && password.trim() ? password.trim() : undefined,
+          language: getLocalLanguage() || 'en',
         }),
       });
 
-      const data = await response.json();
+      let data: any;
+      try {
+        data = await response.json();
+      } catch (e) {
+        setBannerNotice({
+          type: 'error',
+          title: 'Server Error',
+          message: 'Unexpected server response. Please try again.',
+        });
+        setIsLoading(false);
+        return;
+      }
 
-      if (response.ok) {
-        const signupToken = data.user?._id;
+      if (response.ok && data.success) {
+        const signupToken = data.token || data.user?._id;
         if (signupToken) {
+          notifyClearActiveJob();
           await saveToken(signupToken);
           await saveStoredUser(data.user);
           (global as any).currentUser = data.user;
         }
 
-        showAlert('Success', 'Account created successfully!', [
-          {
-            text: 'OK',
-            onPress: () => {
-              if (data.user?.role === 'Architect') {
-                router.replace('/architect-profile');
-              } else if (data.user?.role === 'Contractor') {
-                router.replace('/contractor-profile');
-              } else {
-                router.replace('/(tabs)');
-              }
-            }
-          },
-        ]);
+        if (data.user?.role === 'Architect') {
+          router.replace('/architect-profile');
+        } else if (data.user?.role === 'Contractor') {
+          router.replace('/contractor-profile');
+        } else {
+          router.replace('/(tabs)');
+        }
       } else {
-        showAlert('Registration Failed', data.message || 'Something went wrong.');
+        setBannerNotice({
+          type: 'error',
+          title: 'Registration Failed',
+          message: data.message || 'Could not complete registration.',
+        });
       }
     } catch (err) {
-      showAlert('Network Error', 'Could not connect to the server.');
+      console.error('[SignupScreen] Firebase register error:', err);
+      setBannerNotice({
+        type: 'error',
+        title: 'Something went wrong',
+        message: 'Please check your internet connection and try again.',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -301,6 +375,82 @@ export default function SignupScreen() {
               {t('joinNetwork')}
             </Text>
 
+            {/* Verified Phone Banner */}
+            {isPhoneVerified && (
+              <View style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                backgroundColor: '#ECFDF5',
+                borderWidth: 1,
+                borderColor: '#A7F3D0',
+                borderRadius: 14,
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                marginBottom: 20,
+              }}>
+                <Feather name="check-circle" size={18} color="#059669" />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#065F46' }}>
+                    Phone Verified (+91 {phoneNumber.slice(-10)})
+                  </Text>
+                  <Text style={{ fontSize: 12, color: '#047857', marginTop: 1 }}>
+                    Enter your details below to finish setting up your Allver account.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* In-App Notification Banner */}
+            {bannerNotice && (
+              <View style={[
+                styles.bannerContainer,
+                bannerNotice.type === 'error' ? styles.bannerError :
+                bannerNotice.type === 'success' ? styles.bannerSuccess : styles.bannerInfo
+              ]}>
+                <View style={styles.bannerIconCol}>
+                  <Feather
+                    name={bannerNotice.type === 'error' ? 'alert-circle' : bannerNotice.type === 'success' ? 'check-circle' : 'info'}
+                    size={20}
+                    color={bannerNotice.type === 'error' ? '#DC2626' : bannerNotice.type === 'success' ? '#16A34A' : '#2563EB'}
+                  />
+                </View>
+                <View style={styles.bannerTextCol}>
+                  {bannerNotice.title ? (
+                    <Text style={[
+                      styles.bannerTitle,
+                      bannerNotice.type === 'error' ? styles.bannerTextError :
+                      bannerNotice.type === 'success' ? styles.bannerTextSuccess : styles.bannerTextInfo
+                    ]}>
+                      {bannerNotice.title}
+                    </Text>
+                  ) : null}
+                  <Text style={[
+                    styles.bannerMessage,
+                    bannerNotice.type === 'error' ? styles.bannerTextError :
+                    bannerNotice.type === 'success' ? styles.bannerTextSuccess : styles.bannerTextInfo
+                  ]}>
+                    {bannerNotice.message}
+                  </Text>
+                  {bannerNotice.actionText && bannerNotice.onAction && (
+                    <TouchableOpacity
+                      style={styles.bannerActionBtn}
+                      onPress={bannerNotice.onAction}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.bannerActionBtnText}>{bannerNotice.actionText}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={styles.bannerCloseBtn}
+                  onPress={() => setBannerNotice(null)}
+                >
+                  <Feather name="x" size={16} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* ─── FORM ─── */}
             <View style={styles.form}>
 
@@ -319,31 +469,35 @@ export default function SignupScreen() {
                 </View>
               </View>
 
-              {/* Email */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t('email')} {!isPhoneVerified && <Text style={styles.req}>*</Text>}</Text>
-                <View style={styles.inputWrap}>
-                  <Feather name="mail" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder={isPhoneVerified ? "you@example.com (Optional)" : "you@example.com"}
-                    placeholderTextColor={COLORS.textMuted}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    value={email}
-                    onChangeText={setEmail}
-                  />
-                </View>
-              </View>
-
-              {/* Phone (with Firebase OTP Verification) */}
+              {/* Phone (Compulsory with Firebase OTP Verification) */}
               <View style={styles.inputGroup}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <Text style={styles.label}>{t('phoneNumber')} {isPhoneVerified && <Text style={{ color: COLORS.green, fontWeight: '700' }}>(Verified ✓)</Text>}</Text>
+                  <Text style={styles.label}>
+                    {t('phoneNumber') || 'Phone Number'} <Text style={styles.req}>*</Text>
+                    {isPhoneVerified && <Text style={{ color: COLORS.green, fontWeight: '700' }}> (Verified ✓)</Text>}
+                  </Text>
                   {!isPhoneVerified && phoneNumber.length === 10 && !otpSent && (
-                    <TouchableOpacity onPress={handleSendOtp} disabled={isLoading}>
-                      <Text style={{ fontSize: 12, color: COLORS.green, fontWeight: '700' }}>
-                        Verify with OTP
+                    <TouchableOpacity
+                      onPress={handleSendOtp}
+                      disabled={isLoading}
+                      style={{
+                        backgroundColor: '#ECFDF5',
+                        borderWidth: 1,
+                        borderColor: '#A7F3D0',
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: 8,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, color: '#047857', fontWeight: '700' }}>
+                        {isLoading ? 'Sending...' : 'Verify with OTP'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {!isPhoneVerified && otpSent && (
+                    <TouchableOpacity onPress={handleSendOtp} disabled={isLoading || resendTimer > 0}>
+                      <Text style={{ fontSize: 12, color: resendTimer > 0 ? COLORS.textMuted : COLORS.green, fontWeight: '700' }}>
+                        {resendTimer > 0 ? `Resend (${resendTimer}s)` : 'Resend OTP'}
                       </Text>
                     </TouchableOpacity>
                   )}
@@ -364,12 +518,16 @@ export default function SignupScreen() {
                       setPhoneNumber(txt.replace(/\D/g, ''));
                       setIsPhoneVerified(false);
                       setOtpSent(false);
+                      setFirebaseIdToken('');
                     }}
                   />
                   {isPhoneVerified ? (
                     <Feather name="check-circle" size={18} color={COLORS.green} style={styles.inputIcon} />
                   ) : null}
                 </View>
+                {phoneError && (
+                  <Text style={styles.inlineErrorText}>{phoneError}</Text>
+                )}
               </View>
 
               {/* Inline OTP Input when OTP is sent */}
@@ -406,18 +564,35 @@ export default function SignupScreen() {
                       style={{
                         backgroundColor: COLORS.green,
                         borderRadius: 14,
-                        paddingHorizontal: 16,
+                        paddingHorizontal: 20,
                         justifyContent: 'center',
                         alignItems: 'center',
                       }}
                       onPress={handleVerifyOtp}
                       disabled={isLoading}
                     >
-                      <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 13 }}>Verify</Text>
+                      <Text style={{ color: COLORS.white, fontWeight: '700', fontSize: 14 }}>Verify</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
               )}
+
+              {/* Email (Optional) */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>{t('email')} <Text style={{ color: COLORS.textMuted, fontSize: 12, fontWeight: 'normal' }}>(Optional)</Text></Text>
+                <View style={styles.inputWrap}>
+                  <Feather name="mail" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="you@example.com (Optional)"
+                    placeholderTextColor={COLORS.textMuted}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={email}
+                    onChangeText={setEmail}
+                  />
+                </View>
+              </View>
 
               {/* City */}
               <View style={styles.inputGroup}>
@@ -469,14 +644,14 @@ export default function SignupScreen() {
                 </View>
               </View>
 
-              {/* Password */}
+              {/* Password (Optional) */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t('password')} {!isPhoneVerified && <Text style={styles.req}>*</Text>}</Text>
+                <Text style={styles.label}>{t('password')} <Text style={{ color: COLORS.textMuted, fontSize: 12, fontWeight: 'normal' }}>(Optional)</Text></Text>
                 <View style={styles.inputWrap}>
                   <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder={isPhoneVerified ? "Optional (Min 6 characters)" : "Min 6 characters"}
+                    placeholder="Optional (Min 6 characters)"
                     placeholderTextColor={COLORS.textMuted}
                     secureTextEntry={!showPassword}
                     value={password}
@@ -488,14 +663,14 @@ export default function SignupScreen() {
                 </View>
               </View>
 
-              {/* Confirm Password */}
+              {/* Confirm Password (Optional) */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t('confirmPassword')} {!isPhoneVerified && <Text style={styles.req}>*</Text>}</Text>
+                <Text style={styles.label}>{t('confirmPassword')} <Text style={{ color: COLORS.textMuted, fontSize: 12, fontWeight: 'normal' }}>(Optional)</Text></Text>
                 <View style={styles.inputWrap}>
                   <Feather name="lock" size={18} color={COLORS.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
-                    placeholder={isPhoneVerified ? "Re-enter password (if provided)" : "Re-enter password"}
+                    placeholder="Re-enter password (if provided)"
                     placeholderTextColor={COLORS.textMuted}
                     secureTextEntry
                     value={confirmPassword}
@@ -612,4 +787,77 @@ const styles = StyleSheet.create({
   footerRow: { flexDirection: 'row', justifyContent: 'center', marginTop: 24, marginBottom: 10 },
   footerText: { color: COLORS.textMuted, fontSize: 14 },
   footerLink: { color: COLORS.green, fontSize: 14, fontWeight: '700' },
+
+  /* In-App Notification Banner Styles */
+  bannerContainer: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    gap: 10,
+    marginBottom: 16,
+  },
+  bannerError: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  bannerSuccess: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  bannerInfo: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  bannerIconCol: {
+    marginTop: 2,
+  },
+  bannerTextCol: {
+    flex: 1,
+  },
+  bannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  bannerMessage: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  bannerTextError: {
+    color: '#991B1B',
+  },
+  bannerTextSuccess: {
+    color: '#166534',
+  },
+  bannerTextInfo: {
+    color: '#1E40AF',
+  },
+  bannerActionBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#10B981',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  bannerActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  bannerCloseBtn: {
+    padding: 2,
+  },
+
+  /* Inline Error */
+  inlineErrorText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 6,
+    marginLeft: 4,
+  },
 });

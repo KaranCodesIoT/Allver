@@ -12,6 +12,9 @@ const LabourDetailPage = () => {
   const { id } = useParams();
   const [labourData, setLabourData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [workHistory, setWorkHistory] = useState([]);
+  const [selectedWorkJob, setSelectedWorkJob] = useState(null);
+  const [showWorkDetailsModal, setShowWorkDetailsModal] = useState(false);
 
   useEffect(() => {
     fetch(`https://allver.onrender.com/api/professional/${id}`)
@@ -23,6 +26,15 @@ const LabourDetailPage = () => {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+
+    fetch(`/api/jobs/history/user/${id}?role=worker`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && Array.isArray(data.jobs)) {
+          setWorkHistory(data.jobs);
+        }
+      })
+      .catch(() => {});
   }, [id]);
 
   if (loading) {
@@ -156,6 +168,66 @@ const LabourDetailPage = () => {
             </p>
           </div>
 
+          {/* WORK HISTORY */}
+          <div style={{ marginBottom: '3rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#64748b', letterSpacing: '0.05em', margin: 0 }}>
+                WORK HISTORY
+              </h3>
+              <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }}></div>
+            </div>
+
+            {workHistory.length === 0 ? (
+              <div style={{ padding: '2rem', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center', color: '#64748b' }}>
+                <Briefcase size={32} color="#cbd5e1" style={{ marginBottom: '8px' }} />
+                <div style={{ fontWeight: '700', color: '#1e293b', marginBottom: '4px' }}>No completed work history yet</div>
+                <div style={{ fontSize: '0.85rem' }}>Completed projects and verified work will appear here automatically.</div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1.25rem' }}>
+                {workHistory.map(job => (
+                  <div key={job.id || job.jobId} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+                      <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '800', color: '#0f172a' }}>{job.service || job.title}</h4>
+                      <span style={{ fontSize: '0.75rem', fontWeight: '700', background: '#dcfce7', color: '#15803d', padding: '0.2rem 0.6rem', borderRadius: '20px' }}>
+                        Completed · {job.completedDateFormatted || 'Recently'}
+                      </span>
+                    </div>
+
+                    <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '0.75rem', fontSize: '0.85rem', color: '#475569', display: 'flex', flexDirection: 'column', gap: '0.4rem', marginBottom: '1rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#64748b' }}>Duration:</span>
+                        <span style={{ fontWeight: '600', color: '#0f172a' }}>{job.duration || 'Completed'}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#64748b' }}>Location:</span>
+                        <span style={{ fontWeight: '600', color: '#0f172a' }}>{job.location || 'Mumbai'}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#64748b' }}>Project value:</span>
+                        <span style={{ fontWeight: '800', color: '#0f172a' }}>{job.projectValueFormatted || `₹${(job.projectValue || 0).toLocaleString('en-IN')}`}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#64748b' }}>Rating:</span>
+                        <span style={{ fontWeight: '700', color: '#f59e0b' }}>⭐ {job.rating || 4.8}</span>
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={() => {
+                        setSelectedWorkJob(job);
+                        setShowWorkDetailsModal(true);
+                      }}
+                      style={{ width: '100%', padding: '0.6rem', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', color: '#2563eb', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer' }}
+                    >
+                      View Work Details
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* 2-Column Grid for Media & Reviews */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
             
@@ -226,6 +298,86 @@ const LabourDetailPage = () => {
 
         </div>
       </div>
+
+      {/* Work Details Modal */}
+      {showWorkDetailsModal && selectedWorkJob && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,23,42,0.65)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div style={{ background: 'white', borderRadius: '16px', maxWidth: '500px', width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: '1.75rem', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: '#0f172a' }}>Completed Work Details</h3>
+                <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>Verified Service Record</div>
+              </div>
+              <button 
+                onClick={() => setShowWorkDetailsModal(false)}
+                style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', fontSize: '1.1rem', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ textAlign: 'center', padding: '1.25rem', background: '#f8fafc', borderRadius: '12px', marginBottom: '1.25rem' }}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px', fontSize: '1.5rem', fontWeight: 'bold' }}>✓</div>
+              <h4 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', fontWeight: '800', color: '#0f172a' }}>{selectedWorkJob.service || selectedWorkJob.title}</h4>
+              <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#16a34a' }}>Completed · {selectedWorkJob.completedDateFormatted}</span>
+            </div>
+
+            <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '1rem', fontSize: '0.9rem', marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b' }}>Duration</span>
+                <span style={{ fontWeight: '600', color: '#0f172a' }}>{selectedWorkJob.duration || 'Completed'}</span>
+              </div>
+              <div style={{ height: '1px', background: '#f1f5f9' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b' }}>Location</span>
+                <span style={{ fontWeight: '600', color: '#0f172a' }}>{selectedWorkJob.location || 'Mumbai'}</span>
+              </div>
+              <div style={{ height: '1px', background: '#f1f5f9' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b' }}>Project Value</span>
+                <span style={{ fontWeight: '800', color: '#0f172a' }}>{selectedWorkJob.projectValueFormatted || `₹${(selectedWorkJob.projectValue || 0).toLocaleString('en-IN')}`}</span>
+              </div>
+              <div style={{ height: '1px', background: '#f1f5f9' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ color: '#64748b' }}>Customer Rating</span>
+                <span style={{ fontWeight: '700', color: '#f59e0b' }}>⭐ {selectedWorkJob.rating || 4.8} / 5.0</span>
+              </div>
+              {selectedWorkJob.receiptNumber && (
+                <>
+                  <div style={{ height: '1px', background: '#f1f5f9' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748b' }}>Receipt No.</span>
+                    <span style={{ fontWeight: '700', color: '#2563eb' }}>{selectedWorkJob.receiptNumber}</span>
+                  </div>
+                </>
+              )}
+              {selectedWorkJob.paymentMethod && (
+                <>
+                  <div style={{ height: '1px', background: '#f1f5f9' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#64748b' }}>Payment Method</span>
+                    <span style={{ fontWeight: '600', color: '#0f172a' }}>{selectedWorkJob.paymentMethod}</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {selectedWorkJob.review && (
+              <div style={{ marginBottom: '1.25rem', background: '#f8fafc', padding: '0.85rem', borderRadius: '8px', borderLeft: '3px solid #10b981' }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Customer Review</div>
+                <div style={{ fontSize: '0.85rem', color: '#334155', fontStyle: 'italic' }}>"{selectedWorkJob.review}"</div>
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowWorkDetailsModal(false)}
+              style={{ width: '100%', padding: '0.8rem', background: '#0f172a', color: 'white', borderRadius: '10px', border: 'none', fontWeight: '800', fontSize: '0.95rem', cursor: 'pointer' }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </DashboardLayout>
   );
 };

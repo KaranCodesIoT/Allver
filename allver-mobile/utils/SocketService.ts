@@ -92,9 +92,8 @@ class SocketService {
       if (error.message && (error.message.includes('Unauthorized') || error.message.includes('Invalid token'))) {
         console.log('[SocketService] Socket connection unauthorized. Clearing stale session tokens...');
         this.disconnect();
-        const { removeToken, removeStoredUser } = require('../constants/Auth');
-        await removeToken();
-        await removeStoredUser();
+        const { clearAuthSession } = require('../constants/Auth');
+        await clearAuthSession();
         try {
           const { router } = require('expo-router');
           router.replace('/login');

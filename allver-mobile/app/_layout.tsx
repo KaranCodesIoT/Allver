@@ -21,6 +21,8 @@ import { CallProvider } from '../context/CallContext';
 import CallKeepService from '../utils/CallKeepService';
 import AIAssistantFloatingButton from '../components/AIAssistantFloatingButton';
 import IncomingJobModal from '../components/IncomingJobModal';
+import ActiveJobBanner from '../components/ActiveJobBanner';
+import { ActiveJobProvider, isAuthOrPublicRoute } from '../context/ActiveJobContext';
 
 // Ignore specific warning logs in Expo Go / Development
 LogBox.ignoreLogs([
@@ -293,9 +295,13 @@ export default function RootLayout() {
       <UnreadMessageProvider>
         <UnreadActivityProvider>
           <CallProvider>
-            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-              <View style={{ flex: 1 }}>
-          <Stack>
+            <ActiveJobProvider>
+              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                <View style={{ flex: 1 }}>
+                  {stage === 'ready' && !isAuthOrPublicRoute(undefined, segments) && Boolean(currentUser?._id) && (
+                    <ActiveJobBanner />
+                  )}
+                  <Stack>
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="choose-language" options={{ headerShown: false }} />
             <Stack.Screen name="signup" options={{ headerShown: false }} />
@@ -384,11 +390,12 @@ export default function RootLayout() {
 
               </View>
             </ThemeProvider>
-          </CallProvider>
-        </UnreadActivityProvider>
-      </UnreadMessageProvider>
-    </I18nProvider>
-  );
+          </ActiveJobProvider>
+        </CallProvider>
+      </UnreadActivityProvider>
+    </UnreadMessageProvider>
+  </I18nProvider>
+);
 }
 
 const styles = StyleSheet.create({

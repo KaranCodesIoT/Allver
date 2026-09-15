@@ -20,13 +20,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import * as Location from 'expo-location';
 
 import SocketService from '../utils/SocketService';
 import { getIndiaMapImageUrl } from '../utils/GeocodingService';
 import { Fonts } from '../constants/theme';
 import { BACKEND_URL } from '../constants/Config';
-import { getToken } from '../constants/Auth';
+import { getToken, getStoredUser } from '../constants/Auth';
 
 const { width } = Dimensions.get('window');
 
@@ -66,11 +67,14 @@ export type WorkerJobStatus =
   | 'COMPLETED'
   | 'PAYMENT_RECEIVED'
   | 'CANCELLED'
-  | 'RATING'
   | 'ARCHIVED';
 
 export default function ActiveJobScreen() {
   const router = useRouter();
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  isFocusedRef.current = isFocused;
+  const userInitiatedCancelRef = useRef(false);
   const params = useLocalSearchParams();
 
   const jobId = (params.jobId as string) || '';
@@ -135,10 +139,6 @@ export default function ActiveJobScreen() {
   const [cancelReason, setCancelReason] = useState('Client unreachable');
   const [isCashSubmitting, setIsCashSubmitting] = useState(false);
 
-  // Rating state
-  const [clientRating, setClientRating] = useState(5);
-  const [reviewText, setReviewText] = useState('');
-
   // Track last alerted status to prevent repeated blocking alert dialogs
   const lastAlertedStatusRef = useRef<string | null>(null);
 
@@ -190,10 +190,16 @@ export default function ActiveJobScreen() {
         if (lastAlertedStatusRef.current !== data.status) {
           lastAlertedStatusRef.current = data.status;
 
-          if (data.status === 'CANCELLED') {
-            Alert.alert('Job Cancelled', data.reason || 'This booking has been cancelled.', [
-              { text: 'OK', onPress: () => router.replace('/(tabs)') }
-            ]);
+          if (data.status === 'CANCELLED' || data.status === 'CANCELLED_BY_CLIENT' || data.status === 'CANCELLED_BY_WORKER') {
+            const shouldAlert = !userInitiatedCancelRef.current && isFocusedRef.current;
+            if (isFocusedRef.current) {
+              router.replace('/(tabs)');
+            }
+            if (shouldAlert) {
+              Alert.alert('Job Cancelled', data.reason || 'This booking has been cancelled.', [
+                { text: 'OK' }
+              ], { cancelable: true });
+            }
           }
         }
       }
@@ -222,11 +228,7 @@ export default function ActiveJobScreen() {
             `Payment of ₹${data.payment?.amount || finalAmount} received successfully.`,
             [
               {
-                text: 'Rate Client',
-                onPress: () => setStatus('RATING'),
-              },
-              {
-                text: 'Finish Job',
+                text: 'Finish & Return to Dashboard',
                 onPress: () => router.replace('/(tabs)'),
               },
             ]
@@ -454,17 +456,57 @@ export default function ActiveJobScreen() {
         {
           text: 'Confirm Cancel',
           style: 'destructive',
-          onPress: () => {
-            SocketService.emit('worker_cancel_job', {
-              jobId,
-              reason: cancelReason,
-            });
+          onPress: async () => {
+            try {
+              SocketService.emit('client_cancel_job_request', { jobId });
+              SocketService.emit('worker_cancel_job', {
+                jobId,
+                reason: cancelReason,
+              });
+              await fetch(`${BACKEND_URL}/api/jobs/${jobId}/cancel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: cancelReason, cancelledBy: 'client' })
+              }).catch(() => {});
+            } catch (e) {}
+
+            userInitiatedCancelRef.current = true;
             setCancelModalVisible(false);
-            Alert.alert('Job Cancelled', 'You have cancelled this booking.', [
-              { text: 'OK', onPress: () => router.replace('/(tabs)') },
-            ]);
+            router.replace('/(tabs)');
           },
         },
+      ]
+    );
+  };
+
+  const handleCancelSearch = () => {
+    Alert.alert(
+      'Cancel Search',
+      'Are you sure you want to cancel searching for workers?',
+      [
+        { text: 'Keep Searching', style: 'cancel' },
+        {
+          text: 'Cancel Search',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // 1. Emit socket cancel events
+              SocketService.emit('client_cancel_job_request', { jobId });
+              SocketService.emit('cancel_job', { jobId, reason: 'Client cancelled search' });
+              
+              // 2. Fallback REST API call
+              await fetch(`${BACKEND_URL}/api/jobs/${jobId}/cancel`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: 'Client cancelled search', cancelledBy: 'client' })
+              }).catch(() => {});
+            } catch (e) {}
+
+            Alert.alert('Search Cancelled', 'Your job search request has been cancelled.', [
+              { text: 'OK', onPress: () => router.replace('/(tabs)') }
+            ]);
+          }
+        }
       ]
     );
   };
@@ -644,58 +686,6 @@ export default function ActiveJobScreen() {
     setWorkerChatModalVisible(true);
   };
 
-  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
-  const [ratingSubmitted, setRatingSubmitted] = useState(false);
-
-  // Authoritative rating submission
-  const handleSubmitRating = async () => {
-    const activeJobId = job?.jobId || jobId;
-    if (!activeJobId) {
-      Alert.alert('Error', 'Missing Job ID for rating submission.');
-      return;
-    }
-    setIsSubmittingRating(true);
-    try {
-      const token = await getToken();
-      const res = await fetch(`${BACKEND_URL}/api/jobs/${activeJobId}/rate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          rating: clientRating,
-          comment: reviewText.trim()
-        })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        try {
-          SocketService.emit('submit_job_rating', {
-            jobId: activeJobId,
-            rating: clientRating,
-            reviewText,
-            ratedRole: 'client',
-          });
-        } catch (sErr) {
-          console.warn('[ActiveJob] Socket emit rating error:', sErr);
-        }
-        setRatingSubmitted(true);
-        Alert.alert(
-          '⭐ Rating Submitted',
-          `Thank you! You rated ${clientName} ${clientRating} stars.`,
-          [{ text: 'Finish Job', onPress: () => router.replace('/(tabs)') }]
-        );
-      } else {
-        Alert.alert('Rating', data.message || 'Could not submit rating.');
-      }
-    } catch (err: any) {
-      console.error('[ActiveJob] Rating submission error:', err);
-      Alert.alert('Error', err.message || 'Failed to submit rating.');
-    } finally {
-      setIsSubmittingRating(false);
-    }
-  };
 
   // Safe back press protection (prevents silent job abandonment)
   const handleBackPress = () => {
@@ -733,12 +723,16 @@ export default function ActiveJobScreen() {
     return () => sub.remove();
   }, [status]);
 
-  // Autoritative active job hydrate if jobId missing or on App resume
+  // Authoritative active job hydrate on mount, app resume, and socket reconnect
   useEffect(() => {
     const fetchActiveJob = async () => {
       try {
         const token = await getToken();
-        const res = await fetch(`${BACKEND_URL}/api/worker/active-job`, {
+        let url = `${BACKEND_URL}/api/worker/active-job`;
+        if (jobId && !jobId.startsWith('job_') && jobId.length > 5) {
+          url = `${BACKEND_URL}/api/jobs/${jobId}`;
+        }
+        const res = await fetch(url, {
           headers: {
             'Content-Type': 'application/json',
             ...(token ? { 'Authorization': `Bearer ${token}` } : {})
@@ -746,10 +740,11 @@ export default function ActiveJobScreen() {
         });
         if (res.ok) {
           const data = await res.json();
-          if (data.success && data.hasActiveJob && data.activeJob) {
-            setJob((prev: any) => ({ ...prev, ...data.activeJob }));
-            if (data.activeJob.status) {
-              setStatus(data.activeJob.status as WorkerJobStatus);
+          const active = data.activeJob || data.job;
+          if (active) {
+            setJob((prev: any) => ({ ...prev, ...active }));
+            if (active.status) {
+              setStatus(active.status as WorkerJobStatus);
             }
           }
         }
@@ -758,9 +753,7 @@ export default function ActiveJobScreen() {
       }
     };
 
-    if (!jobId) {
-      fetchActiveJob();
-    }
+    fetchActiveJob();
 
     const appStateSub = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
@@ -768,13 +761,23 @@ export default function ActiveJobScreen() {
       }
     });
 
+    SocketService.on('connect', fetchActiveJob);
+    SocketService.on('reconnect', fetchActiveJob);
+    SocketService.on('job_status_changed', fetchActiveJob);
+    SocketService.on('job_payment_completed', fetchActiveJob);
+
     return () => {
       appStateSub.remove();
+      SocketService.off('connect', fetchActiveJob);
+      SocketService.off('reconnect', fetchActiveJob);
+      SocketService.off('job_status_changed', fetchActiveJob);
+      SocketService.off('job_payment_completed', fetchActiveJob);
     };
   }, [jobId]);
 
   const clientName = job.clientInfo?.name || job.clientInfo?.fullName || 'Sushil Maurya';
   const clientPhone = job.clientInfo?.phone || '+91 85910 88873';
+  const isSearchingStage = status === 'SEARCHING' || status === 'FINDING_WORKER' || status === 'PENDING';
   const isAcceptedStage = status === 'WORKER_ACCEPTED' || status === 'JOB_ACCEPTED' || status === 'ACCEPTED';
   const isEnRouteStage = status === 'WORKER_EN_ROUTE' || status === 'TRAVELLING';
   const isArrivedStage = status === 'WORKER_ARRIVED' || status === 'ARRIVED';
@@ -782,7 +785,7 @@ export default function ActiveJobScreen() {
   const isCompletionSubmitted = status === 'WORK_COMPLETION_REQUESTED' || status === 'COMPLETION_SUBMITTED';
   const isPendingPayment = status === 'CLIENT_CONFIRMED' || status === 'PAYMENT_PENDING';
   const isJobCompleted = status === 'COMPLETED' || status === 'PAYMENT_COMPLETED' || status === 'PAYMENT_RECEIVED' || status === 'SETTLED' || status === 'PAYMENT_CONFIRMED';
-  const canCancelJob = isAcceptedStage || isEnRouteStage || isArrivedStage || isWorkingStage;
+  const canCancelJob = isSearchingStage || isAcceptedStage || isEnRouteStage || isArrivedStage || isWorkingStage;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -861,6 +864,28 @@ export default function ActiveJobScreen() {
         </View>
 
         {/* STAGE SPECIFIC CONSOLES */}
+
+        {/* 0. STAGE: SEARCHING */}
+        {isSearchingStage && (
+          <View style={styles.actionCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+              <ActivityIndicator size="small" color="#2563EB" style={{ marginRight: 10 }} />
+              <Text style={styles.cardTitle}>Searching for Nearby Workers...</Text>
+            </View>
+            <Text style={styles.cardDesc}>
+              Broadcasting your request to verified {job.service || 'service'} professionals near your location. You can cancel search anytime if you change your mind.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.cancelSearchBtn}
+              onPress={handleCancelSearch}
+              activeOpacity={0.85}
+            >
+              <Feather name="x-circle" size={18} color="#DC2626" style={{ marginRight: 8 }} />
+              <Text style={styles.cancelSearchBtnText}>Cancel Search</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* 1. STAGE: WORKER_ACCEPTED */}
         {isAcceptedStage && (
@@ -1090,63 +1115,12 @@ export default function ActiveJobScreen() {
                 <Text style={[styles.settlementValue, { color: '#059669', fontWeight: '700' }]}>SETTLED ✓</Text>
               </View>
             </View>
-
             <TouchableOpacity
-              style={[styles.primaryActionBtn, { backgroundColor: '#7C3AED', marginTop: 14 }]}
-              onPress={() => setStatus('RATING')}
-            >
-              <Text style={styles.primaryActionText}>⭐ Rate Client</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.secondaryActionBtn, { marginTop: 10, borderColor: '#10B981', borderWidth: 1 }]}
+              style={[styles.primaryActionBtn, { backgroundColor: '#10B981', marginTop: 14 }]}
               onPress={() => router.replace('/(tabs)')}
             >
-              <Text style={[styles.secondaryActionText, { color: '#059669', fontWeight: '800' }]}>
+              <Text style={styles.primaryActionText}>
                 ✓ Finish & Return to Dashboard
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* 8. STAGE: RATING */}
-        {status === 'RATING' && (
-          <View style={styles.actionCard}>
-            <Text style={styles.cardTitle}>Rate Your Client</Text>
-            <Text style={styles.cardDesc}>How was your experience working with {clientName}?</Text>
-
-            <View style={styles.starRow}>
-              {[1, 2, 3, 4, 5].map((s) => (
-                <TouchableOpacity key={s} onPress={() => setClientRating(s)}>
-                  <Feather
-                    name="star"
-                    size={36}
-                    color={s <= clientRating ? '#F59E0B' : '#E2E8F0'}
-                    style={{ marginHorizontal: 6 }}
-                  />
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <TextInput
-              style={styles.notesInput}
-              placeholder="Leave feedback for this client (optional)..."
-              value={reviewText}
-              onChangeText={setReviewText}
-              multiline
-              numberOfLines={3}
-            />
-
-            <TouchableOpacity style={styles.primaryActionBtn} onPress={handleSubmitRating}>
-              <Text style={styles.primaryActionText}>Submit & Finish Job</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={{ marginTop: 12, alignItems: 'center', paddingVertical: 8 }}
-              onPress={() => router.replace('/(tabs)')}
-            >
-              <Text style={{ fontSize: 13, color: '#64748B', fontWeight: '600' }}>
-                Skip & Return to Dashboard
               </Text>
             </TouchableOpacity>
           </View>
@@ -2014,5 +1988,21 @@ const styles = StyleSheet.create({
   reasonTextActive: {
     color: '#DC2626',
     fontWeight: '700',
+  },
+  cancelSearchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1.5,
+    borderColor: '#FCA5A5',
+    borderRadius: 12,
+    paddingVertical: 14,
+    marginTop: 16,
+  },
+  cancelSearchBtnText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#DC2626',
   },
 });

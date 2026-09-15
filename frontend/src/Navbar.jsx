@@ -1,12 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ChevronDown, Menu, X, HardHat, Compass, Hammer } from 'lucide-react';
+import { ChevronDown, Menu, X, HardHat, Compass, Hammer, Clock } from 'lucide-react';
 import allverLogo from './assets/allver-logo.png';
+import { API_BASE_URL, getAuthToken } from './config/api';
 
 const Navbar = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [proDropdownOpen, setProDropdownOpen] = useState(false);
+  const [activeJob, setActiveJob] = useState(null);
+
+  useEffect(() => {
+    const checkActive = async () => {
+      try {
+        const token = getAuthToken();
+        if (!token || location.pathname === '/login' || location.pathname === '/register') {
+          setActiveJob(null);
+          return;
+        }
+        const res = await fetch(`${API_BASE_URL}/customer/active-job`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.hasActiveJob && data.activeJob) {
+            setActiveJob(data.activeJob);
+          } else {
+            setActiveJob(null);
+          }
+        }
+      } catch {
+        // ignore network error
+      }
+    };
+    checkActive();
+  }, [location.pathname]);
 
   const isActive = (path) => {
     if (path === '/' && location.pathname === '/') return true;
@@ -78,6 +106,28 @@ const Navbar = () => {
 
         {/* Desktop Actions */}
         <div className="av-nav-actions">
+          {activeJob && (
+            <Link
+              to={`/project/${activeJob.jobId}`}
+              className="av-active-job-pill"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: '#0F172A',
+                color: '#FFFFFF',
+                padding: '6px 12px',
+                borderRadius: '9999px',
+                fontSize: '12px',
+                fontWeight: '600',
+                textDecoration: 'none',
+                marginRight: '8px'
+              }}
+            >
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#22C55E' }}></span>
+              <span>Active: {activeJob.service || 'Job'}</span>
+            </Link>
+          )}
           <Link to="/login" className="av-btn-login">Login</Link>
           <Link to="/register" className="av-btn-signup">Sign Up</Link>
           <button 

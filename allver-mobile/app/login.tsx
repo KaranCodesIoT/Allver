@@ -10,6 +10,7 @@ import { Link, useRouter } from 'expo-router';
 import { BACKEND_URL } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import { saveToken, saveStoredUser } from '../constants/Auth';
+import { notifyClearActiveJob } from '../context/ActiveJobContext';
 import { sendFirebaseOtp, verifyFirebaseOtp, formatIndianPhoneNumber } from '../utils/FirebaseAuthService';
 
 const { width, height } = Dimensions.get('window');
@@ -71,11 +72,22 @@ export default function LoginScreen() {
 
   // Phone OTP States
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [otpCode, setOtpCode] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState<any>(null);
   const [resendTimer, setResendTimer] = useState(0);
   const timerRef = useRef<any>(null);
+
+  // In-App Notification Banner State
+  interface BannerNotice {
+    type: 'error' | 'success' | 'info';
+    title?: string;
+    message: string;
+    actionText?: string;
+    onAction?: () => void;
+  }
+  const [bannerNotice, setBannerNotice] = useState<BannerNotice | null>(null);
 
   // Email States
   const [email, setEmail] = useState('');
@@ -95,6 +107,13 @@ export default function LoginScreen() {
   const [resetNewPassword, setResetNewPassword] = useState('');
   const [isResetting, setIsResetting] = useState(false);
 
+  // Unregistered / New Phone Prompt Modal
+  const [unregisteredModalVisible, setUnregisteredModalVisible] = useState(false);
+  const [unregisteredPhoneData, setUnregisteredPhoneData] = useState<{
+    phoneNumber: string;
+    idToken: string;
+  } | null>(null);
+
   // Timer countdown
   useEffect(() => {
     if (resendTimer > 0) {
@@ -107,27 +126,52 @@ export default function LoginScreen() {
     };
   }, [resendTimer]);
 
+  const validateIndianMobile = (num: string): { valid: boolean; error?: string } => {
+    const digits = num.replace(/\D/g, '');
+    if (!digits || digits.length === 0) {
+      return { valid: false, error: 'Please enter a valid 10-digit mobile number.' };
+    }
+    if (digits.length !== 10 || !/^[6-9]\d{9}$/.test(digits)) {
+      return { valid: false, error: 'Please enter a valid 10-digit mobile number.' };
+    }
+    return { valid: true };
+  };
+
   const handleSendOtp = async () => {
-    const rawDigits = phoneNumber.replace(/\D/g, '');
-    if (!rawDigits || rawDigits.length < 10) {
-      showAlert('Invalid Phone', 'Please enter a valid 10-digit mobile number.');
+    const validation = validateIndianMobile(phoneNumber);
+    if (!validation.valid) {
+      setPhoneError(validation.error || 'Please enter a valid 10-digit mobile number.');
       return;
     }
-
+    setPhoneError(null);
+    setBannerNotice(null);
     setIsLoading(true);
+
     try {
       const result = await sendFirebaseOtp(phoneNumber);
       if (result.success && result.confirmation) {
         setConfirmationResult(result.confirmation);
         setOtpSent(true);
         setResendTimer(30);
-        showAlert('OTP Sent', `A 6-digit verification code has been sent to +91 ${rawDigits.slice(-10)}`);
+        setBannerNotice({
+          type: 'success',
+          title: 'OTP Sent',
+          message: `A 6-digit verification code has been sent to +91 ${phoneNumber.replace(/\D/g, '').slice(-10)}`,
+        });
       } else {
-        showAlert('OTP Error', result.message || 'Could not send verification code.');
+        setBannerNotice({
+          type: 'error',
+          title: result.title || 'OTP Error',
+          message: result.message || 'Could not send verification code.',
+        });
       }
     } catch (err: any) {
       console.error('[LoginScreen] Error sending OTP:', err);
-      showAlert('Error', err.message || 'Failed to send OTP.');
+      setBannerNotice({
+        type: 'error',
+        title: 'Something went wrong',
+        message: 'Please check your internet connection and try again.',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -135,53 +179,154 @@ export default function LoginScreen() {
 
   const handleVerifyOtpAndLogin = async () => {
     if (!otpCode || otpCode.trim().length < 6) {
-      showAlert('Invalid OTP', 'Please enter the 6-digit code received via SMS.');
+      setBannerNotice({
+        type: 'error',
+        title: 'Incorrect OTP',
+        message: 'Please check the OTP and try again.',
+        actionText: 'Try Again',
+        onAction: () => setOtpCode(''),
+      });
       return;
     }
 
+    setBannerNotice(null);
     setIsLoading(true);
+
     try {
       const verifyRes = await verifyFirebaseOtp(confirmationResult, otpCode);
       if (!verifyRes.success || !verifyRes.idToken) {
-        showAlert('Verification Failed', verifyRes.message || 'Incorrect OTP.');
+        const isExpired = verifyRes.code === 'auth/session-expired' || verifyRes.code === 'EXPIRED_OTP';
+        setBannerNotice({
+          type: 'error',
+          title: verifyRes.title || (isExpired ? 'This OTP has expired.' : 'Incorrect OTP'),
+          message: verifyRes.message || (isExpired ? 'Please request a new OTP to continue.' : 'Please check the OTP and try again.'),
+          actionText: isExpired ? 'Resend OTP' : 'Try Again',
+          onAction: isExpired ? () => handleSendOtp() : () => setOtpCode(''),
+        });
         setIsLoading(false);
         return;
       }
 
-      console.log('[LoginScreen] Firebase verification passed. Verifying with backend...');
-      const response = await fetch(`${BACKEND_URL}/api/auth/firebase-phone-login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          idToken: verifyRes.idToken,
-          phoneNumber: verifyRes.phoneNumber || phoneNumber
-        }),
-      });
+      console.log(`[LoginScreen] Firebase verification passed. ID token acquired (length: ${verifyRes.idToken.length}). Target endpoint: ${BACKEND_URL}/api/auth/firebase-phone-login`);
+      
+      const endpoint = `${BACKEND_URL}/api/auth/firebase-phone-login`;
+      let response: Response;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-      const data = await response.json();
-      console.log('[LoginScreen] Backend phone login response:', data);
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${verifyRes.idToken}`,
+          },
+          body: JSON.stringify({
+            idToken: verifyRes.idToken,
+            phoneNumber: verifyRes.phoneNumber || phoneNumber
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (netErr: any) {
+        const isTimeout = netErr?.name === 'AbortError';
+        console.error(`[LoginScreen] ${isTimeout ? 'Timeout (15s)' : 'Network error'} reaching backend endpoint (${endpoint}):`, netErr?.message || netErr);
+        setBannerNotice({
+          type: 'error',
+          title: isTimeout ? 'Request Timed Out' : 'Connection Error',
+          message: isTimeout
+            ? `Backend did not respond in 15 seconds. Please verify server connectivity at ${BACKEND_URL}.`
+            : `Could not reach backend server at ${BACKEND_URL}. Please check your network connection.`,
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      console.log(`[LoginScreen] Backend HTTP Status: ${response.status} ${response.statusText}`);
+
+      let data: any;
+      try {
+        data = await response.json();
+      } catch (parseErr) {
+        console.error(`[LoginScreen] JSON parsing error from backend (HTTP ${response.status}):`, parseErr);
+        setBannerNotice({
+          type: 'error',
+          title: 'Server Error',
+          message: `Server returned non-JSON response (HTTP ${response.status}).`,
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      console.log(`[LoginScreen] Backend response (HTTP ${response.status}):`, JSON.stringify(data));
+
+      if (response.status === 401) {
+        console.warn('[LoginScreen] HTTP 401 Unauthorized:', data?.message);
+        setBannerNotice({
+          type: 'error',
+          title: 'Authentication Expired',
+          message: data?.message || 'Firebase session expired. Please request a new OTP.',
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      if (response.status === 403) {
+        console.warn('[LoginScreen] HTTP 403 Forbidden:', data?.message);
+        setBannerNotice({
+          type: 'error',
+          title: 'Verification Mismatch',
+          message: data?.message || 'Phone number does not match verified credentials.',
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      if (response.status === 404) {
+        console.warn('[LoginScreen] HTTP 404 Not Found at endpoint:', endpoint);
+        setBannerNotice({
+          type: 'error',
+          title: 'Endpoint Not Found',
+          message: `Endpoint ${endpoint} was not found on the backend.`,
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      if (response.status === 429) {
+        setBannerNotice({
+          type: 'error',
+          title: 'Too many OTP attempts',
+          message: 'Please wait a while before requesting another OTP.',
+        });
+        setIsLoading(false);
+        return;
+      }
+
+      if (response.status >= 500) {
+        console.error('[LoginScreen] HTTP 500 Server Error:', data?.message);
+        setBannerNotice({
+          type: 'error',
+          title: 'Server Error',
+          message: data?.message || 'The server encountered an error processing your login. Please try again.',
+        });
+        setIsLoading(false);
+        return;
+      }
 
       if (response.ok && data.success) {
         if (data.isNewUser) {
-          // Unregistered user -> direct to signup with verified credentials
-          showAlert('New User', 'Your phone number is verified! Please complete your registration details.', [
-            {
-              text: 'Complete Signup',
-              onPress: () => {
-                router.push({
-                  pathname: '/signup',
-                  params: {
-                    verifiedPhone: data.phoneNumber || phoneNumber,
-                    idToken: verifyRes.idToken
-                  }
-                });
-              }
-            }
-          ]);
+          // Unregistered user -> present dedicated in-app modal (no browser alert)
+          setUnregisteredPhoneData({
+            phoneNumber: data.phoneNumber || phoneNumber,
+            idToken: verifyRes.idToken
+          });
+          setUnregisteredModalVisible(true);
           return;
         }
 
-        // Existing user login success
+        // Existing user login success - ensure clean active job state before caching new user
+        notifyClearActiveJob();
         await saveToken(data.token);
         await saveStoredUser(data.user);
         (global as any).currentUser = data.user;
@@ -209,11 +354,19 @@ export default function LoginScreen() {
           router.replace('/(tabs)');
         }
       } else {
-        showAlert('Login Failed', data.message || 'Unable to authenticate user on server.');
+        setBannerNotice({
+          type: 'error',
+          title: 'Login Failed',
+          message: data.message || 'Unable to authenticate user on server.',
+        });
       }
     } catch (err: any) {
       console.error('[LoginScreen] Phone verification error:', err);
-      showAlert('Network Error', 'Could not complete login. Please try again.');
+      setBannerNotice({
+        type: 'error',
+        title: 'Something went wrong',
+        message: 'Please check your internet connection and try again.',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -235,6 +388,7 @@ export default function LoginScreen() {
 
       const data = await response.json();
       if (response.ok) {
+        notifyClearActiveJob();
         await saveToken(data.token);
         await saveStoredUser(data.user);
         (global as any).currentUser = data.user;
@@ -316,15 +470,82 @@ export default function LoginScreen() {
 
             {/* ─── FORM CARD ─── */}
             <View style={styles.formCard}>
+              {/* In-App Notification Banner */}
+              {bannerNotice && (
+                <View style={[
+                  styles.bannerContainer,
+                  bannerNotice.type === 'error' ? styles.bannerError :
+                  bannerNotice.type === 'success' ? styles.bannerSuccess : styles.bannerInfo
+                ]}>
+                  <View style={styles.bannerIconCol}>
+                    <Feather
+                      name={bannerNotice.type === 'error' ? 'alert-circle' : bannerNotice.type === 'success' ? 'check-circle' : 'info'}
+                      size={20}
+                      color={bannerNotice.type === 'error' ? '#DC2626' : bannerNotice.type === 'success' ? '#16A34A' : '#2563EB'}
+                    />
+                  </View>
+                  <View style={styles.bannerTextCol}>
+                    {bannerNotice.title ? (
+                      <Text style={[
+                        styles.bannerTitle,
+                        bannerNotice.type === 'error' ? styles.bannerTextError :
+                        bannerNotice.type === 'success' ? styles.bannerTextSuccess : styles.bannerTextInfo
+                      ]}>
+                        {bannerNotice.title}
+                      </Text>
+                    ) : null}
+                    <Text style={[
+                      styles.bannerMessage,
+                      bannerNotice.type === 'error' ? styles.bannerTextError :
+                      bannerNotice.type === 'success' ? styles.bannerTextSuccess : styles.bannerTextInfo
+                    ]}>
+                      {bannerNotice.message}
+                    </Text>
+                    {bannerNotice.actionText && bannerNotice.onAction && (
+                      <TouchableOpacity
+                        style={styles.bannerActionBtn}
+                        onPress={bannerNotice.onAction}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={styles.bannerActionBtnText}>{bannerNotice.actionText}</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.bannerCloseBtn}
+                    onPress={() => setBannerNotice(null)}
+                  >
+                    <Feather name="x" size={16} color="#64748B" />
+                  </TouchableOpacity>
+                </View>
+              )}
+
               {authMode === 'phone' ? (
                 /* ================= PHONE NUMBER + OTP FLOW ================= */
                 <>
                   {/* Phone Number Input */}
                   <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Mobile Number <Text style={styles.req}>*</Text></Text>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <Text style={styles.label}>Mobile Number <Text style={styles.req}>*</Text></Text>
+                      {otpSent && (
+                        <TouchableOpacity
+                          onPress={() => {
+                            setOtpSent(false);
+                            setOtpCode('');
+                            setConfirmationResult(null);
+                            setBannerNotice(null);
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, color: COLORS.teal, fontWeight: '700' }}>
+                            Change number
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
                     <View style={[
                       styles.inputWrap,
-                      isPhoneFocused ? styles.inputWrapActive : styles.inputWrapInactive
+                      phoneError ? styles.inputWrapError : isPhoneFocused ? styles.inputWrapActive : styles.inputWrapInactive
                     ]}>
                       <View style={styles.countryCodeBadge}>
                         <Text style={styles.countryCodeText}>🇮🇳 +91</Text>
@@ -338,22 +559,27 @@ export default function LoginScreen() {
                         value={phoneNumber}
                         onChangeText={(txt) => {
                           setPhoneNumber(txt.replace(/\D/g, ''));
+                          if (phoneError) setPhoneError(null);
                           if (otpSent) setOtpSent(false);
                         }}
                         onFocus={() => setIsPhoneFocused(true)}
                         onBlur={() => setIsPhoneFocused(false)}
-                        editable={!isLoading}
+                        editable={!isLoading && !otpSent}
                       />
-                      {phoneNumber.length === 10 && !otpSent && (
+                      {phoneNumber.length === 10 && !otpSent && !phoneError && (
                         <Feather name="check-circle" size={18} color="#16A34A" style={{ marginRight: 12 }} />
                       )}
                     </View>
+
+                    {phoneError && (
+                      <Text style={styles.inlineErrorText}>{phoneError}</Text>
+                    )}
                   </View>
 
                   {/* OTP Input Field (Shows after OTP is sent) */}
                   {otpSent && (
                     <View style={styles.inputGroup}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                         <Text style={styles.label}>Enter 6-digit OTP <Text style={styles.req}>*</Text></Text>
                         {resendTimer > 0 ? (
                           <Text style={{ fontSize: 11, color: COLORS.textMuted, fontWeight: '600' }}>
@@ -534,10 +760,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Hidden recaptcha container for web */}
-            {Platform.OS === 'web' && (
-              <View id="recaptcha-container" style={{ display: 'none' }} />
-            )}
+
 
             {/* ================= RESET PASSWORD MODAL ================= */}
             <Modal
@@ -670,6 +893,82 @@ export default function LoginScreen() {
                 </View>
               </View>
             </Modal>
+
+            {/* ================= UNREGISTERED PHONE / NEW USER MODAL ================= */}
+            <Modal
+              visible={unregisteredModalVisible}
+              transparent={true}
+              animationType="fade"
+              onRequestClose={() => setUnregisteredModalVisible(false)}
+            >
+              <View style={styles.modalBackdrop}>
+                <View style={styles.unregisteredCard}>
+                  {/* Icon badge */}
+                  <View style={styles.unregIconContainer}>
+                    <View style={styles.unregIconCircle}>
+                      <Feather name="user-plus" size={30} color={COLORS.teal} />
+                    </View>
+                  </View>
+
+                  {/* Verified Phone badge */}
+                  <View style={styles.phoneBadge}>
+                    <Feather name="check-circle" size={14} color="#059669" />
+                    <Text style={styles.phoneBadgeText}>
+                      +91 {(unregisteredPhoneData?.phoneNumber || phoneNumber).replace(/\D/g, '').slice(-10)} • Verified
+                    </Text>
+                  </View>
+
+                  {/* Title & Subtitle */}
+                  <Text style={styles.unregTitle}>
+                    You're new to Allver
+                  </Text>
+
+                  <Text style={styles.unregSubtitle}>
+                    This mobile number isn't registered with Allver yet.
+                  </Text>
+
+                  {/* Action Buttons */}
+                  <View style={{ width: '100%', marginTop: 24, gap: 12 }}>
+                    <TouchableOpacity
+                      style={styles.unregCreateBtn}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        const verifiedNum = unregisteredPhoneData?.phoneNumber || phoneNumber;
+                        const token = unregisteredPhoneData?.idToken || '';
+                        setUnregisteredModalVisible(false);
+                        router.push({
+                          pathname: '/signup',
+                          params: {
+                            verifiedPhone: verifiedNum,
+                            idToken: token,
+                          },
+                        });
+                      }}
+                    >
+                      <Text style={styles.unregCreateBtnText}>Create Account</Text>
+                      <Feather name="arrow-right" size={18} color={COLORS.white} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.unregCancelBtn}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setUnregisteredModalVisible(false);
+                        setUnregisteredPhoneData(null);
+                        setOtpCode('');
+                        setOtpSent(false);
+                        setConfirmationResult(null);
+                        setPhoneNumber('');
+                        setPhoneError(null);
+                        setBannerNotice(null);
+                      }}
+                    >
+                      <Text style={styles.unregCancelBtnText}>Try another number</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </Modal>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -761,6 +1060,79 @@ const styles = StyleSheet.create({
     }),
   },
 
+  /* In-App Notification Banner Styles */
+  bannerContainer: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 12,
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    gap: 10,
+    marginBottom: 4,
+  },
+  bannerError: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  bannerSuccess: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  bannerInfo: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  bannerIconCol: {
+    marginTop: 2,
+  },
+  bannerTextCol: {
+    flex: 1,
+  },
+  bannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  bannerMessage: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  bannerTextError: {
+    color: '#991B1B',
+  },
+  bannerTextSuccess: {
+    color: '#166534',
+  },
+  bannerTextInfo: {
+    color: '#1E40AF',
+  },
+  bannerActionBtn: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  bannerActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  bannerCloseBtn: {
+    padding: 2,
+  },
+
+  /* Inline Error */
+  inlineErrorText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 6,
+    marginLeft: 4,
+  },
+
   /* Input Group */
   inputGroup: {},
   label: {
@@ -784,6 +1156,21 @@ const styles = StyleSheet.create({
   },
   inputWrapActive: {
     borderColor: COLORS.teal,
+  },
+  inputWrapError: {
+    borderColor: '#DC2626',
+    backgroundColor: '#FEF2F2',
+  },
+  countryCodeBadge: {
+    paddingLeft: 14,
+    paddingRight: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  countryCodeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textDark,
   },
   inputIcon: {
     paddingHorizontal: 14,
@@ -879,4 +1266,116 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
+  /* Unregistered Phone / New User Modal Styles */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(10, 22, 40, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  unregisteredCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    width: '100%',
+    maxWidth: 390,
+    alignItems: 'center',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.25,
+        shadowRadius: 18,
+      },
+      android: {
+        elevation: 10,
+      },
+    }),
+  },
+  unregIconContainer: {
+    marginBottom: 16,
+  },
+  unregIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#E6FFFA',
+    borderWidth: 2,
+    borderColor: '#99F6E4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  phoneBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginBottom: 16,
+  },
+  phoneBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#065F46',
+    letterSpacing: 0.5,
+  },
+  unregTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 8,
+  },
+  unregSubtitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: 8,
+  },
+  unregCreateBtn: {
+    backgroundColor: COLORS.teal,
+    borderRadius: 16,
+    height: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.teal,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  unregCreateBtnText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  unregCancelBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  unregCancelBtnText: {
+    color: COLORS.textMuted,
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });

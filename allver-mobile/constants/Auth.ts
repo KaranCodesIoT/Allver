@@ -125,6 +125,50 @@ export const removeStoredUser = async (): Promise<void> => {
   }
 };
 
+/**
+ * Completely clears the authentication session, active-job memory, and active sockets.
+ * Guarantees no state leakage across user logins.
+ */
+export const clearAuthSession = async (): Promise<void> => {
+  try {
+    // 1. Immediately wipe active-job state in memory across the frontend
+    try {
+      const { notifyClearActiveJob } = require('../context/ActiveJobContext');
+      if (typeof notifyClearActiveJob === 'function') {
+        notifyClearActiveJob();
+      }
+    } catch (e) {}
+
+    // 2. Disconnect and stop any active-job socket subscriptions
+    try {
+      const socketModule = require('../utils/SocketService');
+      const socketService = socketModule?.default || socketModule;
+      if (socketService && typeof socketService.disconnect === 'function') {
+        socketService.disconnect();
+      }
+    } catch (e) {}
+
+    // 3. Remove tokens and stored user session from SecureStore & localStorage
+    await removeToken();
+    await removeStoredUser();
+
+    // 4. Wipe global references
+    (global as any).currentUser = null;
+    (global as any).currentPushToken = null;
+    (global as any).currentFcmToken = null;
+
+    if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      localStorage.removeItem('currentUser');
+      localStorage.removeItem('userToken');
+    }
+    console.log('[Auth] Auth session, active job memory, and sockets fully cleared.');
+  } catch (error) {
+    console.error('Error clearing auth session:', error);
+  }
+};
+
 const LANG_KEY = 'userLanguage';
 
 export const saveStoredLanguage = async (lang: string): Promise<void> => {

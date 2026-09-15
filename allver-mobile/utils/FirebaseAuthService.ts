@@ -19,7 +19,9 @@ export function formatIndianPhoneNumber(phone: string): string {
 export interface SendOtpResult {
   success: boolean;
   confirmation?: any;
+  title?: string;
   message?: string;
+  code?: string;
   error?: any;
 }
 
@@ -28,7 +30,9 @@ export interface VerifyOtpResult {
   idToken?: string;
   phoneNumber?: string;
   uid?: string;
+  title?: string;
   message?: string;
+  code?: string;
   error?: any;
 }
 
@@ -39,8 +43,14 @@ export async function sendFirebaseOtp(phoneNumber: string): Promise<SendOtpResul
   const formattedPhone = formatIndianPhoneNumber(phoneNumber);
   console.log('[FirebaseAuthService] Sending OTP to:', formattedPhone);
 
-  if (!formattedPhone || formattedPhone.length < 12) {
-    return { success: false, message: 'Please enter a valid 10-digit mobile number.' };
+  const rawDigits = phoneNumber.replace(/\D/g, '');
+  if (!rawDigits || rawDigits.length !== 10) {
+    return {
+      success: false,
+      title: 'Invalid Mobile Number',
+      message: 'Please enter a valid 10-digit mobile number.',
+      code: 'INVALID_PHONE',
+    };
   }
 
   try {
@@ -68,22 +78,90 @@ export async function sendFirebaseOtp(phoneNumber: string): Promise<SendOtpResul
       const auth = getAuth(app);
 
       if (typeof window !== 'undefined') {
-        if (!(window as any).recaptchaVerifier) {
-          (window as any).recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-            size: 'invisible'
+        let verifier = (window as any).recaptchaVerifier;
+
+        if (!verifier) {
+          const oldContainer = document.getElementById('recaptcha-container');
+          if (oldContainer) {
+            oldContainer.remove();
+          }
+
+          const container = document.createElement('div');
+          container.id = 'recaptcha-container';
+          document.body.appendChild(container);
+
+          verifier = new RecaptchaVerifier(auth, container, {
+            size: 'invisible',
+            callback: () => {
+              console.log('[FirebaseAuthService] reCAPTCHA solved successfully.');
+            }
           });
+          (window as any).recaptchaVerifier = verifier;
         }
-        const confirmation = await signInWithPhoneNumber(auth, formattedPhone, (window as any).recaptchaVerifier);
-        return { success: true, confirmation };
+
+        try {
+          const confirmation = await signInWithPhoneNumber(auth, formattedPhone, verifier);
+          return { success: true, confirmation };
+        } catch (phoneAuthErr: any) {
+          try {
+            verifier.clear();
+          } catch (e) {}
+          (window as any).recaptchaVerifier = null;
+          const container = document.getElementById('recaptcha-container');
+          if (container) {
+            container.remove();
+          }
+          throw phoneAuthErr;
+        }
       }
 
-      return { success: false, message: 'Web recaptcha window is not available.' };
+      return {
+        success: false,
+        title: 'Something went wrong',
+        message: 'Please check your internet connection and try again.',
+        code: 'WEB_RECAPTCHA_UNAVAILABLE',
+      };
     }
   } catch (err: any) {
-    console.error('[FirebaseAuthService Error] sendFirebaseOtp:', err);
+    console.error('[FirebaseAuthService Technical Error] sendFirebaseOtp:', err);
+    let title = 'Something went wrong';
+    let message = 'Please check your internet connection and try again.';
+    let code = 'UNKNOWN_ERROR';
+    const errCode = err?.code || '';
+    const errStr = err?.message || String(err);
+
+    if (errCode === 'auth/too-many-requests' || errStr.includes('too-many-requests')) {
+      title = 'Too many OTP attempts';
+      message = 'Please wait a while before requesting another OTP.';
+      code = 'TOO_MANY_REQUESTS';
+    } else if (
+      errCode === 'auth/missing-client-identifier' ||
+      errStr.includes('missing-client-identifier') ||
+      errCode === 'auth/invalid-app-credential' ||
+      errStr.includes('invalid-app-credential')
+    ) {
+      title = "We couldn't verify this device.";
+      message = 'Please check your connection and try again.';
+      code = 'APP_VERIFICATION_FAILED';
+    } else if (errCode === 'auth/quota-exceeded' || errStr.includes('quota-exceeded')) {
+      title = 'Too many OTP attempts';
+      message = 'SMS limit reached for today. Please wait a while before trying again.';
+      code = 'QUOTA_EXCEEDED';
+    } else if (errCode === 'auth/invalid-phone-number' || errStr.includes('invalid-phone-number')) {
+      title = 'Invalid Mobile Number';
+      message = 'Please enter a valid 10-digit mobile number.';
+      code = 'INVALID_PHONE';
+    } else if (errStr.includes('network') || errCode === 'auth/network-request-failed') {
+      title = 'Something went wrong';
+      message = 'Please check your internet connection and try again.';
+      code = 'NETWORK_ERROR';
+    }
+
     return {
       success: false,
-      message: err.message || 'Failed to send OTP. Please check your phone number and try again.',
+      title,
+      message,
+      code,
       error: err,
     };
   }
@@ -97,11 +175,21 @@ export async function verifyFirebaseOtp(confirmation: any, otpCode: string): Pro
   console.log('[FirebaseAuthService] Verifying OTP code of length:', cleanCode.length);
 
   if (!cleanCode || cleanCode.length < 6) {
-    return { success: false, message: 'Please enter the complete 6-digit OTP.' };
+    return {
+      success: false,
+      title: 'Incorrect OTP',
+      message: 'Please enter the complete 6-digit OTP.',
+      code: 'INVALID_CODE_LENGTH',
+    };
   }
 
   if (!confirmation || typeof confirmation.confirm !== 'function') {
-    return { success: false, message: 'Session expired. Please request a new OTP.' };
+    return {
+      success: false,
+      title: 'This OTP has expired.',
+      message: 'This OTP has expired.',
+      code: 'EXPIRED_OTP',
+    };
   }
 
   try {
@@ -109,7 +197,12 @@ export async function verifyFirebaseOtp(confirmation: any, otpCode: string): Pro
     const user = userCredential.user;
     
     if (!user) {
-      return { success: false, message: 'Failed to retrieve user session from Firebase.' };
+      return {
+        success: false,
+        title: 'Something went wrong',
+        message: 'Failed to retrieve user session from Firebase.',
+        code: 'USER_NOT_FOUND',
+      };
     }
 
     // Retrieve fresh Firebase ID token to send to backend for server-side verification
@@ -125,16 +218,45 @@ export async function verifyFirebaseOtp(confirmation: any, otpCode: string): Pro
       uid,
     };
   } catch (err: any) {
-    console.error('[FirebaseAuthService Error] verifyFirebaseOtp:', err);
-    let errorMsg = 'Incorrect OTP. Please try again.';
-    if (err.code === 'auth/invalid-verification-code' || err.message?.includes('invalid-verification-code')) {
-      errorMsg = 'Invalid OTP code. Please enter the correct 6-digit code.';
-    } else if (err.code === 'auth/session-expired' || err.message?.includes('session-expired')) {
-      errorMsg = 'OTP has expired. Please tap "Resend OTP" to request a new code.';
+    console.error('[FirebaseAuthService Technical Error] verifyFirebaseOtp:', err);
+    let title = 'Incorrect OTP';
+    let message = 'Please check the OTP and try again.';
+    let code = 'INVALID_OTP';
+    const errCode = err?.code || '';
+    const errStr = err?.message || String(err);
+
+    if (errCode === 'auth/invalid-verification-code' || errStr.includes('invalid-verification-code')) {
+      title = 'Incorrect OTP';
+      message = 'Please check the OTP and try again.';
+      code = 'INVALID_OTP';
+    } else if (errCode === 'auth/session-expired' || errStr.includes('session-expired') || errStr.includes('code-expired')) {
+      title = 'This OTP has expired.';
+      message = 'This OTP has expired.';
+      code = 'EXPIRED_OTP';
+    } else if (errCode === 'auth/too-many-requests' || errStr.includes('too-many-requests')) {
+      title = 'Too many OTP attempts';
+      message = 'Please wait a while before requesting another OTP.';
+      code = 'TOO_MANY_REQUESTS';
+    } else if (
+      errCode === 'auth/missing-client-identifier' ||
+      errStr.includes('missing-client-identifier') ||
+      errCode === 'auth/invalid-app-credential' ||
+      errStr.includes('invalid-app-credential')
+    ) {
+      title = "We couldn't verify this device.";
+      message = 'Please check your connection and try again.';
+      code = 'APP_VERIFICATION_FAILED';
+    } else if (errStr.includes('network') || errCode === 'auth/network-request-failed') {
+      title = 'Something went wrong';
+      message = 'Please check your internet connection and try again.';
+      code = 'NETWORK_ERROR';
     }
+
     return {
       success: false,
-      message: errorMsg,
+      title,
+      message,
+      code,
       error: err,
     };
   }
