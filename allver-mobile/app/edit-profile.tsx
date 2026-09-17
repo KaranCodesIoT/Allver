@@ -1119,16 +1119,19 @@ const styles = StyleSheet.create({
   /* LAYOUT */
   formContainer: {
     padding: 0,
-    flexDirection: width > 768 ? 'row' : 'column',
-    gap: 20,
+    flexDirection: 'column',
+    gap: 16,
+    width: '100%',
+    maxWidth: 680,
+    alignSelf: 'center',
   },
   leftCol: {
-    flex: width > 768 ? 1.2 : 1,
-    gap: 20,
+    gap: 16,
+    width: '100%',
   },
   rightCol: {
-    flex: width > 768 ? 2 : 1,
-    gap: 20,
+    gap: 16,
+    width: '100%',
   },
 
   /* CARDS */
@@ -1140,7 +1143,7 @@ const styles = StyleSheet.create({
     borderLeftWidth: 0,
     borderRightWidth: 0,
     borderColor: COLORS.border,
-    padding: 20,
+    padding: 18,
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
@@ -1152,7 +1155,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: COLORS.textMuted,
     letterSpacing: 0.5,
-    marginBottom: 16,
+    marginBottom: 14,
     textTransform: 'uppercase',
   },
 

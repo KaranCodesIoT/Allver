@@ -305,7 +305,7 @@ export default function RootLayout() {
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="choose-language" options={{ headerShown: false }} />
             <Stack.Screen name="signup" options={{ headerShown: false }} />
-            <Stack.Screen name="login" options={{ headerShown: false }} />
+            <Stack.Screen name="login" options={{ headerShown: false, contentStyle: { backgroundColor: '#F8FAFC' } }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="portfolio-highlights" options={{ headerShown: false }} />
             <Stack.Screen name="architect-profile" options={{ headerShown: false }} />
