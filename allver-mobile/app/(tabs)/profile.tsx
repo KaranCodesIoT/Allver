@@ -825,6 +825,22 @@ export default function ProfileScreen() {
         if (parsed) {
           setCurrentUser(parsed);
           fetchReviews(parsed._id);
+
+          // Refresh user data from backend to ensure verified status & email are up to date
+          if (parsed._id) {
+            fetch(`${BACKEND_URL}/api/user/${parsed._id}`)
+              .then(r => r.json())
+              .then(freshData => {
+                if (freshData?.user) {
+                  setCurrentUser(freshData.user);
+                  (global as any).currentUser = freshData.user;
+                  if (Platform.OS === 'web' && typeof localStorage !== 'undefined') {
+                    localStorage.setItem('currentUser', JSON.stringify(freshData.user));
+                  }
+                }
+              })
+              .catch(() => {});
+          }
           
           if (parsed.notificationSettings) {
             setNotifSettings({
@@ -1053,6 +1069,43 @@ export default function ProfileScreen() {
     });
     return unsubscribe;
   }, [navigation]);
+
+  const renderEmailVerificationBadge = () => {
+    if (!currentUser) return null;
+    const isVerified = !!currentUser.emailVerified;
+    const hasRealEmail = currentUser.email && !currentUser.email.endsWith('@allver.app');
+
+    return (
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => router.push('/email-verification')}
+        style={[
+          styles.emailBadgeContainer,
+          isVerified ? styles.emailBadgeVerified : styles.emailBadgeUnverified,
+        ]}
+      >
+        <MaterialCommunityIcons
+          name={isVerified ? "check-decagram" : "email-alert-outline"}
+          size={14}
+          color={isVerified ? "#15803D" : "#B45309"}
+        />
+        <Text
+          style={[
+            styles.emailBadgeText,
+            isVerified ? styles.emailBadgeVerifiedText : styles.emailBadgeUnverifiedText,
+          ]}
+          numberOfLines={1}
+        >
+          {isVerified 
+            ? `Verified: ${currentUser.email}` 
+            : (hasRealEmail ? `Verify Email: ${currentUser.email}` : 'Add & Verify Email')}
+        </Text>
+        {!isVerified && (
+          <Feather name="chevron-right" size={13} color="#B45309" />
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   const formatDateString = (y: number, m: number, d: number) => {
     const monthStr = m + 1;
@@ -1815,6 +1868,9 @@ export default function ProfileScreen() {
               <Text style={styles.labourIdText}>ID: ALV-WS-{currentUser._id.toString().slice(-5).toUpperCase()}</Text>
             )}
 
+            {/* Email Verification Status */}
+            {renderEmailVerificationBadge()}
+
             {/* Edit Profile Button */}
             <TouchableOpacity style={styles.labourEditProfileBtn} onPress={handleEditProfile} activeOpacity={0.85}>
               <Feather name="edit-2" size={14} color={COLORS.textDark} style={{ marginRight: 6 }} />
@@ -1894,9 +1950,14 @@ export default function ProfileScreen() {
               <Text style={[styles.subtitleText, { textAlign: 'center', marginBottom: 6, fontWeight: '500' }]}>{cityOnly}</Text>
               
               {/* Phone Number */}
-              <View style={[styles.phoneRow, { justifyContent: 'center', marginBottom: 12, gap: 6 }]}>
+              <View style={[styles.phoneRow, { justifyContent: 'center', marginBottom: 8, gap: 6 }]}>
                 <Feather name="phone" size={14} color={COLORS.textMuted} />
                 <Text style={styles.phoneText}>{user.phone}</Text>
+              </View>
+
+              {/* Email Verification Status */}
+              <View style={{ alignItems: 'center', marginBottom: 10 }}>
+                {renderEmailVerificationBadge()}
               </View>
 
               {/* Edit Profile Button */}
@@ -1941,9 +2002,14 @@ export default function ProfileScreen() {
               </View>
 
               {/* Name + Role subtitle */}
-              <Text style={[styles.subtitleText, { marginBottom: 15 }]}>
+              <Text style={[styles.subtitleText, { marginBottom: 8 }]}>
                 {user.name}  •  {currentUser?.role || 'Architect'}
               </Text>
+
+              {/* Email Verification Status */}
+              <View style={{ alignItems: 'flex-start', marginBottom: 12 }}>
+                {renderEmailVerificationBadge()}
+              </View>
 
               {currentUser?._id && (
                 <View style={styles.followStatsRow}>
@@ -5486,5 +5552,35 @@ const guestStyles = StyleSheet.create({
     fontWeight: '600',
     color: '#1E293B',
     flex: 1,
+  },
+  emailBadgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    alignSelf: 'center',
+    marginVertical: 4,
+    gap: 6,
+  },
+  emailBadgeVerified: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  emailBadgeUnverified: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  emailBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  emailBadgeVerifiedText: {
+    color: '#15803D',
+  },
+  emailBadgeUnverifiedText: {
+    color: '#B45309',
   },
 });

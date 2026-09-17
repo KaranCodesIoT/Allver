@@ -619,7 +619,7 @@ export default function ContractorDetailScreen() {
           <View style={styles.avatarRow}>
             <View style={styles.avatarContainer}>
               <Image 
-                source={{ uri: displayAvatar || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=300&auto=format&fit=crop' }} 
+                source={{ uri: displayAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=300&auto=format&fit=crop' }} 
                 style={styles.avatarImage} 
                 contentFit="cover" 
               />
@@ -634,10 +634,19 @@ export default function ContractorDetailScreen() {
                 <Text style={styles.statLabel}>{t('projects')}</Text>
               </View>
               <View style={styles.statDivider} />
-              <View style={styles.statBox}>
+              <TouchableOpacity 
+                style={styles.statBox}
+                activeOpacity={0.7}
+                onPress={() => {
+                  router.push({
+                    pathname: '/followers-list',
+                    params: { userId: id, type: 'followers', userName: firmName || name }
+                  });
+                }}
+              >
                 <Text style={styles.statNumber}>{followerCountVal}</Text>
                 <Text style={styles.statLabel}>{t('followers')}</Text>
-              </View>
+              </TouchableOpacity>
               <View style={styles.statDivider} />
               <View style={styles.statBox}>
                 <View style={styles.ratingRow}>
@@ -1243,9 +1252,9 @@ const styles = StyleSheet.create({
   /* NAVIGATION OVERLAY */
   navHeader: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 20,
-    left: 20,
-    right: 20,
+    top: 16,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     zIndex: 10,
@@ -1255,35 +1264,78 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
   },
 
-  /* COVER & PROFILE */
-  coverContainer: { height: 220, position: 'relative' },
-  coverImage: { width: '100%', height: '100%' },
-  avatarWrapper: {
-    position: 'absolute',
-    bottom: -40,
-    left: 20,
-    width: 86,
-    height: 86,
-    borderRadius: 43,
+  /* COVER PHOTO */
+  coverPhotoContainer: {
+    height: 200,
+    width: '100%',
+    position: 'relative',
+    backgroundColor: '#0F172A',
+  },
+  coverPhoto: {
+    width: '100%',
+    height: '100%',
+  },
+  coverOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.22)',
+  },
+
+  /* PROFILE HEADER CARD */
+  profileHeaderCard: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    marginTop: -26,
+    paddingTop: 18,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+
+  /* AVATAR ROW & STATS */
+  avatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  avatarContainer: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
     borderWidth: 3,
     borderColor: COLORS.white,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.bgLight,
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
+    elevation: 4,
   },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 40 },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 38,
+  },
   verifiedBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
+    bottom: -1,
+    right: -1,
     width: 22,
     height: 22,
     borderRadius: 11,
@@ -1293,60 +1345,126 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  /* PROFILE INFO DETAILS */
-  profileDetailsBlock: { marginTop: 50, paddingHorizontal: 20 },
-  nameSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
-  profileName: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, flex: 1, marginRight: 10 },
-  followersContainer: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  followersText: { fontSize: 13, color: COLORS.textMuted, fontWeight: '500' },
-  
-  subtitleText: { fontSize: 13, color: COLORS.textMuted, marginBottom: 15 },
-
-  /* QUICK INFO TAGS */
-  quickInfoRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  infoTag: {
+  statsSummaryContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.bgLight,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 4,
-    justifyContent: 'center'
+    justifyContent: 'space-around',
+    marginLeft: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  infoTagText: { fontSize: 11, fontWeight: '600', color: COLORS.textDark },
+  statBox: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statNumber: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.textDark,
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: COLORS.border,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+
+  /* PROFILE INFO DETAILS */
+  profileName: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    letterSpacing: -0.3,
+    marginBottom: 2,
+  },
+  firmName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginBottom: 8,
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 16,
+  },
+  locationText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  dotSeparator: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginHorizontal: 2,
+  },
 
   /* ACTION BUTTONS */
-  actionButtonsRow: { flexDirection: 'row', gap: 10, marginBottom: 25 },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 22,
+  },
   followBtn: {
-    flex: 1.5,
-    height: 32,
-    backgroundColor: '#1BC47D', // Premium green accent
-    borderRadius: 16, // Curved borders
+    flex: 1.3,
+    height: 38,
+    backgroundColor: '#10B981',
+    borderRadius: 19,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
   },
   followingBtn: {
     backgroundColor: COLORS.bgLight,
     borderWidth: 1,
     borderColor: COLORS.border,
+    shadowOpacity: 0,
+    elevation: 0,
   },
-  followBtnText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
+  followBtnText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   outlineActionBtn: {
     flex: 1,
-    height: 32,
-    borderWidth: 1,
+    height: 38,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
-    borderRadius: 16,
+    borderRadius: 19,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORS.white,
   },
-  outlineActionText: { color: COLORS.textDark, fontSize: 12, fontWeight: '600' },
+  outlineActionText: {
+    color: COLORS.textDark,
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   /* ABOUT SECTION */
   aboutSection: { marginBottom: 20 },

@@ -66,6 +66,7 @@ const PRESET_AVATARS = [
 ];
 
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
+import EmailVerificationCard from '../components/EmailVerificationCard';
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -841,6 +842,16 @@ export default function EditProfileScreen() {
                 </View>
                 <Text style={styles.phoneFieldHint}>This will appear on your public profile for client contact.</Text>
               </View>
+
+              {/* Email Address & Verification */}
+              <EmailVerificationCard
+                initialEmail={currentUser?.email || ''}
+                initialVerified={Boolean(currentUser?.emailVerified)}
+                userId={currentUser?._id}
+                onVerificationSuccess={(updatedUser) => {
+                  setCurrentUser(updatedUser);
+                }}
+              />
 
               {/* Language Preference */}
               <View style={styles.card}>

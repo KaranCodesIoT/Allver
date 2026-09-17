@@ -2043,7 +2043,12 @@ async function verifyFirebaseIdTokenHelper(idToken) {
     try {
       const decoded = await admin.auth().verifyIdToken(idToken);
       console.log('[Firebase Admin] Token successfully verified via Admin SDK for UID:', decoded.uid);
-      return decoded;
+      return {
+        uid: decoded.uid,
+        phone_number: decoded.phone_number,
+        email: decoded.email,
+        email_verified: Boolean(decoded.email_verified)
+      };
     } catch (e) {
       console.warn('[Firebase Admin] Token verification failed:', e.message);
     }
@@ -2060,11 +2065,12 @@ async function verifyFirebaseIdTokenHelper(idToken) {
     const data = await resp.json();
     if (data.users && data.users.length > 0) {
       const u = data.users[0];
-      console.log('[Firebase Auth Helper] Token successfully verified for UID:', u.localId, 'phone:', u.phoneNumber);
+      console.log('[Firebase Auth Helper] Token successfully verified for UID:', u.localId, 'phone:', u.phoneNumber, 'emailVerified:', u.emailVerified);
       return {
         uid: u.localId,
         phone_number: u.phoneNumber,
-        email: u.email
+        email: u.email,
+        email_verified: Boolean(u.emailVerified)
       };
     } else {
       console.warn('[Firebase Auth Helper] Token lookup returned no user. Details:', data.error?.message || 'Unknown response');
@@ -2135,6 +2141,18 @@ app.post('/api/auth/firebase-phone-login', async (req, res) => {
       });
     }
 
+    // Auto-sync email & verification status from Firebase if present
+    if (decoded.email && decoded.email_verified) {
+      const cleanTokenEmail = decoded.email.toLowerCase().trim();
+      if (user.email !== cleanTokenEmail || !user.emailVerified) {
+        user.email = cleanTokenEmail;
+        user.emailVerified = true;
+      }
+    }
+    if (decoded.uid && !user.firebaseUid) {
+      user.firebaseUid = decoded.uid;
+    }
+
     user.lastActive = new Date();
     await user.save();
 
@@ -2158,6 +2176,103 @@ app.post('/api/auth/firebase-phone-login', async (req, res) => {
   } catch (error) {
     console.error('[Firebase Phone Login] Error:', error);
     return res.status(500).json({ success: false, message: 'Server error during phone login: ' + (error.message || error) });
+  }
+});
+
+// POST /api/auth/sync-email-verification
+// Authoritative endpoint: Cryptographically verifies the Firebase ID token and synchronizes verified email state to the User document
+app.post('/api/auth/sync-email-verification', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.slice(7).trim() : null;
+    const idToken = req.body?.idToken || bearerToken;
+    const userId = req.body?.userId;
+
+    if (!idToken) {
+      return res.status(400).json({ success: false, message: 'Firebase ID token is required' });
+    }
+
+    const decoded = await verifyFirebaseIdTokenHelper(idToken);
+    if (!decoded) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired Firebase verification token' });
+    }
+
+    const tokenUid = decoded.uid;
+    const tokenEmail = decoded.email ? decoded.email.toLowerCase().trim() : null;
+    const tokenPhone = decoded.phone_number;
+    const isEmailVerified = Boolean(decoded.email_verified);
+
+    console.log(`[Email Verification Sync] Validated Firebase Token: UID=${tokenUid}, Email=${tokenEmail}, Verified=${isEmailVerified}, Phone=${tokenPhone}`);
+
+    if (!tokenEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'No email address is linked to this Firebase account yet. Please send a verification email first.'
+      });
+    }
+
+    const User = mongoose.model('User');
+    let user = null;
+
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      user = await User.findById(userId);
+    }
+
+    if (!user && tokenPhone) {
+      const e164 = formatPhoneNumberToE164(tokenPhone);
+      const rawDigits10 = e164.replace(/\D/g, '').slice(-10);
+      user = await User.findOne({
+        $or: [
+          { phoneNumber: e164 },
+          { phoneNumber: rawDigits10 },
+          { phone: e164 },
+          { phone: rawDigits10 }
+        ]
+      });
+    }
+
+    if (!user && tokenUid) {
+      user = await User.findOne({ firebaseUid: tokenUid });
+    }
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User account not found to synchronize verification' });
+    }
+
+    // Check if another account in MongoDB already has this email
+    const duplicate = await User.findOne({
+      email: tokenEmail,
+      _id: { $ne: user._id }
+    });
+    if (duplicate) {
+      return res.status(409).json({
+        success: false,
+        message: 'This email is already associated with another Allver account.'
+      });
+    }
+
+    // Update user document with verified email
+    user.email = tokenEmail;
+    user.emailVerified = isEmailVerified;
+    if (tokenUid) {
+      user.firebaseUid = tokenUid;
+    }
+    user.updatedAt = new Date();
+    await user.save();
+
+    const userObj = user.toObject();
+    delete userObj.password;
+
+    return res.status(200).json({
+      success: true,
+      email: tokenEmail,
+      emailVerified: isEmailVerified,
+      user: userObj,
+      message: isEmailVerified ? 'Email successfully verified and synchronized!' : 'Email updated. Verification pending in Firebase.'
+    });
+  } catch (error) {
+    console.error('[Email Verification Sync] Error:', error);
+    return res.status(500).json({ success: false, message: 'Error synchronizing email verification: ' + (error.message || error) });
   }
 });
 

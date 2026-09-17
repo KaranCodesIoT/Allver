@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const userSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+  emailVerified: { type: Boolean, default: false },
+  firebaseUid: { type: String, default: null, sparse: true },
 
   phoneNumber: { type: String, default: '' },
   password: { type: String, required: true },

@@ -1,4 +1,6 @@
 import { Platform } from 'react-native';
+import { BACKEND_URL } from '../constants/Config';
+import { saveStoredUser } from '../constants/Auth';
 
 export function formatIndianPhoneNumber(phone: string): string {
   if (!phone) return '';
@@ -258,6 +260,291 @@ export async function verifyFirebaseOtp(confirmation: any, otpCode: string): Pro
       message,
       code,
       error: err,
+    };
+  }
+}
+
+// ============================================================================
+// EMAIL VERIFICATION & LINKING ON EXISTING FIREBASE USER (PHONE PRESERVED)
+// ============================================================================
+
+export interface EmailVerificationResult {
+  success: boolean;
+  title?: string;
+  message?: string;
+  code?: string;
+  email?: string;
+  emailVerified?: boolean;
+  cooldownSeconds?: number;
+  user?: any;
+  error?: any;
+}
+
+// Track resend cooldown timestamp in memory
+let lastVerificationEmailSentAt = 0;
+const RESEND_COOLDOWN_MS = 60000; // 60 seconds
+
+/**
+ * Returns the active Firebase User instance across Native & Web.
+ */
+export function getFirebaseCurrentUser(): any {
+  try {
+    if (Platform.OS !== 'web') {
+      const auth = require('@react-native-firebase/auth').default;
+      return auth().currentUser;
+    } else {
+      const { getAuth } = require('firebase/auth');
+      const { getApps, initializeApp } = require('firebase/app');
+      const firebaseConfig = {
+        apiKey: "AIzaSyCGYTbKMrm04MqY4NDQEq1RhU7Bvj8gJZ0",
+        authDomain: "allver-f9cbf.firebaseapp.com",
+        projectId: "allver-f9cbf",
+        storageBucket: "allver-f9cbf.firebasestorage.app",
+        messagingSenderId: "218434531138",
+        appId: "1:218434531138:web:a6db413cbf2b801a6b0c6f"
+      };
+      const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+      return getAuth(app).currentUser;
+    }
+  } catch (e) {
+    console.error('[FirebaseAuthService] Error retrieving Firebase current user:', e);
+    return null;
+  }
+}
+
+/**
+ * Validates email address format.
+ */
+export function isValidEmailFormat(email: string): boolean {
+  if (!email || typeof email !== 'string') return false;
+  const trimmed = email.trim();
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return re.test(trimmed);
+}
+
+/**
+ * Links or updates the email on the EXISTING Firebase phone-authenticated user,
+ * then sends the standard Firebase verification email.
+ * PRESERVES the phone identity without creating a separate Firebase user.
+ */
+export async function linkEmailAndSendVerification(email: string): Promise<EmailVerificationResult> {
+  const cleanEmail = (email || '').trim().toLowerCase();
+
+  if (!isValidEmailFormat(cleanEmail)) {
+    return {
+      success: false,
+      title: 'Invalid Email Address',
+      message: 'Please enter a valid email address (e.g. name@example.com).',
+      code: 'INVALID_EMAIL'
+    };
+  }
+
+  const currentUser = getFirebaseCurrentUser();
+  if (!currentUser) {
+    return {
+      success: false,
+      title: 'Login Required',
+      message: 'You must be logged in with your mobile number to link an email.',
+      code: 'NO_AUTH_USER'
+    };
+  }
+
+  // Resend cooldown protection check
+  const timeSinceLastSend = Date.now() - lastVerificationEmailSentAt;
+  if (timeSinceLastSend < RESEND_COOLDOWN_MS) {
+    const remaining = Math.ceil((RESEND_COOLDOWN_MS - timeSinceLastSend) / 1000);
+    return {
+      success: false,
+      title: 'Please Wait',
+      message: `Please wait ${remaining} seconds before requesting another email.`,
+      code: 'COOLDOWN_ACTIVE',
+      cooldownSeconds: remaining
+    };
+  }
+
+  try {
+    // 1. Update/Link the email on the existing Firebase user if changed
+    const currentAttachedEmail = (currentUser.email || '').toLowerCase().trim();
+    
+    if (currentAttachedEmail !== cleanEmail) {
+      console.log(`[FirebaseAuthService] Attaching email "${cleanEmail}" to existing user UID: ${currentUser.uid}...`);
+      if (Platform.OS !== 'web') {
+        await currentUser.updateEmail(cleanEmail);
+      } else {
+        const { updateEmail } = require('firebase/auth');
+        await updateEmail(currentUser, cleanEmail);
+      }
+      console.log('[FirebaseAuthService] Email attached successfully.');
+    } else if (currentUser.emailVerified) {
+      return {
+        success: true,
+        title: 'Already Verified',
+        message: 'This email is already verified on your account.',
+        email: cleanEmail,
+        emailVerified: true
+      };
+    }
+
+    // 2. Trigger Firebase's standard email verification template
+    console.log('[FirebaseAuthService] Triggering Firebase sendEmailVerification()...');
+    if (Platform.OS !== 'web') {
+      await currentUser.sendEmailVerification();
+    } else {
+      const { sendEmailVerification } = require('firebase/auth');
+      await sendEmailVerification(currentUser);
+    }
+
+    lastVerificationEmailSentAt = Date.now();
+    console.log('[FirebaseAuthService] Verification email sent successfully via Firebase.');
+
+    return {
+      success: true,
+      title: 'Verification Email Sent',
+      message: `A verification link has been sent to ${cleanEmail}. Please check your inbox and click the link to verify.`,
+      email: cleanEmail,
+      emailVerified: false,
+      cooldownSeconds: 60
+    };
+  } catch (err: any) {
+    console.error('[FirebaseAuthService Technical Error] linkEmailAndSendVerification:', err);
+    let title = 'Unable to Send Verification Email';
+    let message = 'An error occurred while sending the verification email. Please try again.';
+    let code = 'UNKNOWN_ERROR';
+    const errCode = err?.code || '';
+    const errStr = err?.message || String(err);
+
+    if (errCode === 'auth/email-already-in-use' || errStr.includes('email-already-in-use')) {
+      title = 'Email Already in Use';
+      message = 'This email is already associated with another Allver account. Please use a different email.';
+      code = 'EMAIL_ALREADY_IN_USE';
+    } else if (errCode === 'auth/invalid-email' || errStr.includes('invalid-email')) {
+      title = 'Invalid Email Address';
+      message = 'Please enter a valid email address.';
+      code = 'INVALID_EMAIL';
+    } else if (errCode === 'auth/requires-recent-login' || errStr.includes('requires-recent-login')) {
+      title = 'Recent Login Required';
+      message = 'For your security, please log out and log in again with OTP before updating your email.';
+      code = 'REQUIRES_RECENT_LOGIN';
+    } else if (errCode === 'auth/too-many-requests' || errStr.includes('too-many-requests')) {
+      title = 'Too Many Requests';
+      message = 'Too many requests. Please wait a few moments before trying again.';
+      code = 'TOO_MANY_REQUESTS';
+    } else if (errStr.includes('network') || errCode === 'auth/network-request-failed') {
+      title = 'Connection Error';
+      message = 'Network error. Please check your internet connection and try again.';
+      code = 'NETWORK_ERROR';
+    }
+
+    return {
+      success: false,
+      title,
+      message,
+      code,
+      error: err
+    };
+  }
+}
+
+/**
+ * Reloads the Firebase user from the server, checks currentUser.emailVerified,
+ * and if verified, cryptographically synchronizes with the backend.
+ */
+export async function reloadAndCheckEmailVerification(userId?: string): Promise<EmailVerificationResult> {
+  const currentUser = getFirebaseCurrentUser();
+  if (!currentUser) {
+    return {
+      success: false,
+      title: 'Session Expired',
+      message: 'No active session found. Please log in again.',
+      code: 'NO_AUTH_USER'
+    };
+  }
+
+  try {
+    // Reload user profile from Firebase servers
+    console.log('[FirebaseAuthService] Reloading Firebase user session...');
+    if (Platform.OS !== 'web') {
+      await currentUser.reload();
+    } else {
+      const { reload } = require('firebase/auth');
+      await reload(currentUser);
+    }
+
+    const isVerified = Boolean(currentUser.emailVerified);
+    const email = currentUser.email || '';
+    console.log(`[FirebaseAuthService] User reloaded. email: "${email}", emailVerified: ${isVerified}`);
+
+    if (!isVerified) {
+      return {
+        success: true,
+        email,
+        emailVerified: false,
+        title: 'Not Verified Yet',
+        message: 'Your email has not been verified yet. Please check your inbox and click the verification link.'
+      };
+    }
+
+    // Cryptographic verification on backend:
+    // Extract fresh ID token signed by Firebase
+    const idToken = await currentUser.getIdToken(true);
+    console.log('[FirebaseAuthService] Acquired fresh ID token to sync with backend...');
+
+    try {
+      const syncEndpoint = `${BACKEND_URL}/api/auth/sync-email-verification`;
+      const res = await fetch(syncEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          idToken,
+          userId
+        })
+      });
+
+      const data = await res.json();
+      console.log(`[FirebaseAuthService] Backend sync response status: ${res.status}`, data?.success);
+
+      if (res.ok && data.success && data.user) {
+        // Save updated user to local SecureStore & global memory
+        await saveStoredUser(data.user);
+        (global as any).currentUser = data.user;
+        return {
+          success: true,
+          email: data.email || email,
+          emailVerified: true,
+          user: data.user,
+          title: 'Email Verified',
+          message: 'Your email address has been successfully verified!'
+        };
+      } else if (res.status === 409) {
+        return {
+          success: false,
+          title: 'Email Conflict',
+          message: data.message || 'This email is already registered to another Allver user account.',
+          code: 'EMAIL_ALREADY_IN_USE'
+        };
+      }
+    } catch (syncErr: any) {
+      console.warn('[FirebaseAuthService] Backend sync warning:', syncErr.message);
+    }
+
+    return {
+      success: true,
+      email,
+      emailVerified: true,
+      title: 'Email Verified',
+      message: 'Your email is verified in Firebase.'
+    };
+  } catch (err: any) {
+    console.error('[FirebaseAuthService Technical Error] reloadAndCheckEmailVerification:', err);
+    return {
+      success: false,
+      title: 'Error Checking Status',
+      message: 'Could not refresh verification status. Please check your connection and try again.',
+      code: 'RELOAD_FAILED',
+      error: err
     };
   }
 }
