@@ -2,15 +2,15 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 const getLocalBackendUrl = () => {
-  if (process.env.EXPO_PUBLIC_BACKEND_URL) {
-    return process.env.EXPO_PUBLIC_BACKEND_URL;
-  }
-
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && window.location && window.location.hostname) {
       return `http://${window.location.hostname}:5000`;
     }
     return 'http://localhost:5000';
+  }
+
+  if (process.env.EXPO_PUBLIC_BACKEND_URL) {
+    return process.env.EXPO_PUBLIC_BACKEND_URL;
   }
 
   let ip = '';

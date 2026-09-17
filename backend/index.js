@@ -2663,11 +2663,14 @@ app.post('/api/login', authLimiter, async (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    const normalizedEmail = cleanEmail.replace(/@gmaul\.com$/, '@gmail.com');
     // Find the user by email (case-insensitive)
     const user = await User.findOne({
       $or: [
         { email: cleanEmail },
-        { email: new RegExp(`^${cleanEmail}$`, 'i') }
+        { email: normalizedEmail },
+        { email: new RegExp(`^${cleanEmail}$`, 'i') },
+        { email: new RegExp(`^${normalizedEmail}$`, 'i') }
       ]
     });
     if (!user) {

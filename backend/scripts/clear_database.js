@@ -9,6 +9,12 @@ async function clearDatabase() {
     process.exit(1);
   }
 
+  if (!process.argv.includes('--confirm-wipe-database')) {
+    console.error('\n[SAFETY ABORT] To prevent accidental database loss, clearDatabase() requires:');
+    console.error('  node scripts/clear_database.js --confirm-wipe-database\n');
+    process.exit(1);
+  }
+
   console.log('Connecting to MongoDB...');
   await mongoose.connect(uri);
   console.log('Connected to database:', mongoose.connection.name);
