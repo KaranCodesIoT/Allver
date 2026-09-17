@@ -106,6 +106,31 @@ export default function BookingFlowScreen() {
     confirmed: false,
   });
 
+  // Step 5 Cancel Search Confirmation Modal
+  const [showCancelModal, setShowCancelModal] = useState(false);
+
+  const performCancelSearch = async () => {
+    userInitiatedCancelRef.current = true;
+    hasAlertedCancelRef.current = true;
+    if (syncIntervalRef.current) {
+      clearInterval(syncIntervalRef.current);
+      syncIntervalRef.current = null;
+    }
+    try {
+      SocketService.emit('client_cancel_job_request', { jobId });
+      SocketService.emit('cancel_job', { jobId, reason: 'Client cancelled search' });
+      SocketService.leaveRoom(`job:${jobId}`);
+      fetch(`${BACKEND_URL}/api/jobs/${jobId}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'Client cancelled search', cancelledBy: 'client' })
+      }).catch((err) => console.warn('[BookingFlow] Cancel API error:', err));
+    } catch (e) {
+      console.warn('[BookingFlow] Socket error during cancel:', e);
+    }
+    router.replace('/(tabs)');
+  };
+
   // Step 10 Rating & Receipt state
   const [userRating, setUserRating] = useState(5);
   const [ratedSubmitted, setRatedSubmitted] = useState(false);
@@ -921,21 +946,9 @@ export default function BookingFlowScreen() {
           <View style={styles.stepContainer}>
             <View style={styles.headerBar}>
               <TouchableOpacity 
-                onPress={() => {
-                  userInitiatedCancelRef.current = true;
-                  hasAlertedCancelRef.current = true;
-                  if (syncIntervalRef.current) {
-                    clearInterval(syncIntervalRef.current);
-                    syncIntervalRef.current = null;
-                  }
-                  SocketService.emit('client_cancel_job_request', { jobId });
-                  if (router.canGoBack()) {
-                    router.back();
-                  } else {
-                    router.replace('/(tabs)');
-                  }
-                }} 
+                onPress={() => setShowCancelModal(true)} 
                 style={styles.backBtn}
+                activeOpacity={0.7}
               >
                 <Feather name="arrow-left" size={24} color="#111827" />
               </TouchableOpacity>
@@ -1037,37 +1050,8 @@ export default function BookingFlowScreen() {
 
             <TouchableOpacity 
               style={styles.cancelRequestBtn}
-              onPress={() => {
-                Alert.alert(
-                  'Cancel Search',
-                  'Are you sure you want to cancel searching for workers?',
-                  [
-                    { text: 'Keep Searching', style: 'cancel' },
-                    {
-                      text: 'Cancel Search',
-                      style: 'destructive',
-                      onPress: async () => {
-                        userInitiatedCancelRef.current = true;
-                        hasAlertedCancelRef.current = true;
-                        if (syncIntervalRef.current) {
-                          clearInterval(syncIntervalRef.current);
-                          syncIntervalRef.current = null;
-                        }
-                        try {
-                          SocketService.emit('client_cancel_job_request', { jobId });
-                          SocketService.emit('cancel_job', { jobId, reason: 'Client cancelled search' });
-                          await fetch(`${BACKEND_URL}/api/jobs/${jobId}/cancel`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ reason: 'Client cancelled search', cancelledBy: 'client' })
-                          }).catch(() => {});
-                        } catch (e) {}
-                        router.replace('/(tabs)');
-                      }
-                    }
-                  ]
-                );
-              }}
+              activeOpacity={0.75}
+              onPress={() => setShowCancelModal(true)}
             >
               <Text style={styles.cancelRequestText}>Cancel Request</Text>
             </TouchableOpacity>
@@ -1428,21 +1412,27 @@ export default function BookingFlowScreen() {
                     <TouchableOpacity 
                       style={[styles.primaryGreenBtn, { backgroundColor: '#F59E0B', marginBottom: 10 }]}
                       onPress={() => {
-                        Alert.alert(
-                          'Pay with Cash',
-                          `Please pay ₹${Number(completionData.finalAmount) || 900} in cash directly to ${assignedWorker.name}. The worker will confirm receipt.`,
-                          [
+                        const amount = Number(completionData?.finalAmount) || 900;
+                        const msg = `Please pay ₹${amount} in cash directly to ${assignedWorker.name}. The worker will confirm receipt.`;
+                        const handleCashConfirm = () => {
+                          SocketService.emit('job_select_payment_method', { jobId, method: 'CASH' });
+                          SocketService.emit('job_cash_confirmed', { 
+                            jobId, 
+                            amount
+                          });
+                          setWorkerJobStatus('PAYMENT_CONFIRMED');
+                        };
+
+                        if (Platform.OS === 'web') {
+                          if (typeof window !== 'undefined' && window.confirm(msg)) {
+                            handleCashConfirm();
+                          }
+                        } else {
+                          Alert.alert('Pay with Cash', msg, [
                             { text: 'Cancel', style: 'cancel' },
-                            { text: 'I Paid Cash', onPress: () => {
-                              SocketService.emit('job_select_payment_method', { jobId, method: 'CASH' });
-                              SocketService.emit('job_cash_confirmed', { 
-                                jobId, 
-                                amount: Number(completionData.finalAmount) || 900 
-                              });
-                              setWorkerJobStatus('PAYMENT_CONFIRMED');
-                            }}
-                          ]
-                        );
+                            { text: 'I Paid Cash', onPress: handleCashConfirm }
+                          ]);
+                        }
                       }}
                     >
                       <FontAwesome5 name="money-bill-wave" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
@@ -2154,6 +2144,45 @@ export default function BookingFlowScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* Cancel Search Confirmation Modal (Works on Web & Native) */}
+      <Modal
+        visible={showCancelModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCancelModal(false)}
+      >
+        <View style={styles.cancelModalBackdrop}>
+          <View style={styles.cancelModalCard}>
+            <View style={styles.cancelModalIconWrap}>
+              <Feather name="alert-triangle" size={28} color="#EF4444" />
+            </View>
+            <Text style={styles.cancelModalTitle}>Cancel Search?</Text>
+            <Text style={styles.cancelModalDesc}>
+              Are you sure you want to cancel searching for {serviceName.toLowerCase()} workers?
+            </Text>
+            <View style={styles.cancelModalBtnRow}>
+              <TouchableOpacity
+                style={styles.cancelModalKeepBtn}
+                onPress={() => setShowCancelModal(false)}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.cancelModalKeepText}>Keep Searching</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cancelModalConfirmBtn}
+                onPress={() => {
+                  setShowCancelModal(false);
+                  performCancelSearch();
+                }}
+                activeOpacity={0.75}
+              >
+                <Text style={styles.cancelModalConfirmText}>Cancel Search</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -2304,12 +2333,96 @@ const styles = StyleSheet.create({
     height: 48,
     justifyContent: 'center',
     alignItems: 'center',
+    width: '100%',
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' } as any : {}),
   },
   cancelRequestText: {
     fontFamily: Fonts.sans,
     fontSize: 15,
     fontWeight: '600',
     color: '#374151',
+  },
+
+  /* CANCEL SEARCH MODAL */
+  cancelModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  cancelModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    elevation: 10,
+  },
+  cancelModalIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FEE2E2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  cancelModalTitle: {
+    fontFamily: Fonts.sans,
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  cancelModalDesc: {
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  cancelModalBtnRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  cancelModalKeepBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' } as any : {}),
+  },
+  cancelModalKeepText: {
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  cancelModalConfirmBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: '#EF4444',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' } as any : {}),
+  },
+  cancelModalConfirmText: {
+    fontFamily: Fonts.sans,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 
   /* STEP 6 HERO */

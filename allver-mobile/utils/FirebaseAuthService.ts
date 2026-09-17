@@ -340,6 +340,19 @@ export async function linkEmailAndSendVerification(email: string): Promise<Email
   }
 
   const currentUser = getFirebaseCurrentUser();
+  const currentUserExists = Boolean(currentUser);
+
+  // Diagnostic logging of current user state before operation
+  console.log('[FirebaseAuthService DIAGNOSTIC] Current user before email operation:', {
+    currentUserExists,
+    uid: currentUser?.uid || null,
+    email: currentUser?.email || null,
+    emailVerified: currentUser?.emailVerified ?? null,
+    phoneNumber: currentUser?.phoneNumber || null,
+    targetEmail: cleanEmail,
+    platform: Platform.OS
+  });
+
   if (!currentUser) {
     return {
       success: false,
@@ -363,19 +376,11 @@ export async function linkEmailAndSendVerification(email: string): Promise<Email
   }
 
   try {
-    // 1. Update/Link the email on the existing Firebase user if changed
     const currentAttachedEmail = (currentUser.email || '').toLowerCase().trim();
-    
-    if (currentAttachedEmail !== cleanEmail) {
-      console.log(`[FirebaseAuthService] Attaching email "${cleanEmail}" to existing user UID: ${currentUser.uid}...`);
-      if (Platform.OS !== 'web') {
-        await currentUser.updateEmail(cleanEmail);
-      } else {
-        const { updateEmail } = require('firebase/auth');
-        await updateEmail(currentUser, cleanEmail);
-      }
-      console.log('[FirebaseAuthService] Email attached successfully.');
-    } else if (currentUser.emailVerified) {
+
+    // Check if target email is already attached and already verified
+    if (currentAttachedEmail === cleanEmail && currentUser.emailVerified) {
+      console.log(`[FirebaseAuthService] Email "${cleanEmail}" is already attached and verified on UID: ${currentUser.uid}.`);
       return {
         success: true,
         title: 'Already Verified',
@@ -385,17 +390,51 @@ export async function linkEmailAndSendVerification(email: string): Promise<Email
       };
     }
 
-    // 2. Trigger Firebase's standard email verification template
-    console.log('[FirebaseAuthService] Triggering Firebase sendEmailVerification()...');
-    if (Platform.OS !== 'web') {
-      await currentUser.sendEmailVerification();
+    if (currentAttachedEmail === cleanEmail && !currentUser.emailVerified) {
+      // Email is already attached on the Firebase user, but unverified.
+      // Send standard email verification to the attached email.
+      console.log(`[FirebaseAuthService] Email "${cleanEmail}" is already attached. Triggering verification email resend for UID: ${currentUser.uid}...`);
+      if (Platform.OS !== 'web') {
+        if (typeof currentUser.sendEmailVerification === 'function') {
+          await currentUser.sendEmailVerification();
+        } else if (typeof currentUser.verifyBeforeUpdateEmail === 'function') {
+          await currentUser.verifyBeforeUpdateEmail(cleanEmail);
+        } else {
+          await currentUser.updateEmail(cleanEmail);
+          await currentUser.sendEmailVerification();
+        }
+      } else {
+        const { sendEmailVerification, verifyBeforeUpdateEmail } = require('firebase/auth');
+        try {
+          await sendEmailVerification(currentUser);
+        } catch (webSendErr) {
+          await verifyBeforeUpdateEmail(currentUser, cleanEmail);
+        }
+      }
     } else {
-      const { sendEmailVerification } = require('firebase/auth');
-      await sendEmailVerification(currentUser);
+      // Email is new or different from currently attached email (e.g. initial attachment for phone-auth user).
+      // Under Firebase Email Enumeration Protection, updateEmail() throws auth/operation-not-allowed.
+      // verifyBeforeUpdateEmail() sends the verification email directly to the new address and links/updates
+      // the existing phone user once verified, completely preserving UID and session.
+      console.log(`[FirebaseAuthService] Sending verification email for "${cleanEmail}" to existing user UID: ${currentUser.uid}...`);
+      if (Platform.OS !== 'web') {
+        if (typeof currentUser.verifyBeforeUpdateEmail === 'function') {
+          console.log('[FirebaseAuthService] Using native currentUser.verifyBeforeUpdateEmail()...');
+          await currentUser.verifyBeforeUpdateEmail(cleanEmail);
+        } else {
+          console.log('[FirebaseAuthService] Fallback: updateEmail then sendEmailVerification...');
+          await currentUser.updateEmail(cleanEmail);
+          await currentUser.sendEmailVerification();
+        }
+      } else {
+        const { verifyBeforeUpdateEmail } = require('firebase/auth');
+        console.log('[FirebaseAuthService Web] Using web verifyBeforeUpdateEmail()...');
+        await verifyBeforeUpdateEmail(currentUser, cleanEmail);
+      }
     }
 
     lastVerificationEmailSentAt = Date.now();
-    console.log('[FirebaseAuthService] Verification email sent successfully via Firebase.');
+    console.log(`[FirebaseAuthService] Verification email successfully dispatched to ${cleanEmail} for UID: ${currentUser.uid}.`);
 
     return {
       success: true,
@@ -406,14 +445,31 @@ export async function linkEmailAndSendVerification(email: string): Promise<Email
       cooldownSeconds: 60
     };
   } catch (err: any) {
-    console.error('[FirebaseAuthService Technical Error] linkEmailAndSendVerification:', err);
-    let title = 'Unable to Send Verification Email';
-    let message = 'An error occurred while sending the verification email. Please try again.';
-    let code = 'UNKNOWN_ERROR';
     const errCode = err?.code || '';
     const errStr = err?.message || String(err);
+    const nativeMsg = (err as any)?.nativeErrorMessage || (err as any)?.userInfo || null;
 
-    if (errCode === 'auth/email-already-in-use' || errStr.includes('email-already-in-use')) {
+    // Full diagnostic error log as requested
+    console.error('[FirebaseAuthService DIAGNOSTIC] linkEmailAndSendVerification failed:', {
+      errorCode: errCode,
+      errorMessage: errStr,
+      nativeErrorMessage: nativeMsg,
+      currentUserExists: Boolean(currentUser),
+      uid: currentUser?.uid || null,
+      email: currentUser?.email || null,
+      emailVerified: currentUser?.emailVerified ?? null,
+      targetEmail: cleanEmail
+    });
+
+    let title = 'Unable to Send Verification Email';
+    let message = errStr ? `An error occurred: [${errCode || 'UNKNOWN'}] ${errStr}` : 'An error occurred while sending the verification email. Please try again.';
+    let code = errCode || 'UNKNOWN_ERROR';
+
+    if (errCode === 'auth/operation-not-allowed' || errStr.includes('operation-not-allowed')) {
+      title = 'Email Verification Not Allowed';
+      message = 'Operation not allowed by Firebase. If this is a new project, please ensure the Email/Password provider is enabled in Firebase Console (Authentication > Sign-in method).';
+      code = 'OPERATION_NOT_ALLOWED';
+    } else if (errCode === 'auth/email-already-in-use' || errStr.includes('email-already-in-use')) {
       title = 'Email Already in Use';
       message = 'This email is already associated with another Allver account. Please use a different email.';
       code = 'EMAIL_ALREADY_IN_USE';
@@ -538,12 +594,21 @@ export async function reloadAndCheckEmailVerification(userId?: string): Promise<
       message: 'Your email is verified in Firebase.'
     };
   } catch (err: any) {
-    console.error('[FirebaseAuthService Technical Error] reloadAndCheckEmailVerification:', err);
+    const errCode = err?.code || '';
+    const errStr = err?.message || String(err);
+    console.error('[FirebaseAuthService DIAGNOSTIC] reloadAndCheckEmailVerification failed:', {
+      errorCode: errCode,
+      errorMessage: errStr,
+      currentUserExists: Boolean(currentUser),
+      uid: currentUser?.uid || null,
+      email: currentUser?.email || null,
+      emailVerified: currentUser?.emailVerified ?? null
+    });
     return {
       success: false,
       title: 'Error Checking Status',
-      message: 'Could not refresh verification status. Please check your connection and try again.',
-      code: 'RELOAD_FAILED',
+      message: errStr ? `Could not refresh status: [${errCode || 'UNKNOWN'}] ${errStr}` : 'Could not refresh verification status. Please check your connection and try again.',
+      code: errCode || 'RELOAD_FAILED',
       error: err
     };
   }

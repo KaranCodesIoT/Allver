@@ -2011,37 +2011,33 @@ export default function ProfileScreen() {
                 {renderEmailVerificationBadge()}
               </View>
 
-              {currentUser?._id && (
-                <View style={styles.followStatsRow}>
+              {/* ===== PHONE NUMBER & NETWORKS IN ONE ROW ===== */}
+              <View style={styles.phoneAndNetworkRow}>
+                {user.phone ? (
+                  <View style={styles.phoneInline}>
+                    <Feather name="phone" size={15} color={COLORS.textMuted} />
+                    <Text style={styles.phoneText}>{user.phone}</Text>
+                  </View>
+                ) : null}
+
+                {currentUser?._id && (
                   <TouchableOpacity
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      backgroundColor: '#F9FAFB',
-                      paddingHorizontal: 14,
-                      paddingVertical: 8,
-                      borderWidth: 1,
-                      borderColor: '#E5E7EB',
-                      borderRadius: 20,
-                    }}
+                    style={styles.networkPill}
                     onPress={() => {
                       router.push({
                         pathname: '/followers-list',
                         params: { userId: currentUser._id, type: 'followers', userName: 'My' }
                       });
                     }}
+                    activeOpacity={0.75}
                   >
-                    <Text style={{ fontSize: 12, color: '#111827', fontWeight: '600' }}>
+                    <Feather name="users" size={13} color="#111827" style={{ marginRight: 5 }} />
+                    <Text style={styles.networkPillText}>
                       {liveFollowersCount} {liveFollowersCount === 1 ? 'Network' : 'Networks'}
                     </Text>
+                    <Feather name="chevron-right" size={13} color={COLORS.textMuted} style={{ marginLeft: 3 }} />
                   </TouchableOpacity>
-                </View>
-              )}
-
-              {/* ===== PHONE NUMBER ===== */}
-              <View style={styles.phoneRow}>
-                <Feather name="phone" size={15} color={COLORS.textMuted} />
-                <Text style={styles.phoneText}>{user.phone}</Text>
+                )}
               </View>
 
               {/* ===== STAT PILLS ROW ===== */}
@@ -4098,6 +4094,65 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 14,
   },
+  phoneAndNetworkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 14,
+    marginBottom: 14,
+  },
+  phoneInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  networkPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9FAFB',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 20,
+  },
+  networkPillText: {
+    fontSize: 12,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  emailBadgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+    marginVertical: 4,
+    gap: 6,
+    flexWrap: 'nowrap',
+  },
+  emailBadgeVerified: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  emailBadgeUnverified: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  emailBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  emailBadgeVerifiedText: {
+    color: '#15803D',
+  },
+  emailBadgeUnverifiedText: {
+    color: '#B45309',
+  },
   phoneText: { fontSize: 14, color: COLORS.textDark, fontWeight: '500' },
   clientEditProfileBtn: {
     flexDirection: 'row',
@@ -5552,35 +5607,5 @@ const guestStyles = StyleSheet.create({
     fontWeight: '600',
     color: '#1E293B',
     flex: 1,
-  },
-  emailBadgeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    alignSelf: 'center',
-    marginVertical: 4,
-    gap: 6,
-  },
-  emailBadgeVerified: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-  },
-  emailBadgeUnverified: {
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-  },
-  emailBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  emailBadgeVerifiedText: {
-    color: '#15803D',
-  },
-  emailBadgeUnverifiedText: {
-    color: '#B45309',
   },
 });

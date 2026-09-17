@@ -72,6 +72,8 @@ export default function ArchitectDetailScreen() {
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [portfolioProjects, setPortfolioProjects] = useState<any[]>([]);
   const [userUploadedPosts, setUserUploadedPosts] = useState<any[]>([]);
+  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [showFullAbout, setShowFullAbout] = useState(false);
 
   const displayCoverImage = resolveAvatarUrl(professionalData?.cover || professionalData?.coverImage, professionalData?.updatedAt) || coverImage;
   const displayAvatar = resolveAvatarUrl(professionalData?.avatarUrl || professionalData?.avatar, professionalData?.updatedAt) || avatar;
@@ -540,7 +542,7 @@ export default function ArchitectDetailScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
-      {/* Top Navigation Row over Cover */}
+      {/* Top Header Row over Cover */}
       <View style={styles.navHeader}>
         <TouchableOpacity 
           onPress={() => {
@@ -570,6 +572,19 @@ export default function ArchitectDetailScreen() {
           >
             <Feather name="share-2" size={20} color={COLORS.textDark} />
           </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => {
+              if (isGuestUser(currentUser)) {
+                setGuestModalAction('Saving Favorites');
+                setGuestModalVisible(true);
+                return;
+              }
+              setIsBookmarked(!isBookmarked);
+            }} 
+            style={styles.circleHeaderBtn}
+          >
+            <Feather name="bookmark" size={20} color={isBookmarked ? COLORS.green : COLORS.textDark} style={isBookmarked && { fill: COLORS.green }} />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.circleHeaderBtn}>
             <Feather name="more-vertical" size={20} color={COLORS.textDark} />
           </TouchableOpacity>
@@ -577,54 +592,71 @@ export default function ArchitectDetailScreen() {
       </View>
 
       <ScrollView bounces={true} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Cover & Profile Avatar Container */}
-        <View style={styles.coverContainer}>
-          <Image source={{ uri: displayCoverImage }} style={styles.coverImage} contentFit="cover" />
-          <View style={styles.avatarWrapper}>
-            <Image source={displayAvatar ? { uri: displayAvatar } : require('../assets/android-icon-foreground.png')} style={styles.avatarImage} contentFit={displayAvatar ? "cover" : "contain"} />
-            <View style={styles.verifiedBadge}>
-              <Feather name="check" size={12} color={COLORS.white} />
-            </View>
-          </View>
+        {/* Cover Photo */}
+        <View style={styles.coverPhotoContainer}>
+          <Image 
+            source={{ uri: displayCoverImage }} 
+            style={styles.coverPhoto} 
+            contentFit="cover"
+            transition={300}
+          />
+          <View style={styles.coverOverlay} />
         </View>
 
-        {/* Profile Info Details Block */}
-        <View style={styles.profileDetailsBlock}>
-          <View style={styles.nameSection}>
-            <Text style={styles.profileName}>{firmName}</Text>
-            <TouchableOpacity 
-              style={styles.followersContainer}
-              onPress={() => {
-                router.push({
-                  pathname: '/followers-list',
-                  params: { userId: architectId, type: 'followers', userName: firmName || name }
-                });
-              }}
-            >
-              <Feather name="users" size={14} color={COLORS.textMuted} />
-              <Text style={styles.followersText}>{followers} Networks</Text>
-            </TouchableOpacity>
-          </View>
-          
-          <Text style={styles.subtitleText}>{name} • {role} | {location}</Text>
-          <Text style={styles.phoneText} onPress={handleCall}>
-            <Feather name="phone" size={13} color={COLORS.textMuted} /> {phone}
-          </Text>
+        {/* Profile Card Header */}
+        <View style={styles.profileHeaderCard}>
+          <View style={styles.avatarRow}>
+            <View style={styles.avatarContainer}>
+              <Image 
+                source={{ uri: displayAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=300&auto=format&fit=crop' }} 
+                style={styles.avatarImage} 
+                contentFit="cover" 
+              />
+              <View style={styles.verifiedBadge}>
+                <Feather name="check" size={10} color={COLORS.white} />
+              </View>
+            </View>
 
-          {/* Quick Info Tags Row */}
-          <View style={styles.quickInfoRow}>
-            <View style={styles.infoTag}>
-              <Feather name="award" size={14} color={COLORS.gold} />
-              <Text style={styles.infoTagText}>{experience} Experience</Text>
+            <View style={styles.statsSummaryContainer}>
+              <View style={styles.statBox}>
+                <Text style={styles.statNumber}>{realProjects.length > 0 ? realProjects.length : projectsCount}</Text>
+                <Text style={styles.statLabel}>{t('projects')}</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <TouchableOpacity 
+                style={styles.statBox}
+                activeOpacity={0.7}
+                onPress={() => {
+                  router.push({
+                    pathname: '/followers-list',
+                    params: { userId: architectId, type: 'followers', userName: firmName || name }
+                  });
+                }}
+              >
+                <Text style={styles.statNumber}>{followers}</Text>
+                <Text style={styles.statLabel}>{t('followers')}</Text>
+              </TouchableOpacity>
+              <View style={styles.statDivider} />
+              <View style={styles.statBox}>
+                <View style={styles.ratingRow}>
+                  <Feather name="star" size={12} color={COLORS.gold} />
+                  <Text style={styles.statNumber}> {rating}</Text>
+                </View>
+                <Text style={styles.statLabel}>({reviewsList.length > 0 ? reviewsList.length : reviews})</Text>
+              </View>
             </View>
-            <View style={styles.infoTag}>
-              <Feather name="grid" size={14} color={COLORS.blue} />
-              <Text style={styles.infoTagText}>{projectsCount} Projects</Text>
-            </View>
-            <View style={styles.infoTag}>
-              <Feather name="map-pin" size={14} color={COLORS.green} />
-              <Text style={styles.infoTagText}>{location.split(',')[0]}</Text>
-            </View>
+          </View>
+
+          {/* Name & Headline */}
+          <Text style={styles.profileName}>{name}</Text>
+          <Text style={styles.firmName}>{firmName}</Text>
+          
+          <View style={styles.locationContainer}>
+            <Feather name="map-pin" size={12} color={COLORS.textMuted} />
+            <Text style={styles.locationText}>{location}</Text>
+            <Text style={styles.dotSeparator}>•</Text>
+            <Feather name="clock" size={12} color={COLORS.textMuted} />
+            <Text style={styles.locationText}>{experience}</Text>
           </View>
 
           {/* Core Action/Edit Buttons */}
@@ -714,16 +746,19 @@ export default function ArchitectDetailScreen() {
           {/* About Section */}
           <View style={styles.aboutSection}>
             <Text style={styles.sectionHeaderTitle}>{t('about')}</Text>
-            <Text style={styles.aboutParagraphText}>
-              {specializationStr}
+            <Text style={styles.aboutParagraphText} numberOfLines={showFullAbout ? undefined : 3}>
+              {specializationStr} We are a trusted team of architecture professionals specializing in residential and commercial architectural design and planning. From conceptual sketching to 3D visualization, sustainable design, structural coordination, and turnkey project supervision, we deliver premium results.
             </Text>
+            <TouchableOpacity onPress={() => setShowFullAbout(!showFullAbout)}>
+              <Text style={styles.readMoreText}>{showFullAbout ? 'Read Less' : 'Read More'}</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Specializations Wrap */}
+          {/* Skills & Specialization */}
           <View style={styles.specializationSection}>
-            <Text style={styles.sectionHeaderTitle}>{t('specialization')}</Text>
+            <Text style={styles.sectionHeaderTitle}>{t('skills')}</Text>
             <View style={styles.specializationsWrap}>
-              {['Residential Design', 'Commercial Design', 'Interior Design', 'Landscape', '3D Visualization', 'Renovation', 'Vastu Planning', 'Smart Homes'].map((spec, index) => (
+              {['Residential Design', 'Commercial Design', 'Interior Architecture', 'Landscape Planning', '3D Visualization', 'Renovation', 'Vastu Planning', 'Smart Homes'].map((spec, index) => (
                 <View key={index} style={styles.specTag}>
                   <Text style={styles.specTagText}>{spec}</Text>
                 </View>
@@ -1209,16 +1244,17 @@ export default function ArchitectDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.white },
-  scrollContent: { paddingBottom: 50 },
+  scrollContent: { paddingBottom: 40 },
 
   /* NAVIGATION OVERLAY */
   navHeader: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 20,
-    left: 20,
-    right: 20,
+    top: Platform.OS === 'ios' ? 50 : 16,
+    left: 16,
+    right: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     zIndex: 10,
   },
   headerRightActions: { flexDirection: 'row', gap: 10 },
@@ -1226,35 +1262,78 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 4,
     elevation: 3,
   },
 
-  /* COVER & PROFILE */
-  coverContainer: { height: 220, position: 'relative' },
-  coverImage: { width: '100%', height: '100%' },
-  avatarWrapper: {
-    position: 'absolute',
-    bottom: -40,
-    left: 20,
-    width: 86,
-    height: 86,
-    borderRadius: 43,
+  /* COVER PHOTO */
+  coverPhotoContainer: {
+    height: 200,
+    width: '100%',
+    position: 'relative',
+    backgroundColor: '#0F172A',
+  },
+  coverPhoto: {
+    width: '100%',
+    height: '100%',
+  },
+  coverOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.22)',
+  },
+
+  /* PROFILE HEADER CARD */
+  profileHeaderCard: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    marginTop: -26,
+    paddingTop: 18,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+
+  /* AVATAR ROW & STATS */
+  avatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  avatarContainer: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
     borderWidth: 3,
     borderColor: COLORS.white,
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.bgLight,
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 5,
+    elevation: 4,
   },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 40 },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 38,
+  },
   verifiedBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
+    bottom: -1,
+    right: -1,
     width: 22,
     height: 22,
     borderRadius: 11,
@@ -1264,59 +1343,126 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  /* PROFILE INFO DETAILS */
-  profileDetailsBlock: { marginTop: 50, paddingHorizontal: 20 },
-  nameSection: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
-  profileName: { fontSize: 20, fontWeight: '800', color: COLORS.textDark },
-  followersContainer: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  followersText: { fontSize: 13, color: COLORS.textMuted, fontWeight: '500' },
-  
-  subtitleText: { fontSize: 13, color: COLORS.textMuted, marginBottom: 5 },
-  phoneText: { fontSize: 13, color: COLORS.textMuted, marginBottom: 15 },
-
-  /* QUICK INFO TAGS */
-  quickInfoRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  infoTag: {
+  statsSummaryContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.bgLight,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 6,
+    justifyContent: 'space-around',
+    marginLeft: 14,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  infoTagText: { fontSize: 12, fontWeight: '600', color: COLORS.textDark },
+  statBox: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statNumber: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.textDark,
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: COLORS.border,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+
+  /* PROFILE INFO DETAILS */
+  profileName: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.textDark,
+    letterSpacing: -0.3,
+    marginBottom: 2,
+  },
+  firmName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    marginBottom: 8,
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 16,
+  },
+  locationText: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  dotSeparator: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginHorizontal: 2,
+  },
 
   /* ACTION BUTTONS */
-  actionButtonsRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 22,
+  },
   followBtn: {
-    flex: 2,
-    height: 32,
-    backgroundColor: '#1BC47D', // Premium green accent
-    borderRadius: 16, // Curved borders
+    flex: 1.3,
+    height: 38,
+    backgroundColor: '#10B981',
+    borderRadius: 19,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
   },
   followingBtn: {
     backgroundColor: COLORS.bgLight,
     borderWidth: 1,
     borderColor: COLORS.border,
+    shadowOpacity: 0,
+    elevation: 0,
   },
-  followBtnText: { color: COLORS.white, fontSize: 12, fontWeight: '700' },
+  followBtnText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   outlineActionBtn: {
-    flex: 1.2,
-    height: 32,
-    borderWidth: 1,
+    flex: 1,
+    height: 38,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
-    borderRadius: 16,
+    borderRadius: 19,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORS.white,
   },
-  outlineActionText: { color: COLORS.textDark, fontSize: 12, fontWeight: '600' },
+  outlineActionText: {
+    color: COLORS.textDark,
+    fontSize: 12,
+    fontWeight: '700',
+  },
 
   hireBtn: {
     height: 46,
@@ -1338,6 +1484,7 @@ const styles = StyleSheet.create({
   sectionHeaderTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textDark, marginBottom: 8 },
   aboutSection: { marginBottom: 20 },
   aboutParagraphText: { fontSize: 13, color: COLORS.textMuted, lineHeight: 20 },
+  readMoreText: { fontSize: 13, color: COLORS.blue, fontWeight: '700', marginTop: 4 },
 
   /* SPECIALIZATION */
   specializationSection: { marginBottom: 20 },
