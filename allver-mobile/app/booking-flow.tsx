@@ -7,7 +7,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
 import { Fonts } from '../constants/theme';
 import { openRazorpayCheckout } from '../utils/PaymentCheckout';
-import { getToken, getStoredUser } from '../constants/Auth';
+import { getToken, getStoredUser, isPhoneVerifiedUser } from '../constants/Auth';
+import PhoneVerificationModal from '../components/PhoneVerificationModal';
 
 import SocketService from '../utils/SocketService';
 import { getIndiaMapImageUrl, findCoordinatesForLocationText } from '../utils/GeocodingService';
@@ -83,6 +84,7 @@ export default function BookingFlowScreen() {
   const [reviewComment, setReviewComment] = useState('');
   const [activeJobChatId, setActiveJobChatId] = useState<string | null>(null);
   const [isPayingOnline, setIsPayingOnline] = useState(false);
+  const [phoneVerificationVisible, setPhoneVerificationVisible] = useState(false);
 
   // In-Place Chat State
   const [chatModalVisible, setChatModalVisible] = useState(false);
@@ -1213,7 +1215,10 @@ export default function BookingFlowScreen() {
 
             {/* Action Buttons Row */}
             <View style={styles.twoBtnRow}>
-              <TouchableOpacity style={styles.callOutlinedBtn} onPress={() => Linking.openURL(`tel:${assignedWorker.phone || '9876543210'}`)}>
+              <TouchableOpacity 
+                style={styles.callOutlinedBtn} 
+                onPress={() => assignedWorker?.phone ? Linking.openURL(`tel:${assignedWorker.phone}`) : Alert.alert('Contact Worker', 'Phone number not available. Please use in-app chat.')}
+              >
                 <Feather name="phone" size={18} color="#111827" style={{ marginRight: 8 }} />
                 <Text style={styles.callOutlinedBtnText}>Call</Text>
               </TouchableOpacity>
@@ -1314,7 +1319,7 @@ export default function BookingFlowScreen() {
               <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
                 <TouchableOpacity 
                   style={[styles.callOutlinedBtn, { flex: 1, height: 44 }]} 
-                  onPress={() => Linking.openURL(`tel:${assignedWorker.phone || '9876543210'}`)}
+                  onPress={() => assignedWorker?.phone ? Linking.openURL(`tel:${assignedWorker.phone}`) : Alert.alert('Contact Worker', 'Phone number not available. Please use in-app chat.')}
                 >
                   <Feather name="phone" size={16} color="#111827" style={{ marginRight: 6 }} />
                   <Text style={styles.callOutlinedBtnText}>Call</Text>
@@ -1451,7 +1456,19 @@ export default function BookingFlowScreen() {
                           
                           // 1. Obtain user token and profile
                           const token = await getToken();
-                          const storedUser = await getStoredUser();
+                          let parsedUser: any = (global as any).currentUser;
+                          if (!parsedUser) {
+                            const rawUser = await getStoredUser();
+                            if (rawUser) {
+                              try { parsedUser = JSON.parse(rawUser); } catch (e) {}
+                            }
+                          }
+
+                          if (!isPhoneVerifiedUser(parsedUser)) {
+                            setIsPayingOnline(false);
+                            setPhoneVerificationVisible(true);
+                            return;
+                          }
 
                           const clientPayAmount = Number(completionData?.finalAmount) || 750;
 
@@ -1469,6 +1486,12 @@ export default function BookingFlowScreen() {
                             })
                           });
                           let createData = await createRes.json();
+
+                          if (createData?.code === 'PHONE_NOT_VERIFIED') {
+                            setIsPayingOnline(false);
+                            setPhoneVerificationVisible(true);
+                            return;
+                          }
 
                           // Fallback to /api/payment/create if create-order failed due to authorization header or session mismatch
                           if (!createRes.ok || !createData.success) {
@@ -1520,9 +1543,9 @@ export default function BookingFlowScreen() {
                             name: 'Allver',
                             order_id: gatewayOrderId,
                             prefill: {
-                              email: storedUser?.email || '',
-                              contact: storedUser?.phoneNumber || storedUser?.phone || '',
-                              name: storedUser?.fullName || 'Customer'
+                              email: parsedUser?.email || '',
+                              contact: parsedUser?.phoneNumber || parsedUser?.phone || '',
+                              name: parsedUser?.fullName || 'Customer'
                             },
                             theme: { color: '#10B981' }
                           };
@@ -1867,7 +1890,7 @@ export default function BookingFlowScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <TouchableOpacity
                 style={styles.chatHeaderActionBtn}
-                onPress={() => Linking.openURL(`tel:${assignedWorker.phone || '9876543210'}`)}
+                onPress={() => assignedWorker?.phone ? Linking.openURL(`tel:${assignedWorker.phone}`) : Alert.alert('Contact Worker', 'Phone number not available. Please use in-app chat.')}
               >
                 <Feather name="phone" size={18} color="#2563EB" />
               </TouchableOpacity>
@@ -2183,6 +2206,15 @@ export default function BookingFlowScreen() {
           </View>
         </View>
       </Modal>
+
+      <PhoneVerificationModal
+        visible={phoneVerificationVisible}
+        onClose={() => setPhoneVerificationVisible(false)}
+        actionName="complete this payment"
+        onSuccess={async (updatedUser) => {
+          setPhoneVerificationVisible(false);
+        }}
+      />
     </SafeAreaView>
   );
 }

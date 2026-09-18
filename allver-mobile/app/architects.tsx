@@ -106,7 +106,7 @@ export default function ArchitectsScreen() {
     const location = item.city || '';
     const matchesLocation = location.toLowerCase().includes(locationQuery.toLowerCase());
     
-    const rating = item.rating || 4.5;
+    const rating = item.rating || 0;
     const matchesRating = ratingQuery ? rating >= parseFloat(ratingQuery) : true;
     
     const matchesSkill = selectedSkill
@@ -141,9 +141,9 @@ export default function ArchitectsScreen() {
       params: {
         id: architect._id,
         name: architect.fullName,
-        avatar: resolveAvatarUrl(architect.avatarUrl, architect.updatedAt) || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
-        coverImage: resolveAvatarUrl(architect.cover, architect.updatedAt) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-        rating: (architect.rating || 4.5).toString(),
+        avatar: resolveAvatarUrl(architect.avatarUrl, architect.updatedAt) || '',
+        coverImage: resolveAvatarUrl(architect.cover, architect.updatedAt) || '',
+        rating: (architect.rating || 0).toString(),
         reviews: (architect.reviews || 0).toString(),
         location: architect.city,
         experience: architect.experience || 'Entry Level',
@@ -245,7 +245,7 @@ export default function ArchitectsScreen() {
         ) : (
           <ScrollView bounces={true} contentContainerStyle={styles.scrollContent}>
             {filteredArchitects.map((item) => {
-              const avatar = resolveAvatarUrl(item.avatarUrl) || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80';
+              const avatar = resolveAvatarUrl(item.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.fullName || 'Architect')}&background=10B981&color=fff`;
               const specialization = Array.isArray(item.specialization) ? item.specialization.join(', ') : (item.specialization || 'General Architecture');
               const followers = item.followersCount || 0;
               return (
@@ -255,13 +255,21 @@ export default function ArchitectsScreen() {
                     <View style={styles.cardDetailsCol}>
                       <View style={styles.nameRow}>
                         <Text style={styles.nameText}>{item.fullName}</Text>
-                        <Feather name="check-circle" size={14} color={COLORS.green} style={styles.verifiedIcon} />
+                        {item.isVerified && (
+                          <Feather name="check-circle" size={14} color={COLORS.green} style={styles.verifiedIcon} />
+                        )}
                       </View>
                       
                       <View style={styles.ratingRow}>
-                        <Feather name="star" size={13} color={COLORS.gold} style={styles.starIcon} />
-                        <Text style={styles.ratingText}>{item.rating || 4.5}</Text>
-                        <Text style={styles.reviewsText}>({item.reviews || 0} {t('reviews')})</Text>
+                        {item.rating ? (
+                          <>
+                            <Feather name="star" size={13} color={COLORS.gold} style={styles.starIcon} />
+                            <Text style={styles.ratingText}>{item.rating}</Text>
+                            <Text style={styles.reviewsText}>({item.reviews || 0} {t('reviews')})</Text>
+                          </>
+                        ) : (
+                          <Text style={[styles.reviewsText, { color: COLORS.textDark, fontWeight: '600' }]}>New Architect</Text>
+                        )}
                       </View>
 
                       <View style={styles.metaRow}>

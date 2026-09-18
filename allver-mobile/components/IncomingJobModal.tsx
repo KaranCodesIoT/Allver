@@ -149,13 +149,13 @@ export default function IncomingJobModal({ currentUserId, currentUserRole }: Inc
 
     const workerInfo = {
       id: user?._id || currentUserId || `worker_${Date.now()}`,
-      name: user?.fullName || 'Ramesh Yadav',
-      avatar: user?.avatarUrl || user?.avatar || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=150',
-      rating: user?.rating || 4.8,
-      reviews: user?.reviews || 38,
-      experience: user?.experience || '6 Years',
-      phone: user?.phone || user?.phoneNumber || '+91 98765 43210',
-      location: user?.city || activeJob.location || 'Sector 62, Noida',
+      name: user?.fullName || 'Worker',
+      avatar: user?.avatarUrl || user?.avatar || '',
+      rating: user?.rating || 0,
+      reviews: user?.reviews || 0,
+      experience: user?.experience || '',
+      phone: user?.phone || user?.phoneNumber || '',
+      location: user?.city || activeJob.location || '',
     };
 
     console.log('[IncomingJobModal] Emitting worker_accept_job_request for job:', activeJob.jobId);

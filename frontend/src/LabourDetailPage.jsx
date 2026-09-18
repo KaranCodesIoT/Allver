@@ -41,15 +41,18 @@ const LabourDetailPage = () => {
     return <DashboardLayout pageTitle="Profile"><div style={{ textAlign: 'center', padding: '3rem' }}>Loading...</div></DashboardLayout>;
   }
 
-  const c = labourData || {
-    fullName: 'Ramesh Yadav',
-    role: 'Mason',
-    location: 'Belapur, Navi Mumbai',
-    experience: '8 Years',
-    phone: '+91 98765 43210',
-    avatarUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80'
-  };
+  if (!labourData) {
+    return (
+      <DashboardLayout pageTitle="Worker Not Found" accentColor="#10b981">
+        <div style={{ textAlign: 'center', padding: '4rem 1rem', background: 'white', borderRadius: '12px' }}>
+          <h3 style={{ fontSize: '1.5rem', color: '#0f172a' }}>Worker Profile Not Available</h3>
+          <p style={{ color: '#64748b', marginTop: '8px' }}>The requested worker profile could not be found or has not registered yet.</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
+  const c = labourData;
   const avatarLetter = (c.fullName || 'L')[0].toUpperCase();
 
   return (
@@ -102,12 +105,12 @@ const LabourDetailPage = () => {
           {/* Info Details */}
           <div style={{ marginBottom: '2rem' }}>
             <h1 style={{ fontSize: '2rem', fontWeight: '800', color: '#0f172a', margin: '0 0 0.5rem 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {c.fullName} <CheckCircle2 size={24} fill="#10b981" color="white" style={{ background: '#10b981', borderRadius: '50%' }} />
+              {c.fullName} {c.isVerified && <CheckCircle2 size={24} fill="#10b981" color="white" style={{ background: '#10b981', borderRadius: '50%' }} />}
             </h1>
-            <div style={{ fontSize: '1rem', color: '#64748b', fontWeight: '600', marginBottom: '0.8rem' }}>{c.role || 'Mason'}</div>
+            <div style={{ fontSize: '1rem', color: '#64748b', fontWeight: '600', marginBottom: '0.8rem' }}>{c.role || c.skillType || 'Skilled Labour'}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', color: '#475569', fontSize: '0.95rem' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><MapPin size={18} /> {c.location || 'Belapur, Navi Mumbai'}</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#3b82f6', fontWeight: '600' }}><Phone size={18} /> {c.phone || '+91 98765 43210'}</span>
+              {(c.location || c.city) && <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><MapPin size={18} /> {c.location || c.city}</span>}
+              {(c.phone || c.phoneNumber) && <span style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#3b82f6', fontWeight: '600' }}><Phone size={18} /> {c.phone || c.phoneNumber}</span>}
             </div>
           </div>
 
@@ -261,37 +264,47 @@ const LabourDetailPage = () => {
                 <h3 style={{ fontSize: '1.2rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>Reviews</h3>
                 <span style={{ color: '#3b82f6', fontSize: '0.9rem', fontWeight: '600', cursor: 'pointer' }}>View All</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '1.5rem' }}>
-                <span style={{ fontSize: '2.5rem', fontWeight: '800', color: '#0f172a' }}>4.7</span>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ display: 'flex', gap: '2px', color: '#f59e0b' }}>
-                    <Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" /><Star size={14} fill="currentColor" opacity={0.5} />
-                  </div>
-                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>(32 Reviews)</span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                {[
-                  { name: 'Suresh Patil', time: '2 days ago', text: 'Very good work and very punctual.', img: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=50&q=80' },
-                  { name: 'Vikram Singh', time: '1 week ago', text: 'Excellent work quality. Highly recommended.', img: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=50&q=80' },
-                  { name: 'Neha Sharma', time: '2 weeks ago', text: 'Good work and behavior.', img: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=50&q=80' },
-                ].map((rev, i) => (
-                  <div key={i} style={{ display: 'flex', gap: '1rem' }}>
-                    <img src={rev.img} alt={rev.name} style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <span style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.95rem' }}>{rev.name}</span>
-                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{rev.time}</span>
+              {c.reviews && c.reviews.length > 0 ? (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '1.5rem' }}>
+                    <span style={{ fontSize: '2.5rem', fontWeight: '800', color: '#0f172a' }}>{c.rating || '5.0'}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', gap: '2px', color: '#f59e0b' }}>
+                        <Star size={14} fill="currentColor" />
                       </div>
-                      <div style={{ display: 'flex', gap: '2px', color: '#f59e0b', marginBottom: '4px' }}>
-                        <Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" /><Star size={12} fill="currentColor" />
-                      </div>
-                      <p style={{ margin: 0, fontSize: '0.9rem', color: '#475569' }}>{rev.text}</p>
+                      <span style={{ fontSize: '0.8rem', color: '#64748b' }}>({c.reviews.length} {c.reviews.length === 1 ? 'Review' : 'Reviews'})</span>
                     </div>
                   </div>
-                ))}
-              </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                    {c.reviews.map((rev, i) => (
+                      <div key={i} style={{ display: 'flex', gap: '1rem' }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', color: '#64748b' }}>
+                          {(rev.name || 'U')[0]}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                            <span style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.95rem' }}>{rev.name || 'Client'}</span>
+                            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{rev.time || ''}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: '2px', color: '#f59e0b', marginBottom: '4px' }}>
+                            {[...Array(rev.rating || 5)].map((_, si) => (
+                              <Star key={si} size={12} fill="currentColor" />
+                            ))}
+                          </div>
+                          <p style={{ margin: 0, fontSize: '0.9rem', color: '#475569' }}>{rev.text || rev.comment}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div style={{ padding: '2rem 1rem', textAlign: 'center', color: '#64748b', background: '#f8fafc', borderRadius: '8px' }}>
+                  <Star size={24} color="#94a3b8" style={{ marginBottom: '8px' }} />
+                  <p style={{ margin: 0, fontSize: '0.95rem', fontWeight: '600' }}>No reviews yet</p>
+                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Verified reviews from completed jobs will appear here</span>
+                </div>
+              )}
             </div>
 
           </div>

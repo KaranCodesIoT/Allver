@@ -328,6 +328,9 @@ export default function RootLayout() {
             <Stack.Screen name="project-progress" options={{ headerShown: false }} />
             <Stack.Screen name="notifications" options={{ headerShown: false }} />
             <Stack.Screen name="about" options={{ headerShown: false }} />
+            <Stack.Screen name="services" options={{ headerShown: false }} />
+            <Stack.Screen name="how-it-works" options={{ headerShown: false }} />
+            <Stack.Screen name="faq" options={{ headerShown: false }} />
             <Stack.Screen name="contact" options={{ headerShown: false }} />
             <Stack.Screen name="privacy-policy" options={{ headerShown: false }} />
             <Stack.Screen name="terms" options={{ headerShown: false }} />

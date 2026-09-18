@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TextInput, TouchableOpacity, ActivityIndicator, AppState, Platform } from 'react-native';
 import { Feather, MaterialIcons } from '@expo/vector-icons';
 import {
   getFirebaseCurrentUser,
@@ -83,6 +83,35 @@ export default function EmailVerificationCard({
     return () => clearInterval(timer);
   }, [cooldown]);
 
+  // Auto-check verification status when user returns from email client app
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (nextAppState === 'active' && !isVerified) {
+        const trimmed = email.trim();
+        if (trimmed && isValidEmailFormat(trimmed)) {
+          reloadAndCheckEmailVerification(userId, trimmed).then(result => {
+            if (result.success && result.emailVerified) {
+              setIsVerified(true);
+              setIsEditing(false);
+              setNotice({
+                type: 'success',
+                title: 'Email Verified',
+                message: 'Your email address is now verified!'
+              });
+              if (result.user && onVerificationSuccess) {
+                onVerificationSuccess(result.user);
+              }
+            }
+          }).catch(() => {});
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isVerified, email, userId, onVerificationSuccess]);
+
   const handleSendVerification = async () => {
     setNotice(null);
     const trimmed = email.trim();
@@ -107,7 +136,7 @@ export default function EmailVerificationCard({
 
     setLoading(true);
     try {
-      const result = await linkEmailAndSendVerification(trimmed);
+      const result = await linkEmailAndSendVerification(trimmed, userId);
       if (result.success) {
         if (result.emailVerified) {
           setIsVerified(true);
@@ -117,6 +146,9 @@ export default function EmailVerificationCard({
             title: 'Already Verified',
             message: 'Your email address is already verified!'
           });
+          if (result.user && onVerificationSuccess) {
+            onVerificationSuccess(result.user);
+          }
         } else {
           setNotice({
             type: 'success',
@@ -149,9 +181,10 @@ export default function EmailVerificationCard({
 
   const handleCheckStatus = async () => {
     setNotice(null);
+    const trimmed = email.trim();
     setCheckingStatus(true);
     try {
-      const result = await reloadAndCheckEmailVerification(userId);
+      const result = await reloadAndCheckEmailVerification(userId, trimmed);
       if (result.success && result.emailVerified) {
         setIsVerified(true);
         setIsEditing(false);
@@ -452,6 +485,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.textDark,
     height: '100%',
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+    ...(Platform.OS === 'web' ? {
+      outlineStyle: 'none',
+      outlineWidth: 0,
+      outlineColor: 'transparent',
+      boxShadow: 'none',
+    } as any : {}),
   },
   actionBtn: {
     backgroundColor: COLORS.green,

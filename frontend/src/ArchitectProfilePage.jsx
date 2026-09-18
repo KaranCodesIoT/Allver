@@ -25,37 +25,7 @@ const MOCK_VIDEOS = [
   { id: 'v6', title: 'Site Progress Update', duration: '0:40', category: 'Timelapse', thumbnail: 'https://images.unsplash.com/photo-1600573472591-ee6b68d14c68?auto=format&fit=crop&w=400&q=80' }
 ];
 
-const MOCK_TEAM = [
-  { id: 't1', name: 'Mitesh Construction', role: 'Contractor', experience: '12 Years Experience', specialization: 'Specializes in Residential Projects', img: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=150&q=80' },
-  { id: 't2', name: 'BuildWell Contractors', role: 'Contractor', experience: '8 Years Experience', specialization: 'Specializes in Commercial Projects', img: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80' },
-  { id: 't3', name: 'Shree Builders', role: 'Contractor', experience: '10 Years Experience', specialization: 'Specializes in Villas & Bungalows', img: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=150&q=80' },
-  { id: 't4', name: 'Nexus Constructions', role: 'Contractor', experience: '6 Years Experience', specialization: 'Specializes in Interiors & Renovation', img: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80' },
-  { id: 't5', name: 'Reliable Buildcon', role: 'Contractor', experience: '9 Years Experience', specialization: 'Specializes in Structural Masonry', img: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80' },
-  { id: 'team-member', name: 'Akash Chauhan', role: 'Labour', experience: '5 Years Experience', specialization: 'Specializes in Masonry and Brickwork', img: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80' }
-];
 
-const MOCK_REVIEWS = [
-  {
-    id: 'r1', name: 'Neha Sharma', rating: 5, date: '2 days ago',
-    comment: 'Excellent design sense and great attention to detail. The team was professional and very cooperative throughout the project.',
-    imgs: [
-      'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=200&q=80',
-      'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=200&q=80'
-    ]
-  },
-  {
-    id: 'r2', name: 'Vikram Patel', rating: 4, date: '1 week ago',
-    comment: 'Highly skilled professionals. They understood our requirements perfectly and delivered beyond expectations.',
-    imgs: [
-      'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=200&q=80'
-    ]
-  },
-  {
-    id: 'r3', name: 'Priya Nair', rating: 5, date: '3 weeks ago',
-    comment: 'Amazing execution and design aesthetics. Very happy with the sustainability elements built into the design.',
-    imgs: []
-  }
-];
 
 const ArchitectProfilePage = () => {
   const { id } = useParams();

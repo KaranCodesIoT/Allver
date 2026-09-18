@@ -71,6 +71,11 @@ export const saveStoredUser = async (user: any): Promise<void> => {
       fullName: user.fullName,
       email: user.email,
       phoneNumber: user.phoneNumber,
+      phone: user.phone || user.phoneNumber || '',
+      phoneVerified: Boolean(
+        user.phoneVerified === true ||
+        (user.phoneNumber && typeof user.phoneNumber === 'string' && user.phoneNumber.replace(/\D/g, '').length >= 10 && user.phoneVerified !== false)
+      ),
       role: user.role,
       avatarUrl: user.avatarUrl,
       city: user.city,
@@ -221,6 +226,26 @@ export const isGuestUser = (user?: any): boolean => {
 };
 
 /**
+ * Authoritative check whether an active user has completed phone verification.
+ * Returns true if user has phoneVerified === true or a valid verified phone number.
+ */
+export const isPhoneVerifiedUser = (user?: any): boolean => {
+  if (isGuestUser(user)) return false;
+  const activeUser = user || (global as any).currentUser;
+  if (!activeUser || !activeUser._id) return false;
+  if (activeUser.phoneVerified === true) return true;
+  if (
+    activeUser.phoneNumber &&
+    typeof activeUser.phoneNumber === 'string' &&
+    activeUser.phoneNumber.replace(/\D/g, '').length >= 10 &&
+    activeUser.phoneVerified !== false
+  ) {
+    return true;
+  }
+  return false;
+};
+
+/**
  * Enters unauthenticated Guest Mode:
  * Wipes any stale tokens, clears user session, and flags guest mode.
  */
@@ -249,6 +274,7 @@ export const getStoredLanguage = async (): Promise<string | null> => {
       if (typeof localStorage !== 'undefined') {
         return localStorage.getItem(LANG_KEY);
       }
+      return null;
     } else {
       return await withTimeout(SecureStore.getItemAsync(LANG_KEY), 2000, null);
     }

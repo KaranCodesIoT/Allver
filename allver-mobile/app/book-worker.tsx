@@ -31,8 +31,9 @@ import {
   GeocodedLocationDetails,
 } from '../utils/GeocodingService';
 import { GOOGLE_MAPS_API_KEY } from '../constants/Config';
-import { isGuestUser } from '../constants/Auth';
+import { isGuestUser, isPhoneVerifiedUser } from '../constants/Auth';
 import LoginRequiredModal from '../components/LoginRequiredModal';
+import PhoneVerificationModal from '../components/PhoneVerificationModal';
 
 const SERVICE_BOOKING_DETAILS: Record<
   string,
@@ -212,6 +213,7 @@ export default function BookWorkerScreen() {
   const [infoModalVisible, setInfoModalVisible] = useState(false);
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [guestModalVisible, setGuestModalVisible] = useState(false);
+  const [phoneVerificationVisible, setPhoneVerificationVisible] = useState(false);
 
   // Map and Search Temp State
   const [tempLocation, setTempLocation] = useState(location);
@@ -641,12 +643,7 @@ export default function BookWorkerScreen() {
     'Weekend, 13 Sep 2026',
   ];
 
-  // Booking action: passes all location coordinates and place ID to booking-flow
-  const handleBooking = () => {
-    if (isGuestUser()) {
-      setGuestModalVisible(true);
-      return;
-    }
+  const proceedToBookingFlow = () => {
     const generatedJobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     router.push({
       pathname: '/booking-flow',
@@ -663,6 +660,19 @@ export default function BookWorkerScreen() {
         price: pricingEstimate.priceRange || serviceInfo.priceRange,
       },
     });
+  };
+
+  // Booking action: passes all location coordinates and place ID to booking-flow
+  const handleBooking = () => {
+    if (isGuestUser()) {
+      setGuestModalVisible(true);
+      return;
+    }
+    if (!isPhoneVerifiedUser()) {
+      setPhoneVerificationVisible(true);
+      return;
+    }
+    proceedToBookingFlow();
   };
 
   return (
@@ -1136,6 +1146,15 @@ export default function BookWorkerScreen() {
         title="Login required"
         message="Create an account or login to book verified workers."
         actionSource="Booking a Worker"
+      />
+
+      <PhoneVerificationModal
+        visible={phoneVerificationVisible}
+        onClose={() => setPhoneVerificationVisible(false)}
+        onSuccess={() => {
+          proceedToBookingFlow();
+        }}
+        actionTitle={`book an electrician / worker`}
       />
     </SafeAreaView>
   );

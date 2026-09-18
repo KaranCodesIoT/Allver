@@ -15,6 +15,46 @@ export default function Root({ children }: PropsWithChildren) {
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
 
+        {/* Search Engine & Crawler Optimization */}
+        <title>Allver - India's Construction Marketplace | Hire Contractors, Architects & Labour</title>
+        <meta
+          name="description"
+          content="Allver connects Contractors, Architects, Skilled Labourers, and Clients across India on one digital marketplace to plan, build, and renovate smarter."
+        />
+        <meta
+          name="keywords"
+          content="construction marketplace, hire contractor India, architect portfolio, skilled labour India, civil construction, building trades, Allver"
+        />
+        <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+        <meta name="author" content="Allver Construction Marketplace" />
+        <link rel="canonical" href="https://allver.in" />
+
+        {/* Open Graph / Facebook */}
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://allver.in" />
+        <meta property="og:site_name" content="Allver" />
+        <meta property="og:title" content="Allver - India's Construction Marketplace" />
+        <meta
+          property="og:description"
+          content="Connect with verified Contractors, Architects, and Skilled Labourers on allver.in to build faster and smarter."
+        />
+        <meta property="og:image" content="https://allver.in/favicon.png" />
+
+        {/* Twitter */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content="Allver - India's Construction Marketplace" />
+        <meta
+          name="twitter:description"
+          content="Connect with verified Contractors, Architects, and Skilled Labourers on allver.in."
+        />
+        <meta name="twitter:image" content="https://allver.in/favicon.png" />
+
+        {/* Favicons for Google Search & Browsers */}
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="shortcut icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/favicon.png" />
+
         {/* Google Maps JavaScript API with Places Library */}
         {googleMapsKey ? (
           <script

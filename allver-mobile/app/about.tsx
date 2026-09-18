@@ -187,16 +187,32 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {/* About the Team */}
+        {/* Vetting & Quality Standards */}
+        <View style={styles.section}>
+          <Text style={styles.sectionHeader}>Verification & Platform Standards</Text>
+          <View style={styles.card}>
+            <Text style={[styles.cardText, { marginBottom: 8 }]}>
+              To promote a dependable building marketplace, Allver encourages and verifies professional documentation, including:
+            </Text>
+            <View style={{ gap: 6 }}>
+              <Text style={styles.cardText}>• Business Registration & GSTIN verification for contracting entities</Text>
+              <Text style={styles.cardText}>• Professional degree & Council of Architecture credentials for design architects</Text>
+              <Text style={styles.cardText}>• Identity verification and skill certification for trade workers</Text>
+              <Text style={styles.cardText}>• Documented photographic evidence of past executed projects</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* About the Team & Mission */}
         <View style={styles.teamCard}>
-          <Text style={styles.teamHeader}>About the Team</Text>
+          <Text style={styles.teamHeader}>About the Team & Mission</Text>
           <Text style={styles.teamDesc}>
-            Allver is being built by a team passionate about technology and the construction industry, with the vision of making India's construction ecosystem more organized, accessible, and digital.
+            Allver is operated by a dedicated team of construction technologists and software engineers based in India. Our mission is to digitize and streamline the multi-billion dollar Indian building and trade ecosystem, empowering clients with transparent choices and professionals with consistent work opportunities.
           </Text>
 
           <View style={styles.divider} />
 
-          <Text style={styles.contactLabel}>For any questions or enquiries:</Text>
+          <Text style={styles.contactLabel}>Official Contact & Corporate Enquiries:</Text>
           <TouchableOpacity
             style={styles.contactRow}
             onPress={handleEmailPress}
@@ -205,6 +221,18 @@ export default function AboutScreen() {
             <Feather name="mail" size={16} color={COLORS.gold} />
             <Text style={styles.contactEmail}>contact@allver.in</Text>
           </TouchableOpacity>
+
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
+            <TouchableOpacity onPress={() => router.push('/services')}>
+              <Text style={{ fontSize: 12.5, fontWeight: '700', color: COLORS.primary }}>Explore Services →</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/how-it-works')}>
+              <Text style={{ fontSize: 12.5, fontWeight: '700', color: COLORS.primary }}>How It Works →</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/faq')}>
+              <Text style={{ fontSize: 12.5, fontWeight: '700', color: COLORS.primary }}>FAQ →</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={{ height: 40 }} />

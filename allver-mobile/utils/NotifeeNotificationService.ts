@@ -65,6 +65,15 @@ export class NotifeeNotificationService {
         sound: 'default',
       });
 
+      // 4. Booking & Instant Service Alerts Channel
+      await notifee.createChannel({
+        id: 'booking_alerts',
+        name: 'Booking & Service Alerts',
+        description: 'Notifications for on-demand service bookings, provider status, and completion',
+        importance: AndroidImportance?.HIGH || 4,
+        vibration: true,
+        sound: 'default',
+      });
 
       // 5. Payment Channel
       await notifee.createChannel({
@@ -322,6 +331,46 @@ export class NotifeeNotificationService {
       });
     } catch (err) {
       console.error('[NotifeeService] Error displaying payment notification:', err);
+    }
+  }
+
+  /**
+   * Display Booking Lifecycle Notification (Instant Service Provider / Customer Alerts)
+   */
+  public static async displayBookingNotification(data: {
+    bookingId: string;
+    title: string;
+    body: string;
+    type?: string;
+  }) {
+    if (!notifee) return;
+    await this.initChannels();
+
+    const { bookingId, title, body, type = 'BOOKING_ALERT' } = data;
+
+    try {
+      await notifee.displayNotification({
+        id: `booking_${bookingId}_${Date.now()}`,
+        title: title || 'Allver Booking Update',
+        body: body || '',
+        data: {
+          bookingId,
+          jobId: bookingId,
+          type,
+          category: 'booking'
+        },
+        android: {
+          channelId: 'booking_alerts',
+          importance: AndroidImportance?.HIGH || 4,
+          pressAction: {
+            id: 'default',
+            launchActivity: 'default',
+          },
+        },
+      });
+      console.log(`[NotifeeService] Displayed booking notification for booking ${bookingId}`);
+    } catch (err) {
+      console.error('[NotifeeService] Error displaying booking notification:', err);
     }
   }
 

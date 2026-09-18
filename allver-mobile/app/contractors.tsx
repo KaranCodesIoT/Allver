@@ -22,80 +22,7 @@ const COLORS = {
   bgLight: '#F9FAFB',
 };
 
-const CONTRACTORS_DATA = [
-  {
-    id: '1',
-    name: 'BuildWell Constructions',
-    avatar: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=200&auto=format&fit=crop',
-    coverImage: 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop',
-    rating: 4.8,
-    reviews: 124,
-    location: 'Mumbai, Maharashtra',
-    experience: '12+ Years',
-    specialization: 'Specialized in residential and commercial construction with quality and timely delivery.',
-    projects: 156,
-    followers: 320,
-    firmName: 'BuildWell Construction Group',
-    phone: '+91 98765 43210',
-    workerCount: '25 Workers Available',
-    serviceAreas: 'Mumbai, Navi Mumbai',
-    skills: ['RCC Work', 'Brickwork', 'Plumbing', 'Electrical', 'Painting', 'Tile Work', 'False Ceiling', 'Carpentry']
-  },
-  {
-    id: '2',
-    name: 'Surya Constructions',
-    avatar: 'https://images.unsplash.com/photo-1581094288338-2314dddb7ecc?q=80&w=200&auto=format&fit=crop',
-    coverImage: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?q=80&w=800&auto=format&fit=crop',
-    rating: 4.7,
-    reviews: 98,
-    location: 'Pune, Maharashtra',
-    experience: '10+ Years',
-    specialization: 'Building your dream with strength, precision and reliability.',
-    projects: 112,
-    followers: 245,
-    firmName: 'Surya Construction Services',
-    phone: '+91 98765 43211',
-    workerCount: '18 Workers Available',
-    serviceAreas: 'Pune, Pimpri Chinchwad',
-    skills: ['Renovation', 'Painting', 'Flooring', 'Carpentry', 'Plumbing', 'Electrical']
-  },
-  {
-    id: '3',
-    name: 'Shree Ram Builders',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=200&auto=format&fit=crop',
-    coverImage: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=800&auto=format&fit=crop',
-    rating: 4.6,
-    reviews: 76,
-    location: 'Bengaluru, Karnataka',
-    experience: '8+ Years',
-    specialization: 'Experts in home construction, renovation and civil work.',
-    projects: 98,
-    followers: 198,
-    firmName: 'Shree Ram Builders & Developers',
-    phone: '+91 98765 43212',
-    workerCount: '22 Workers Available',
-    serviceAreas: 'Bengaluru, Whitefield',
-    skills: ['Building Construction', 'Renovation', 'Carpentry', 'Flooring']
-  },
-  {
-    id: '4',
-    name: 'Reliable Infra Solutions',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=200&auto=format&fit=crop',
-    coverImage: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=800&auto=format&fit=crop',
-    rating: 4.5,
-    reviews: 64,
-    location: 'Hyderabad, Telangana',
-    experience: '9+ Years',
-    specialization: 'Delivering strong and sustainable structures across industries.',
-    projects: 86,
-    followers: 176,
-    firmName: 'Reliable Infra Solutions Ltd',
-    phone: '+91 98765 43213',
-    workerCount: '15 Workers Available',
-    serviceAreas: 'Hyderabad, Secunderabad',
-    skills: ['RCC Work', 'Building Construction', 'Renovation']
-  }
-];
+
 
 const PREDEFINED_SKILLS = [
   'General Contracting',
@@ -177,7 +104,7 @@ export default function ContractorsScreen() {
     const location = item.city || '';
     const matchesLocation = location.toLowerCase().includes(locationQuery.toLowerCase());
 
-    const rating = item.rating || 4.5;
+    const rating = item.rating || 0;
     const matchesRating = ratingQuery ? rating >= parseFloat(ratingQuery) : true;
     
     const matchesSkill = selectedSkill
@@ -209,9 +136,9 @@ export default function ContractorsScreen() {
       params: {
         id: contractor._id,
         name: contractor.fullName,
-        avatar: resolveAvatarUrl(contractor.avatarUrl, contractor.updatedAt) || 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=200&auto=format&fit=crop',
-        coverImage: resolveAvatarUrl(contractor.cover, contractor.updatedAt) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop',
-        rating: (contractor.rating || 4.5).toString(),
+        avatar: resolveAvatarUrl(contractor.avatarUrl, contractor.updatedAt) || '',
+        coverImage: resolveAvatarUrl(contractor.cover, contractor.updatedAt) || '',
+        rating: (contractor.rating || 0).toString(),
         reviews: (contractor.reviews || 0).toString(),
         location: contractor.city,
         experience: contractor.experience || 'Entry Level',
@@ -222,7 +149,7 @@ export default function ContractorsScreen() {
         followers: (contractor.followersCount || 0).toString(),
         firmName: contractor.firmName || 'Independent Contractor',
         phone: contractor.phoneNumber || '',
-        workerCount: contractor.teamSize ? `${contractor.teamSize} Workers` : '10 Workers',
+        workerCount: contractor.teamSize ? `${contractor.teamSize} Workers` : '',
         serviceAreas: areasStr,
         skills: skillsStr
       }
@@ -318,7 +245,7 @@ export default function ContractorsScreen() {
         ) : (
           <ScrollView bounces={true} contentContainerStyle={styles.scrollContent}>
             {filteredContractors.map((item) => {
-              const avatar = resolveAvatarUrl(item.avatarUrl) || 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=200&auto=format&fit=crop';
+              const avatar = resolveAvatarUrl(item.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.fullName || 'Contractor')}&background=2563EB&color=fff`;
               const specialization = Array.isArray(item.specialization) 
                 ? item.specialization.join(', ') 
                 : (item.specialization || 'General Contractor');
@@ -330,13 +257,21 @@ export default function ContractorsScreen() {
                     <View style={styles.cardDetailsCol}>
                       <View style={styles.nameRow}>
                         <Text style={styles.nameText}>{item.fullName}</Text>
-                        <Feather name="check-circle" size={14} color={COLORS.green} style={styles.verifiedIcon} />
+                        {item.isVerified && (
+                          <Feather name="check-circle" size={14} color={COLORS.green} style={styles.verifiedIcon} />
+                        )}
                       </View>
                       
                       <View style={styles.ratingRow}>
-                        <Feather name="star" size={13} color={COLORS.gold} style={styles.starIcon} />
-                        <Text style={styles.ratingText}>{item.rating || 4.5}</Text>
-                        <Text style={styles.reviewsText}>({item.reviews || 0} {t('reviews')})</Text>
+                        {item.rating ? (
+                          <>
+                            <Feather name="star" size={13} color={COLORS.gold} style={styles.starIcon} />
+                            <Text style={styles.ratingText}>{item.rating}</Text>
+                            <Text style={styles.reviewsText}>({item.reviews || 0} {t('reviews')})</Text>
+                          </>
+                        ) : (
+                          <Text style={[styles.reviewsText, { color: COLORS.textDark, fontWeight: '600' }]}>New Contractor</Text>
+                        )}
                       </View>
 
                       <View style={styles.metaRow}>

@@ -9,6 +9,7 @@ const Conversation = require('../models/Conversation');
 const FinancialService = require('./FinancialService');
 const PaymentService = require('./PaymentService');
 const PricingEngine = require('./PricingEngine');
+const NotificationService = require('./NotificationService');
 
 class BookingDispatchEngine {
   constructor(io, activeWorkerLocations, options = {}) {
@@ -180,8 +181,11 @@ class BookingDispatchEngine {
       ? workerObj.specialization.join(' ').toLowerCase()
       : (workerObj.specialization || '').toLowerCase();
     const aboutStr = (workerObj.about || workerObj.shortDesc || '').toLowerCase();
+    const skillsStr = Array.isArray(workerObj.skills)
+      ? workerObj.skills.join(' ').toLowerCase()
+      : (workerObj.skills || '').toLowerCase();
 
-    const workerText = `${skillStr} ${catStr} ${specStr} ${aboutStr} ${roleStr}`.trim();
+    const workerText = `${skillStr} ${catStr} ${specStr} ${aboutStr} ${roleStr} ${skillsStr}`.trim();
 
     if (acceptableSkills.some(s => workerText.includes(s.toLowerCase()))) return true;
     if (workerText.includes(requestedService.toLowerCase())) return true;
@@ -529,6 +533,7 @@ class BookingDispatchEngine {
 
     // Start Wave 1 immediately
     await this.executeWave(jobId, 1);
+    return job;
   }
 
   // --- Wave Execution ---
@@ -676,6 +681,26 @@ class BookingDispatchEngine {
           }
           this.io.to(wId).emit('job_request_broadcast', payload);
           this.io.to(`user:${wId}`).emit('job_request_broadcast', payload);
+
+          // Authoritative Persistent Notification + Push for Worker (Offline & Background resilient)
+          NotificationService.sendBookingNotification({
+            type: 'BOOKING_REQUEST',
+            bookingId: job.jobId,
+            userId: wId,
+            senderId: job.clientUserId || null,
+            title: `New ${job.service || 'Service'} Booking Request!`,
+            body: `New booking request for ${job.service || 'service'} (${dist.toFixed(1)} km away). Tap to view and accept.`,
+            metadata: {
+              jobId: job.jobId,
+              service: job.service,
+              price: job.price,
+              distanceKm: dist,
+              clientName: job.clientInfo?.name,
+              formattedAddress: job.formattedAddress || job.location
+            },
+            idempotencyKey: `BOOKING_REQUEST_${job.jobId}_${wId}`,
+            io: this.io
+          }).catch(err => console.error('[BookingDispatchEngine] Error sending BOOKING_REQUEST notification:', err));
         }
       }
     }
@@ -722,17 +747,40 @@ class BookingDispatchEngine {
       return { success: false, reason: 'ALREADY_TAKEN' };
     }
 
-    job.lock = true;
-    job.status = 'WORKER_ACCEPTED';
-    job.assignedWorker = workerInfo;
-    job.workerSocketId = workerSocket?.id;
-    job.workerSocket = workerSocket;
     let workerUserId = (workerInfo.id || workerInfo.userId || workerInfo._id || '').toString();
     if (!workerUserId) {
       workerUserId = '6a4f0c7d30034d5c126f259e'; // Authoritative registered Painter in DB (akash chauhan)
     } else if (!this.options?.skipDb && mongoose.connection && mongoose.connection.readyState === 1 && !mongoose.Types.ObjectId.isValid(workerUserId)) {
       workerUserId = '6a4f0c7d30034d5c126f259e';
     }
+
+    // Cash Debt Check: When job is CASH, verify worker does not exceed cash-debt threshold
+    if (job.paymentMethod === 'CASH' && this.financialService) {
+      const eligibility = await this.financialService.canAcceptCashJob(workerUserId);
+      if (eligibility && !eligibility.allowed) {
+        console.warn(`[DispatchEngine] Worker ${workerUserId} rejected for Cash Job ${jobId}: CASH_JOB_RESTRICTED_DUE_TO_DEBT (Balance: ₹${eligibility.balance}, Limit: ₹${eligibility.threshold})`);
+        if (workerSocket && typeof workerSocket.emit === 'function') {
+          workerSocket.emit('job_accept_error', {
+            jobId,
+            reason: 'CASH_JOB_RESTRICTED_DUE_TO_DEBT',
+            message: eligibility.message || 'You cannot accept cash jobs due to outstanding commission debt. Please settle your balance.'
+          });
+        }
+        return {
+          success: false,
+          reason: 'CASH_JOB_RESTRICTED_DUE_TO_DEBT',
+          message: eligibility.message,
+          balance: eligibility.balance,
+          threshold: eligibility.threshold
+        };
+      }
+    }
+
+    job.lock = true;
+    job.status = 'WORKER_ACCEPTED';
+    job.assignedWorker = workerInfo;
+    job.workerSocketId = workerSocket?.id;
+    job.workerSocket = workerSocket;
     job.workerUserId = workerUserId;
     job.workerId = workerUserId;
     job.acceptedAt = Date.now();
@@ -874,6 +922,26 @@ class BookingDispatchEngine {
     this.emitToJob(job, 'job_assigned_client', statusPayload);
     this.emitToJob(job, `job_assigned_client_${jobId}`, statusPayload);
 
+    // Send persistent BOOKING_ACCEPTED notification to Client
+    if (job.clientUserId) {
+      NotificationService.sendBookingNotification({
+        type: 'BOOKING_ACCEPTED',
+        bookingId: job.jobId,
+        userId: job.clientUserId,
+        senderId: winnerIdStr,
+        title: `${jobSummary.workerInfo?.name || 'Provider'} Accepted Your Booking!`,
+        body: `Your ${job.service || 'service'} booking has been accepted. Your provider is preparing to arrive.`,
+        metadata: {
+          jobId: job.jobId,
+          service: job.service,
+          worker: jobSummary.workerInfo,
+          etaMinutes: job.route?.duration
+        },
+        idempotencyKey: `BOOKING_ACCEPTED_${job.jobId}`,
+        io: this.io
+      }).catch(err => console.error('[BookingDispatchEngine] Error sending BOOKING_ACCEPTED notification:', err));
+    }
+
     return { success: true, job: jobSummary };
   }
 
@@ -903,6 +971,25 @@ class BookingDispatchEngine {
     // Backwards compatibility event
     this.emitToJob(job, 'job_status_updated', { ...payload, status: 'TRAVELLING' });
     this.emitToJob(job, `job_status_updated_${jobId}`, { ...payload, status: 'TRAVELLING' });
+
+    // Send persistent PROVIDER_ON_THE_WAY notification to Client
+    if (job.clientUserId) {
+      NotificationService.sendBookingNotification({
+        type: 'PROVIDER_ON_THE_WAY',
+        bookingId: job.jobId,
+        userId: job.clientUserId,
+        senderId: job.workerUserId || null,
+        title: 'Provider is on the way!',
+        body: `${job.assignedWorker?.name || 'Your provider'} is en route to your location.`,
+        metadata: {
+          jobId: job.jobId,
+          service: job.service,
+          etaMinutes: job.route?.duration
+        },
+        idempotencyKey: `PROVIDER_ON_THE_WAY_${job.jobId}`,
+        io: this.io
+      }).catch(err => console.error('[BookingDispatchEngine] Error sending PROVIDER_ON_THE_WAY notification:', err));
+    }
 
     return { success: true, job };
   }
@@ -943,7 +1030,7 @@ class BookingDispatchEngine {
             },
             clientInfo: dbJob.clientInfo || {
               name: 'Client',
-              phone: '+91 98765 43210'
+              phone: ''
             },
             timers: [],
             notifiedWorkerIds: new Set()
@@ -1042,6 +1129,23 @@ class BookingDispatchEngine {
     this.emitToJob(job, 'job_status_updated', { ...payload, status: 'ARRIVED' });
     this.emitToJob(job, `job_status_updated_${jobId}`, { ...payload, status: 'ARRIVED' });
 
+    if (job.clientUserId) {
+      NotificationService.sendBookingNotification({
+        type: 'PROVIDER_ARRIVED',
+        bookingId: job.jobId,
+        userId: job.clientUserId,
+        senderId: job.workerUserId || null,
+        title: 'Provider Arrived!',
+        body: `${job.assignedWorker?.name || 'Your provider'} has arrived at your location.`,
+        metadata: {
+          jobId: job.jobId,
+          service: job.service
+        },
+        idempotencyKey: `PROVIDER_ARRIVED_${job.jobId}`,
+        io: this.io
+      }).catch(err => console.error('[BookingDispatchEngine] Error sending PROVIDER_ARRIVED notification:', err));
+    }
+
     return { success: true, job };
   }
 
@@ -1072,6 +1176,23 @@ class BookingDispatchEngine {
     // Backwards compatibility event
     this.emitToJob(job, 'job_status_updated', { ...payload, status: 'WORK_IN_PROGRESS', workStartedAt: job.startedAt });
     this.emitToJob(job, `job_status_updated_${jobId}`, { ...payload, status: 'WORK_IN_PROGRESS', workStartedAt: job.startedAt });
+
+    if (job.clientUserId) {
+      NotificationService.sendBookingNotification({
+        type: 'JOB_STARTED',
+        bookingId: job.jobId,
+        userId: job.clientUserId,
+        senderId: job.workerUserId || null,
+        title: 'Service Started',
+        body: `${job.assignedWorker?.name || 'Your provider'} has started work on your ${job.service || 'service'}.`,
+        metadata: {
+          jobId: job.jobId,
+          service: job.service
+        },
+        idempotencyKey: `JOB_STARTED_${job.jobId}`,
+        io: this.io
+      }).catch(err => console.error('[BookingDispatchEngine] Error sending JOB_STARTED notification:', err));
+    }
 
     return { success: true, job };
   }
@@ -1123,6 +1244,24 @@ class BookingDispatchEngine {
     this.emitToJob(job, 'job_completion_submitted', payload);
     this.emitToJob(job, `job_completion_submitted_${jobId}`, payload);
 
+    if (job.clientUserId) {
+      NotificationService.sendBookingNotification({
+        type: 'JOB_COMPLETED',
+        bookingId: job.jobId,
+        userId: job.clientUserId,
+        senderId: job.workerUserId || null,
+        title: 'Job Completed - Confirmation Required',
+        body: `${job.assignedWorker?.name || 'Your provider'} completed the work. Please confirm and review the bill: ₹${job.completionData.finalAmount}.`,
+        metadata: {
+          jobId: job.jobId,
+          service: job.service,
+          finalAmount: job.completionData.finalAmount
+        },
+        idempotencyKey: `WORK_COMPLETION_REQUESTED_${job.jobId}`,
+        io: this.io
+      }).catch(err => console.error('[BookingDispatchEngine] Error sending JOB_COMPLETED review notification:', err));
+    }
+
     return { success: true, job };
   }
 
@@ -1152,6 +1291,41 @@ class BookingDispatchEngine {
     // Backwards compatibility event
     this.emitToJob(job, 'job_completed_confirmed', payload);
     this.emitToJob(job, `job_completed_confirmed_${jobId}`, payload);
+
+    if (job.clientUserId) {
+      NotificationService.sendBookingNotification({
+        type: 'REVIEW_REQUEST',
+        bookingId: job.jobId,
+        userId: job.clientUserId,
+        senderId: job.workerUserId || null,
+        title: 'Rate & Review Your Experience',
+        body: `How was your experience with ${job.assignedWorker?.name || 'your provider'}? Leave a review to help the community.`,
+        metadata: {
+          jobId: job.jobId,
+          service: job.service,
+          worker: job.assignedWorker
+        },
+        idempotencyKey: `REVIEW_REQUEST_${job.jobId}`,
+        io: this.io
+      }).catch(err => console.error('[BookingDispatchEngine] Error sending REVIEW_REQUEST notification:', err));
+    }
+
+    if (job.workerUserId) {
+      NotificationService.sendBookingNotification({
+        type: 'JOB_COMPLETED',
+        bookingId: job.jobId,
+        userId: job.workerUserId,
+        senderId: job.clientUserId || null,
+        title: 'Customer Confirmed Work Completion',
+        body: `Customer confirmed completion of ${job.service || 'service'}. Proceeding to payment.`,
+        metadata: {
+          jobId: job.jobId,
+          service: job.service
+        },
+        idempotencyKey: `WORK_CONFIRMED_WORKER_${job.jobId}`,
+        io: this.io
+      }).catch(err => console.error('[BookingDispatchEngine] Error sending JOB_COMPLETED worker notification:', err));
+    }
 
     return { success: true, job };
   }
@@ -1266,6 +1440,42 @@ class BookingDispatchEngine {
 
     this.emitToJob(job, 'job_status_changed', payload);
     this.emitToJob(job, 'job_payment_confirmed', payload);
+
+    // Notify client of payment success
+    if (job.clientUserId) {
+      NotificationService.sendBookingNotification({
+        type: 'PAYMENT_SUCCESS',
+        bookingId: job.jobId,
+        userId: job.clientUserId,
+        title: 'Payment Successful',
+        body: `Your payment of ₹${finalAmount} for ${job.service || 'service'} was successful.`,
+        metadata: {
+          jobId: job.jobId,
+          amount: finalAmount,
+          method
+        },
+        idempotencyKey: `PAYMENT_SUCCESS_CLIENT_${job.jobId}`,
+        io: this.io
+      }).catch(err => console.error('[BookingDispatchEngine] Error sending PAYMENT_SUCCESS client notification:', err));
+    }
+
+    // Notify worker of earning received
+    if (job.workerUserId) {
+      NotificationService.sendBookingNotification({
+        type: 'PAYMENT_SUCCESS',
+        bookingId: job.jobId,
+        userId: job.workerUserId,
+        title: 'Payment Received!',
+        body: `₹${commission.workerNetEarning} has been credited to your Allver wallet for job #${job.jobId}.`,
+        metadata: {
+          jobId: job.jobId,
+          earning: commission.workerNetEarning,
+          method
+        },
+        idempotencyKey: `PAYMENT_SUCCESS_WORKER_${job.jobId}`,
+        io: this.io
+      }).catch(err => console.error('[BookingDispatchEngine] Error sending PAYMENT_SUCCESS worker notification:', err));
+    }
 
     // Immediately proceed to settlement
     return this.settleJob(jobId);
@@ -1410,6 +1620,20 @@ class BookingDispatchEngine {
       cancelledAt: job.cancelledAt
     });
 
+    if (job.clientUserId) {
+      NotificationService.sendBookingNotification({
+        type: 'BOOKING_CANCELLED',
+        bookingId: job.jobId,
+        userId: job.clientUserId,
+        senderId: job.workerUserId || null,
+        title: 'Booking Cancelled by Provider',
+        body: `Your provider cancelled the booking (${reason}). We apologize for the inconvenience.`,
+        metadata: { jobId: job.jobId, reason },
+        idempotencyKey: `BOOKING_CANCELLED_BY_WORKER_${job.jobId}`,
+        io: this.io
+      }).catch(err => console.error('[BookingDispatchEngine] Error sending BOOKING_CANCELLED notification:', err));
+    }
+
     return { success: true };
   }
 
@@ -1523,6 +1747,82 @@ class BookingDispatchEngine {
     return null;
   }
 
+  // --- Get Pending Booking Requests for Worker (Sync on App Open / Reconnect) ---
+  async getPendingRequestsForWorker(workerId) {
+    if (!workerId) return [];
+    const wStr = workerId.toString();
+    const pending = [];
+
+    // 1. Check in-memory active jobs in SEARCHING state
+    for (const [, job] of this.jobs.entries()) {
+      if (job.status === 'SEARCHING') {
+        const isNotified = job.notifiedWorkerIds && (
+          job.notifiedWorkerIds.has(wStr) ||
+          (Array.isArray(job.notifiedWorkerIds) && job.notifiedWorkerIds.includes(wStr))
+        );
+        if (isNotified) {
+          pending.push({
+            jobId: job.jobId,
+            service: job.service,
+            location: job.location,
+            latitude: job.latitude,
+            longitude: job.longitude,
+            formattedAddress: job.formattedAddress,
+            placeId: job.placeId,
+            date: job.date,
+            price: job.price,
+            clientInfo: job.clientInfo,
+            status: job.status,
+            createdAt: job.createdAt
+          });
+        }
+      }
+    }
+
+    // 2. Also check MongoDB for recent SEARCHING jobs
+    if (!this.options?.skipDb && mongoose.connection && mongoose.connection.readyState === 1) {
+      try {
+        const Job = mongoose.model('Job');
+        const dbJobs = await Job.find({
+          status: 'SEARCHING',
+          createdAt: { $gte: new Date(Date.now() - 15 * 60 * 1000) } // last 15 mins
+        }).lean();
+
+        for (const dbJ of dbJobs) {
+          if (!pending.some(p => p.jobId === dbJ.jobId)) {
+            const Notification = mongoose.model('Notification');
+            const notif = await Notification.findOne({
+              recipientId: wStr,
+              bookingId: dbJ.jobId,
+              type: 'BOOKING_REQUEST'
+            }).lean();
+
+            if (notif) {
+              pending.push({
+                jobId: dbJ.jobId,
+                service: dbJ.service,
+                location: dbJ.location,
+                latitude: dbJ.latitude,
+                longitude: dbJ.longitude,
+                formattedAddress: dbJ.formattedAddress,
+                placeId: dbJ.placeId,
+                date: dbJ.date,
+                price: dbJ.price,
+                clientInfo: dbJ.clientInfo,
+                status: dbJ.status,
+                createdAt: dbJ.createdAt
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[DispatchEngine] Error querying pending requests from DB:', err);
+      }
+    }
+
+    return pending;
+  }
+
   // --- Client Cancels Job ---
   async cancelJob(jobId) {
     let job = this.jobs.get(jobId);
@@ -1569,6 +1869,21 @@ class BookingDispatchEngine {
 
     this.emitToJob(job, 'job_status_changed', { jobId, status: 'CANCELLED_BY_CLIENT' });
     this.emitToJob(job, 'job_cancelled_success', { jobId, status: 'CANCELLED_BY_CLIENT' });
+
+    if (job.workerUserId) {
+      NotificationService.sendBookingNotification({
+        type: 'BOOKING_CANCELLED',
+        bookingId: job.jobId,
+        userId: job.workerUserId,
+        senderId: job.clientUserId || null,
+        title: 'Booking Cancelled by Customer',
+        body: `The booking #${job.jobId} for ${job.service || 'service'} has been cancelled by the customer.`,
+        metadata: { jobId: job.jobId },
+        idempotencyKey: `BOOKING_CANCELLED_BY_CLIENT_${job.jobId}`,
+        io: this.io
+      }).catch(err => console.error('[BookingDispatchEngine] Error sending BOOKING_CANCELLED notification:', err));
+    }
+
     this.jobs.delete(jobId);
     return true;
   }

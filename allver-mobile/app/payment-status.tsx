@@ -303,7 +303,7 @@ export default function PaymentStatusScreen() {
           <TouchableOpacity
             style={styles.contactSupportBtn}
             onPress={() => {
-              Linking.openURL('tel:+919876543210');
+              Linking.openURL('mailto:support@allver.in?subject=Payment%20Support%20Request');
             }}
             activeOpacity={0.8}
           >

@@ -1395,7 +1395,11 @@ mongoose.connect(process.env.MONGODB_URI)
     try {
       const User = require('./models/User');
       const usersToDelete = await User.find({
-        fullName: { $in: ['Rahul Verma', 'Priya Mishra', 'Neha Sharma', 'Ar. Neha Sharma'] }
+        $or: [
+          { fullName: { $in: ['Rahul Verma', 'Priya Mishra', 'Neha Sharma', 'Ar. Neha Sharma', 'Amit Kumar', 'Rohit Mehta', 'Priya Nair', 'Karan Patel', 'Ramesh Yadav', 'Suresh Patil', 'BuildWell Constructions', 'BuildWell Contractors'] } },
+          { email: /@example\.com$/i },
+          { phoneNumber: { $in: ['9876543210', '9876543211', '9876543212', '9876543213', '9876543214', '9876543215'] } }
+        ]
       });
       const userIds = usersToDelete.map(u => u._id);
       if (userIds.length > 0) {
@@ -2047,7 +2051,9 @@ async function verifyFirebaseIdTokenHelper(idToken) {
         uid: decoded.uid,
         phone_number: decoded.phone_number,
         email: decoded.email,
-        email_verified: Boolean(decoded.email_verified)
+        email_verified: Boolean(decoded.email_verified),
+        displayName: decoded.name || decoded.displayName || '',
+        photoUrl: decoded.picture || ''
       };
     } catch (e) {
       console.warn('[Firebase Admin] Token verification failed:', e.message);
@@ -2070,7 +2076,9 @@ async function verifyFirebaseIdTokenHelper(idToken) {
         uid: u.localId,
         phone_number: u.phoneNumber,
         email: u.email,
-        email_verified: Boolean(u.emailVerified)
+        email_verified: Boolean(u.emailVerified),
+        displayName: u.displayName || (u.providerUserInfo && u.providerUserInfo[0]?.displayName) || '',
+        photoUrl: u.photoUrl || (u.providerUserInfo && u.providerUserInfo[0]?.photoUrl) || ''
       };
     } else {
       console.warn('[Firebase Auth Helper] Token lookup returned no user. Details:', data.error?.message || 'Unknown response');
@@ -2079,6 +2087,78 @@ async function verifyFirebaseIdTokenHelper(idToken) {
     console.error('[Firebase Auth Helper] Token verification fallback error:', err.message);
   }
   return null;
+}
+
+// Helper to check whether a user has completed phone verification
+function isUserPhoneVerified(user) {
+  if (!user) return false;
+  if (user.phoneVerified === true) return true;
+  // If user has a valid 10-digit phone number and phoneVerified is not explicitly false
+  if (user.phoneNumber && user.phoneNumber.replace(/\D/g, '').length >= 10 && user.phoneVerified !== false) {
+    return true;
+  }
+  return false;
+}
+
+// Authoritative middleware to enforce phone verification on high-trust actions
+async function requirePhoneVerified(req, res, next) {
+  try {
+    let user = null;
+    const User = mongoose.model('User');
+
+    // 1. Check req.userId (from authenticateJWT if already executed)
+    if (req.userId) {
+      user = await User.findById(req.userId);
+    }
+
+    // 2. Check Bearer token in header if req.userId not set
+    if (!user) {
+      const authHeader = req.headers.authorization;
+      const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.slice(7).trim() : null;
+      if (bearerToken) {
+        try {
+          const secret = process.env.JWT_SECRET || 'allver_jwt_secure_secret_default';
+          const decoded = jwt.verify(bearerToken, secret);
+          const resolvedId = decoded.id || decoded.userId || decoded._id;
+          if (resolvedId) {
+            user = await User.findById(resolvedId);
+            req.userId = resolvedId;
+            req.user = { id: resolvedId, _id: resolvedId, role: decoded.role, ...decoded };
+          }
+        } catch (jwtErr) {}
+      }
+    }
+
+    // 3. Fallback to client ID in request body
+    if (!user) {
+      const fallbackId = req.body?.client || req.body?.clientId || req.body?.customerId || req.body?.userId;
+      if (fallbackId && mongoose.Types.ObjectId.isValid(fallbackId)) {
+        user = await User.findById(fallbackId);
+      }
+    }
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required. Please log in to continue.'
+      });
+    }
+
+    if (!isUserPhoneVerified(user)) {
+      console.warn(`[Security Check] High-trust action blocked for unverified user: ${user._id} (${user.email || 'no-email'})`);
+      return res.status(403).json({
+        success: false,
+        code: 'PHONE_VERIFICATION_REQUIRED',
+        message: 'Phone verification is required to perform this action. Please verify your phone number to continue.'
+      });
+    }
+
+    req.verifiedUser = user;
+    next();
+  } catch (err) {
+    console.error('[requirePhoneVerified] Middleware error:', err);
+    return res.status(500).json({ success: false, message: 'Authorization check error: ' + (err.message || err) });
+  }
 }
 
 // POST /api/auth/firebase-phone-login
@@ -2152,6 +2232,7 @@ app.post('/api/auth/firebase-phone-login', async (req, res) => {
     if (decoded.uid && !user.firebaseUid) {
       user.firebaseUid = decoded.uid;
     }
+    user.phoneVerified = true;
 
     user.lastActive = new Date();
     await user.save();
@@ -2176,6 +2257,568 @@ app.post('/api/auth/firebase-phone-login', async (req, res) => {
   } catch (error) {
     console.error('[Firebase Phone Login] Error:', error);
     return res.status(500).json({ success: false, message: 'Server error during phone login: ' + (error.message || error) });
+  }
+});
+
+// POST /api/auth/firebase-google-login
+// Alternative authentication via Firebase Google provider
+app.post('/api/auth/firebase-google-login', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.slice(7).trim() : null;
+    const idToken = req.body?.idToken || bearerToken;
+
+    if (!idToken) {
+      console.warn('[Google Auth] Missing idToken in body and Authorization header');
+      return res.status(400).json({ success: false, message: 'Firebase ID token is required' });
+    }
+
+    const decoded = await verifyFirebaseIdTokenHelper(idToken);
+    if (!decoded || !decoded.uid) {
+      console.warn('[Google Auth] Token validation failed');
+      return res.status(401).json({ success: false, message: 'Invalid or expired Firebase verification token' });
+    }
+
+    const tokenUid = decoded.uid;
+    const tokenEmail = decoded.email ? decoded.email.toLowerCase().trim() : null;
+    const isEmailVerified = Boolean(decoded.email_verified);
+    const displayName = (decoded.displayName || '').trim();
+    const photoUrl = decoded.photoUrl || '';
+    const tokenPhone = decoded.phone_number ? formatPhoneNumberToE164(decoded.phone_number) : '';
+
+    const User = mongoose.model('User');
+    let user = null;
+
+    // 1. Primary lookup by Firebase UID
+    if (tokenUid) {
+      user = await User.findOne({ firebaseUid: tokenUid });
+    }
+
+    // 2. Fallback lookup by verified email if not found by UID
+    if (!user && tokenEmail) {
+      user = await User.findOne({ email: tokenEmail });
+      if (user && !user.firebaseUid) {
+        user.firebaseUid = tokenUid;
+      }
+    }
+
+    let isNewUser = false;
+
+    if (!user) {
+      // 3. Create new user for Google sign-in
+      isNewUser = true;
+      const initialName = displayName || (tokenEmail ? tokenEmail.split('@')[0] : 'Allver User');
+      const randomPassword = crypto.randomBytes(16).toString('hex');
+      const defaultEmail = tokenEmail || `${tokenUid}@google.allver.app`;
+
+      user = new User({
+        fullName: initialName,
+        email: defaultEmail,
+        emailVerified: isEmailVerified || true,
+        firebaseUid: tokenUid,
+        avatarUrl: photoUrl || '',
+        phoneNumber: tokenPhone || '',
+        phone: tokenPhone || '',
+        phoneVerified: Boolean(tokenPhone && tokenPhone.length >= 10),
+        password: randomPassword,
+        role: 'Client', // Default exploring role
+        city: 'Noida',
+        language: 'en',
+        lastActive: new Date()
+      });
+
+      await user.save();
+      console.log(`[Google Auth] New Google user created: ${user._id} (${user.email}), phoneVerified: ${user.phoneVerified}`);
+    } else {
+      // Existing user: sync Google profile metadata safely
+      if (tokenUid && !user.firebaseUid) {
+        user.firebaseUid = tokenUid;
+      }
+      if (tokenEmail && (!user.email || user.email.endsWith('@allver.app'))) {
+        user.email = tokenEmail;
+      }
+      if (isEmailVerified && !user.emailVerified) {
+        user.emailVerified = true;
+      }
+      if (photoUrl && !user.avatarUrl) {
+        user.avatarUrl = photoUrl;
+      }
+      if (displayName && (!user.fullName || user.fullName === 'Allver User')) {
+        user.fullName = displayName;
+      }
+      if (tokenPhone && !user.phoneNumber) {
+        user.phoneNumber = tokenPhone;
+        user.phone = tokenPhone;
+        user.phoneVerified = true;
+      } else if (user.phoneNumber && user.phoneNumber.replace(/\D/g, '').length >= 10 && user.phoneVerified === undefined) {
+        user.phoneVerified = true;
+      }
+      user.lastActive = new Date();
+      await user.save();
+      console.log(`[Google Auth] Existing user logged in via Google: ${user._id} (${user.email}), phoneVerified: ${user.phoneVerified}`);
+    }
+
+    const secret = process.env.JWT_SECRET || 'allver_jwt_secure_secret_default';
+    const token = jwt.sign(
+      { id: user._id.toString(), userId: user._id.toString(), role: user.role },
+      secret,
+      { expiresIn: '30d' }
+    );
+
+    const userObj = user.toObject();
+    delete userObj.password;
+
+    return res.status(200).json({
+      success: true,
+      isNewUser,
+      isPhoneVerified: Boolean(user.phoneVerified || (user.phoneNumber && user.phoneNumber.length >= 10)),
+      token,
+      user: userObj,
+      message: isNewUser ? 'Welcome to Allver! Your account was created with Google.' : 'Login successful'
+    });
+  } catch (error) {
+    console.error('[Google Auth] Error during google login:', error);
+    return res.status(500).json({ success: false, message: 'Server error during Google login: ' + (error.message || error) });
+  }
+});
+
+// POST /api/auth/verify-phone
+// Authoritative backend verification & linking of phone number using Firebase Phone OTP ID token
+app.post('/api/auth/verify-phone', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.slice(7).trim() : null;
+    const { phoneIdToken, phoneNumber, userId } = req.body;
+
+    if (!phoneIdToken) {
+      return res.status(400).json({ success: false, message: 'Firebase phone verification token is required' });
+    }
+
+    const User = mongoose.model('User');
+    let currentUser = null;
+
+    if (bearerToken) {
+      try {
+        const secret = process.env.JWT_SECRET || 'allver_jwt_secure_secret_default';
+        const decodedJwt = jwt.verify(bearerToken, secret);
+        const resolvedId = decodedJwt.id || decodedJwt.userId;
+        if (resolvedId) {
+          currentUser = await User.findById(resolvedId);
+        }
+      } catch (jwtErr) {
+        // Fallback to userId
+      }
+    }
+
+    if (!currentUser && userId && mongoose.Types.ObjectId.isValid(userId)) {
+      currentUser = await User.findById(userId);
+    }
+
+    if (!currentUser) {
+      return res.status(401).json({ success: false, message: 'Authentication required. Please log in first.' });
+    }
+
+    // Authoritative verification of phoneIdToken with Firebase
+    const decoded = await verifyFirebaseIdTokenHelper(phoneIdToken);
+    if (!decoded) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired Firebase phone verification token' });
+    }
+
+    const tokenPhone = decoded.phone_number;
+    if (!tokenPhone && !phoneNumber) {
+      return res.status(400).json({ success: false, message: 'Could not extract verified phone number from token' });
+    }
+
+    const e164Phone = formatPhoneNumberToE164(tokenPhone || phoneNumber);
+    if (tokenPhone && phoneNumber) {
+      const e164Client = formatPhoneNumberToE164(phoneNumber);
+      if (formatPhoneNumberToE164(tokenPhone) !== e164Client) {
+        return res.status(403).json({
+          success: false,
+          message: 'Security validation failed: Phone number does not match verified token'
+        });
+      }
+    }
+
+    const rawDigits10 = e164Phone.replace(/\D/g, '').slice(-10);
+
+    // Check if another account in MongoDB already has this verified phone number
+    const existingPhoneUser = await User.findOne({
+      _id: { $ne: currentUser._id },
+      $or: [
+        { phoneNumber: e164Phone },
+        { phoneNumber: rawDigits10 },
+        { phone: e164Phone },
+        { phone: rawDigits10 }
+      ]
+    });
+
+    if (existingPhoneUser) {
+      // Safely link identities: update existing phone account with Google email/avatar if needed
+      console.log(`[Phone Verification] Phone ${e164Phone} matches existing user ${existingPhoneUser._id}. Linking Google account to existing user...`);
+      if (currentUser.email && (!existingPhoneUser.email || existingPhoneUser.email.endsWith('@allver.app'))) {
+        existingPhoneUser.email = currentUser.email;
+        existingPhoneUser.emailVerified = currentUser.emailVerified;
+      }
+      if (currentUser.avatarUrl && !existingPhoneUser.avatarUrl) {
+        existingPhoneUser.avatarUrl = currentUser.avatarUrl;
+      }
+      if (currentUser.firebaseUid && !existingPhoneUser.firebaseUid) {
+        existingPhoneUser.firebaseUid = currentUser.firebaseUid;
+      }
+      existingPhoneUser.phoneVerified = true;
+      existingPhoneUser.lastActive = new Date();
+      await existingPhoneUser.save();
+
+      // Issue JWT for the primary existing account
+      const secret = process.env.JWT_SECRET || 'allver_jwt_secure_secret_default';
+      const token = jwt.sign(
+        { id: existingPhoneUser._id.toString(), userId: existingPhoneUser._id.toString(), role: existingPhoneUser.role },
+        secret,
+        { expiresIn: '30d' }
+      );
+      const userObj = existingPhoneUser.toObject();
+      delete userObj.password;
+
+      return res.status(200).json({
+        success: true,
+        merged: true,
+        phoneVerified: true,
+        phoneNumber: e164Phone,
+        token,
+        user: userObj,
+        message: 'Phone number verified and linked to your existing Allver account!'
+      });
+    }
+
+    // Update current user with verified phone
+    currentUser.phoneNumber = e164Phone;
+    currentUser.phone = e164Phone;
+    currentUser.phoneVerified = true;
+    currentUser.updatedAt = new Date();
+    currentUser.lastActive = new Date();
+    await currentUser.save();
+
+    console.log(`[Phone Verification] User ${currentUser._id} phone verified successfully: ${e164Phone}`);
+
+    const secret = process.env.JWT_SECRET || 'allver_jwt_secure_secret_default';
+    const token = jwt.sign(
+      { id: currentUser._id.toString(), userId: currentUser._id.toString(), role: currentUser.role },
+      secret,
+      { expiresIn: '30d' }
+    );
+
+    const userObj = currentUser.toObject();
+    delete userObj.password;
+
+    return res.status(200).json({
+      success: true,
+      phoneVerified: true,
+      phoneNumber: e164Phone,
+      token,
+      user: userObj,
+      message: 'Phone number successfully verified!'
+    });
+  } catch (err) {
+    console.error('[Phone Verification] Error in verify-phone:', err);
+    return res.status(500).json({ success: false, message: 'Server error during phone verification: ' + (err.message || err) });
+  }
+});
+
+// Helper to derive a deterministic secure password for Firebase email verification account
+function getEmailVerificationSecret(email) {
+  const secret = process.env.JWT_SECRET || 'allver_email_verification_secret_key_2026';
+  return 'Allver@' + crypto.createHmac('sha256', secret).update(email.toLowerCase().trim()).digest('hex').slice(0, 16) + '!';
+}
+
+// POST /api/auth/send-email-verification
+// Reliable, anytime email verification dispatch via Google Identity Toolkit REST API
+app.post('/api/auth/send-email-verification', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.slice(7).trim() : null;
+    const email = req.body?.email;
+    const userId = req.body?.userId;
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ success: false, message: 'A valid email address is required' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({ success: false, message: 'Invalid email address format' });
+    }
+
+    const User = mongoose.model('User');
+    let requestingUser = null;
+
+    // Authenticate / identify requesting user if token or userId provided
+    if (bearerToken) {
+      try {
+        const secret = process.env.JWT_SECRET || 'allver_jwt_secure_secret_default';
+        const decoded = jwt.verify(bearerToken, secret);
+        if (decoded?.id || decoded?.userId) {
+          requestingUser = await User.findById(decoded.id || decoded.userId);
+        }
+      } catch (jwtErr) {
+        // Continue to fallback
+      }
+    }
+
+    if (!requestingUser && userId && mongoose.Types.ObjectId.isValid(userId)) {
+      requestingUser = await User.findById(userId);
+    }
+
+    // Check if another account in MongoDB already has this verified email
+    const duplicate = await User.findOne({
+      email: cleanEmail,
+      emailVerified: true,
+      ...(requestingUser ? { _id: { $ne: requestingUser._id } } : {})
+    });
+    if (duplicate) {
+      return res.status(409).json({
+        success: false,
+        message: 'This email is already associated with another Allver account.'
+      });
+    }
+
+    const apiKey = process.env.FIREBASE_API_KEY || 'AIzaSyCGYTbKMrm04MqY4NDQEq1RhU7Bvj8gJZ0';
+    const tempPassword = getEmailVerificationSecret(cleanEmail);
+
+    let idToken = null;
+
+    // 1. Try to sign up the email with the deterministic password
+    const signUpResp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: cleanEmail,
+        password: tempPassword,
+        returnSecureToken: true
+      })
+    });
+    const signUpData = await signUpResp.json();
+
+    if (signUpData.idToken) {
+      idToken = signUpData.idToken;
+      console.log('[Email Verification] Created fresh email verification session in Firebase for:', cleanEmail);
+    } else if (signUpData.error?.message?.includes('EMAIL_EXISTS')) {
+      // 2. Email exists in Firebase: sign in to acquire fresh ID token
+      console.log('[Email Verification] Email exists in Firebase. Signing in to retrieve fresh token for:', cleanEmail);
+      const signInResp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          password: tempPassword,
+          returnSecureToken: true
+        })
+      });
+      const signInData = await signInResp.json();
+
+      if (signInData.idToken) {
+        idToken = signInData.idToken;
+      } else {
+        console.warn('[Email Verification] signInWithPassword error:', signInData.error?.message);
+        return res.status(500).json({
+          success: false,
+          message: 'Unable to initiate verification for this email. Please try again or contact support.'
+        });
+      }
+    } else {
+      console.error('[Email Verification] signUp error:', signUpData.error);
+      return res.status(500).json({
+        success: false,
+        message: signUpData.error?.message || 'Failed to initialize verification session with Firebase.'
+      });
+    }
+
+    // 3. Check if email is already verified in Firebase
+    const lookupResp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken })
+    });
+    const lookupData = await lookupResp.json();
+    const fbUser = lookupData.users?.[0];
+
+    if (fbUser && fbUser.emailVerified) {
+      console.log('[Email Verification] Email is already verified in Firebase for:', cleanEmail);
+
+      if (requestingUser) {
+        requestingUser.email = cleanEmail;
+        requestingUser.emailVerified = true;
+        requestingUser.updatedAt = new Date();
+        await requestingUser.save();
+        const userObj = requestingUser.toObject();
+        delete userObj.password;
+
+        return res.status(200).json({
+          success: true,
+          email: cleanEmail,
+          emailVerified: true,
+          user: userObj,
+          message: 'This email is already verified on your account.'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        email: cleanEmail,
+        emailVerified: true,
+        message: 'This email is already verified.'
+      });
+    }
+
+    // 4. Dispatch the verification email via Google's sendOobCode
+    console.log('[Email Verification] Dispatching verification email via sendOobCode to:', cleanEmail);
+    const oobResp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestType: 'VERIFY_EMAIL',
+        idToken
+      })
+    });
+    const oobData = await oobResp.json();
+
+    if (oobData.error) {
+      console.error('[Email Verification] sendOobCode failed:', oobData.error);
+      return res.status(500).json({
+        success: false,
+        message: 'Could not send verification email: ' + (oobData.error.message || 'Unknown error')
+      });
+    }
+
+    // Update pending email on requestingUser in MongoDB if unverified
+    if (requestingUser) {
+      requestingUser.email = cleanEmail;
+      requestingUser.emailVerified = false;
+      requestingUser.updatedAt = new Date();
+      await requestingUser.save();
+    }
+
+    return res.status(200).json({
+      success: true,
+      email: cleanEmail,
+      emailVerified: false,
+      cooldownSeconds: 60,
+      message: `A verification link has been sent to ${cleanEmail}. Please check your inbox and click the link to verify.`
+    });
+  } catch (err) {
+    console.error('[Email Verification] Exception in send-email-verification:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while sending verification email: ' + (err.message || err)
+    });
+  }
+});
+
+// POST /api/auth/check-email-verification
+// Authoritative check: Reads verified state from Firebase and syncs to MongoDB User document
+app.post('/api/auth/check-email-verification', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.slice(7).trim() : null;
+    const email = req.body?.email;
+    const userId = req.body?.userId;
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ success: false, message: 'A valid email address is required' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    const User = mongoose.model('User');
+    let requestingUser = null;
+
+    if (bearerToken) {
+      try {
+        const secret = process.env.JWT_SECRET || 'allver_jwt_secure_secret_default';
+        const decoded = jwt.verify(bearerToken, secret);
+        if (decoded?.id || decoded?.userId) {
+          requestingUser = await User.findById(decoded.id || decoded.userId);
+        }
+      } catch (e) {}
+    }
+
+    if (!requestingUser && userId && mongoose.Types.ObjectId.isValid(userId)) {
+      requestingUser = await User.findById(userId);
+    }
+
+    const apiKey = process.env.FIREBASE_API_KEY || 'AIzaSyCGYTbKMrm04MqY4NDQEq1RhU7Bvj8gJZ0';
+    const tempPassword = getEmailVerificationSecret(cleanEmail);
+
+    // Sign in to retrieve fresh token and check current emailVerified status from Firebase
+    const signInResp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: cleanEmail,
+        password: tempPassword,
+        returnSecureToken: true
+      })
+    });
+    const signInData = await signInResp.json();
+
+    if (!signInData.idToken) {
+      return res.status(200).json({
+        success: true,
+        email: cleanEmail,
+        emailVerified: false,
+        message: 'No pending verification found for this email. Please tap "Send Verification Email".'
+      });
+    }
+
+    const lookupResp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: signInData.idToken })
+    });
+    const lookupData = await lookupResp.json();
+    const fbUser = lookupData.users?.[0];
+    const isVerified = Boolean(fbUser?.emailVerified);
+
+    console.log(`[Email Verification Check] Email: ${cleanEmail}, Verified in Firebase: ${isVerified}`);
+
+    if (isVerified) {
+      if (requestingUser) {
+        requestingUser.email = cleanEmail;
+        requestingUser.emailVerified = true;
+        requestingUser.updatedAt = new Date();
+        await requestingUser.save();
+        const userObj = requestingUser.toObject();
+        delete userObj.password;
+
+        return res.status(200).json({
+          success: true,
+          email: cleanEmail,
+          emailVerified: true,
+          user: userObj,
+          message: 'Your email address has been successfully verified!'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        email: cleanEmail,
+        emailVerified: true,
+        message: 'Your email is verified in Firebase.'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      email: cleanEmail,
+      emailVerified: false,
+      message: 'Your email has not been verified yet. Please check your inbox and click the verification link.'
+    });
+  } catch (err) {
+    console.error('[Email Verification Check] Exception:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error checking email verification: ' + (err.message || err)
+    });
   }
 });
 
@@ -2338,6 +2981,8 @@ app.post('/api/auth/firebase-phone-register', async (req, res) => {
       email: fallbackEmail,
       phoneNumber: e164,
       phone: e164,
+      phoneVerified: true,
+      firebaseUid: decoded?.uid || null,
       password: finalPassword,
       role: role || 'Client',
       city: (city || 'Noida').trim(),
@@ -3679,6 +4324,14 @@ app.post('/api/contract-requests', async (req, res) => {
       return res.status(401).json({ message: 'Authentication required. Please log in to continue.' });
     }
 
+    if (!isUserPhoneVerified(clientUser)) {
+      return res.status(403).json({
+        success: false,
+        code: 'PHONE_VERIFICATION_REQUIRED',
+        message: 'Phone verification is required to post a project or send a hire request. Please verify your phone number to continue.'
+      });
+    }
+
     const newRequest = new ContractRequest({
       client,
       professional: professional || undefined,
@@ -4423,6 +5076,14 @@ app.post('/api/project-workspaces/hire', async (req, res) => {
     const clientUser = await User.findById(client);
     if (!clientUser) {
       return res.status(404).json({ message: 'Client not found' });
+    }
+
+    if (!isUserPhoneVerified(clientUser)) {
+      return res.status(403).json({
+        success: false,
+        code: 'PHONE_VERIFICATION_REQUIRED',
+        message: 'Phone verification is required to hire a professional. Please verify your phone number to continue.'
+      });
     }
 
     const professionalUser = await User.findById(professional);
@@ -6305,16 +6966,21 @@ app.get('/api/following/:userId', async (req, res) => {
 app.get('/api/notifications/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    let notifications = await Notification.find({
+    const filter = {
       recipientId: userId,
       isSuppressed: { $ne: true },
       text: { $not: /New Message|\[View Chat\]/ }
-    })
+    };
+    if (req.query.unreadOnly === 'true') {
+      filter.isRead = false;
+    }
+
+    let notifications = await Notification.find(filter)
       .sort({ createdAt: -1 })
       .populate('senderId', 'fullName avatarUrl role');
 
     // Auto-seed if user has no notifications yet
-    if (notifications.length === 0) {
+    if (notifications.length === 0 && req.query.unreadOnly !== 'true') {
       const User = require('./models/User');
       const u = await User.findById(userId);
       if (u) {
@@ -6429,6 +7095,69 @@ app.post('/api/notifications/read/:userId', async (req, res) => {
     res.status(200).json({ success: true, message: 'All notifications marked as read' });
   } catch (error) {
     res.status(500).json({ message: 'Error marking notifications as read: ' + error.message });
+  }
+});
+
+// 8b. Mark a single notification as read
+app.post('/api/notifications/:id/read', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const notification = await Notification.findByIdAndUpdate(
+      id,
+      { $set: { isRead: true } },
+      { new: true }
+    );
+    if (!notification) {
+      return res.status(404).json({ success: false, message: 'Notification not found' });
+    }
+
+    const io = req.app.get('io') || global.bookingDispatchEngine?.io;
+    if (io && notification.recipientId) {
+      io.to(notification.recipientId.toString()).emit('notifications_read', {
+        userId: notification.recipientId.toString(),
+        notificationId: id
+      });
+      io.to(`user:${notification.recipientId.toString()}`).emit('notifications_read', {
+        userId: notification.recipientId.toString(),
+        notificationId: id
+      });
+    }
+
+    res.status(200).json({ success: true, notification });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 8c. Worker Pending Booking Requests Sync (Authoritative backend query on open/reconnect)
+app.get('/api/worker/pending-requests/:workerId', async (req, res) => {
+  try {
+    const { workerId } = req.params;
+    if (!global.bookingDispatchEngine) {
+      return res.status(200).json({ success: true, pendingRequests: [] });
+    }
+    const pending = await global.bookingDispatchEngine.getPendingRequestsForWorker(workerId);
+    res.status(200).json({ success: true, pendingRequests: pending });
+  } catch (error) {
+    console.error('[API] Error getting pending requests for worker:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get('/api/worker/pending-requests', async (req, res) => {
+  try {
+    const workerId = req.query.workerId || req.query.userId;
+    if (!workerId) {
+      return res.status(400).json({ success: false, message: 'workerId query parameter required' });
+    }
+    if (!global.bookingDispatchEngine) {
+      return res.status(200).json({ success: true, pendingRequests: [] });
+    }
+    const pending = await global.bookingDispatchEngine.getPendingRequestsForWorker(workerId);
+    res.status(200).json({ success: true, pendingRequests: pending });
+  } catch (error) {
+    console.error('[API] Error getting pending requests for worker:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
@@ -7760,6 +8489,31 @@ app.post('/api/booking/dispatch', async (req, res) => {
     if (!data || !data.jobId || !data.service) {
       return res.status(400).json({ success: false, message: 'Missing jobId or service' });
     }
+
+    // Verify phone requirement for client/user if user information is attached
+    const authHeader = req.headers.authorization;
+    const bearerToken = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.slice(7).trim() : null;
+    let requestingUserId = data.clientId || data.userId;
+    if (bearerToken) {
+      try {
+        const secret = process.env.JWT_SECRET || 'allver_jwt_secure_secret_default';
+        const decoded = jwt.verify(bearerToken, secret);
+        requestingUserId = decoded.id || decoded.userId || requestingUserId;
+      } catch (e) {}
+    }
+
+    if (requestingUserId && mongoose.Types.ObjectId.isValid(requestingUserId)) {
+      const User = mongoose.model('User');
+      const clientUser = await User.findById(requestingUserId);
+      if (clientUser && !isUserPhoneVerified(clientUser)) {
+        return res.status(403).json({
+          success: false,
+          code: 'PHONE_VERIFICATION_REQUIRED',
+          message: 'Phone verification is required before booking a service. Please verify your phone number to continue.'
+        });
+      }
+    }
+
     const engine = global.bookingDispatchEngine;
     if (!engine) {
       return res.status(500).json({ success: false, message: 'Dispatch engine not initialized' });
@@ -7809,6 +8563,17 @@ app.post('/api/payment/create-order', authenticateJWT, async (req, res) => {
   try {
     const { jobId, amount, description, idempotencyKey } = req.body;
     const customerId = req.userId;
+
+    const User = mongoose.model('User');
+    const customer = await User.findById(customerId);
+    if (customer && !isUserPhoneVerified(customer)) {
+      return res.status(403).json({
+        success: false,
+        code: 'PHONE_VERIFICATION_REQUIRED',
+        message: 'Phone verification is required before making a payment. Please verify your phone number to continue.'
+      });
+    }
+
     const result = await paymentServiceInstance.createPaymentOrder({
       jobId,
       customerId,
@@ -7835,6 +8600,18 @@ app.post('/api/payment/create', async (req, res) => {
       const Job = require('./models/Job');
       const job = await Job.findOne({ jobId });
       if (job) customerId = job.clientId;
+    }
+
+    if (customerId && mongoose.Types.ObjectId.isValid(customerId)) {
+      const User = mongoose.model('User');
+      const customer = await User.findById(customerId);
+      if (customer && !isUserPhoneVerified(customer)) {
+        return res.status(403).json({
+          success: false,
+          code: 'PHONE_VERIFICATION_REQUIRED',
+          message: 'Phone verification is required before making a payment. Please verify your phone number to continue.'
+        });
+      }
     }
     const result = await paymentServiceInstance.createPaymentOrder({
       jobId,
@@ -9147,28 +9924,28 @@ app.post('/api/notifications/test-trigger', async (req, res) => {
         text = `💬 New Message\n${senderUser.fullName}: ${title || 'Hey, how is the progress?'}\n\n[View Chat]`;
         break;
       case 'Proposal Accepted':
-        text = `✅ Proposal Accepted\n${senderUser.fullName} accepted your proposal for ${title || 'Luxury Villa Construction'}\n\n[View Project]`;
+        text = `✅ Proposal Accepted\n${senderUser.fullName} accepted your proposal for ${title || 'Project'}\n\n[View Project]`;
         break;
       case 'Payment Received':
-        text = `💰 Payment Received\nReceived ₹${amount || '50,000'} from ${senderUser.fullName} for ${title || 'Office Renovation'}\n\n[View Details]`;
+        text = `💰 Payment Received\nReceived ₹${amount || 'Payment'} from ${senderUser.fullName} for ${title || 'Project'}\n\n[View Details]`;
         break;
       case 'Project Invitation':
-        text = `📩 Project Invitation\n${senderUser.fullName} invited you to the project: ${title || 'Luxury Villa'}\n\n[View Invitation]`;
+        text = `📩 Project Invitation\n${senderUser.fullName} invited you to the project: ${title || 'Project'}\n\n[View Invitation]`;
         break;
       case 'Document Shared':
-        text = `📁 Document Shared\n${senderUser.fullName} shared "${documentName || 'Layout_Plan.pdf'}" in ${title || 'Luxury Villa'}\n\n[View Document]`;
+        text = `📁 Document Shared\n${senderUser.fullName} shared "${documentName || 'Document'}" in ${title || 'Project'}\n\n[View Document]`;
         break;
       case 'Site Visit Scheduled':
-        text = `📅 Site Visit Scheduled\nSite visit scheduled for ${title || 'Luxury Villa'} on ${visitDate || '18 May'}\n\n[View Schedule]`;
+        text = `📅 Site Visit Scheduled\nSite visit scheduled for ${title || 'Project'}\n\n[View Schedule]`;
         break;
       case 'Contractor Applied':
-        text = `👷 Contractor Applied\nContractor ${senderUser.fullName} applied to your project: ${title || 'Luxury Villa Construction'}\n\n[View Application]`;
+        text = `👷 Contractor Applied\nContractor ${senderUser.fullName} applied to your project: ${title || 'Project'}\n\n[View Application]`;
         break;
       case 'Architect Submitted Design':
-        text = `📐 Architect Submitted Design\nArchitect ${senderUser.fullName} submitted a new blueprint design: ${title || 'ModernScandinavian.dwg'}\n\n[View Design]`;
+        text = `📐 Architect Submitted Design\nArchitect ${senderUser.fullName} submitted a new blueprint design for ${title || 'Project'}\n\n[View Design]`;
         break;
       case 'Labour Joined Project':
-        text = `👷 Labour Joined Project\nLabourer ${senderUser.fullName} has joined the project: ${title || 'Luxury Villa'}\n\n[View Project]`;
+        text = `👷 Labour Joined Project\nLabourer ${senderUser.fullName} has joined the project: ${title || 'Project'}\n\n[View Project]`;
         break;
       case 'Attendance Submitted':
         text = `📋 Attendance Submitted\nLabour attendance for ${visitDate || 'today'} has been marked by Contractor ${senderUser.fullName}\n\n[View Attendance]`;

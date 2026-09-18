@@ -8,6 +8,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { BACKEND_URL } from '../../constants/Config';
 import { useTranslation } from '../../utils/i18n';
 import TransliteratedTextInput from '../../components/TransliteratedTextInput';
+import { getStoredUser, isPhoneVerifiedUser } from '../../constants/Auth';
+import PhoneVerificationModal from '../../components/PhoneVerificationModal';
 
 const { width } = Dimensions.get('window');
 
@@ -129,16 +131,26 @@ export default function PostProjectScreen() {
 
   const [success, setSuccess] = useState(false);
   const [successType, setSuccessType] = useState<'client' | 'architect_media' | 'architect_design' | 'labour_work'>('client');
+  const [phoneVerificationVisible, setPhoneVerificationVisible] = useState(false);
 
   useEffect(() => {
-    let user = (global as any).currentUser;
-    if (!user && Platform.OS === 'web' && typeof localStorage !== 'undefined') {
-      const stored = localStorage.getItem('currentUser');
-      if (stored) {
-        user = JSON.parse(stored);
+    const loadUser = async () => {
+      let user = (global as any).currentUser;
+      if (!user) {
+        const stored = await getStoredUser();
+        if (stored) {
+          try {
+            user = JSON.parse(stored);
+          } catch (e) {
+            console.error('Error parsing stored user in post-project:', e);
+          }
+        }
       }
-    }
-    setCurrentUser(user);
+      if (user) {
+        setCurrentUser(user);
+      }
+    };
+    loadUser();
   }, []);
 
   // Media picker function
@@ -386,6 +398,15 @@ export default function PostProjectScreen() {
       return;
     }
 
+    if (!currentUser?._id) {
+      Alert.alert('Login Required', 'Please log in to add work.');
+      return;
+    }
+    if (!isPhoneVerifiedUser(currentUser)) {
+      setPhoneVerificationVisible(true);
+      return;
+    }
+
     setIsPublishing(true);
     try {
       // Save to portfolio highlights
@@ -460,6 +481,15 @@ export default function PostProjectScreen() {
     }
     if (budgetType !== 'Ask for Quote' && !budgetValue.trim()) {
       Alert.alert('Required Field', 'Please enter the budget amount.');
+      return;
+    }
+
+    if (!currentUser) {
+      Alert.alert('Login Required', 'Please log in to post a project.');
+      return;
+    }
+    if (!isPhoneVerifiedUser(currentUser)) {
+      setPhoneVerificationVisible(true);
       return;
     }
 
@@ -565,6 +595,15 @@ export default function PostProjectScreen() {
     }
     if (selectedMedia.length === 0) {
       Alert.alert('Media Required', 'Please select at least one photo or video from your device.');
+      return;
+    }
+
+    if (!currentUser?._id) {
+      Alert.alert('Login Required', 'Please log in to publish.');
+      return;
+    }
+    if (!isPhoneVerifiedUser(currentUser)) {
+      setPhoneVerificationVisible(true);
       return;
     }
 
@@ -1343,6 +1382,22 @@ export default function PostProjectScreen() {
           </View>
         )}
       </ScrollView>
+      <PhoneVerificationModal
+        visible={phoneVerificationVisible}
+        onClose={() => setPhoneVerificationVisible(false)}
+        actionName="post a project or work"
+        onSuccess={(updatedUser) => {
+          if (updatedUser) setCurrentUser(updatedUser);
+          setPhoneVerificationVisible(false);
+          if (currentUser?.role === 'Labour') {
+            handleLabourSubmit();
+          } else if (currentUser?.role === 'Architect' || currentUser?.role === 'Contractor') {
+            handleArchitectSubmit();
+          } else {
+            handleClientSubmit();
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }

@@ -7,8 +7,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import SocketService from '../utils/SocketService';
-import { isGuestUser } from '../constants/Auth';
+import { isGuestUser, isPhoneVerifiedUser } from '../constants/Auth';
 import LoginRequiredModal from '../components/LoginRequiredModal';
+import PhoneVerificationModal from '../components/PhoneVerificationModal';
 
 
 const { width } = Dimensions.get('window');
@@ -38,15 +39,7 @@ const COLORS = {
   gold: '#F59E0B',
 };
 
-// Mock Team Members
-const TEAM_MEMBERS = [
-  { id: '60c72b2f9b1d8a2a4c8b0004', name: 'Ramesh Yadav', role: 'Site Supervisor', experience: '8 Years', avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=150&auto=format&fit=crop' },
-  { id: '60c72b2f9b1d8a2a4c8b0005', name: 'Suresh Patil', role: 'Mason', experience: '10 Years', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=150&auto=format&fit=crop' },
-  { id: '60c72b2f9b1d8a2a4c8b0006', name: 'Ravi Singh', role: 'Carpenter', experience: '7 Years', avatar: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?q=80&w=150&auto=format&fit=crop' },
-  { id: '60c72b2f9b1d8a2a4c8b0007', name: 'Imran Shaikh', role: 'Electrician', experience: '6 Years', avatar: 'https://images.unsplash.com/photo-1500048993953-d23a436266cf?q=80&w=150&auto=format&fit=crop' },
-  { id: '60c72b2f9b1d8a2a4c8b0008', name: 'Mahesh Gupta', role: 'Plumber', experience: '9 Years', avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?q=80&w=150&auto=format&fit=crop' },
-  { id: '60c72b2f9b1d8a2a4c8b0009', name: 'Anil Naik', role: 'Painter', experience: '5 Years', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=150&auto=format&fit=crop' }
-];
+
 
 export default function ContractorDetailScreen() {
   const router = useRouter();
@@ -55,22 +48,22 @@ export default function ContractorDetailScreen() {
 
 
   // Load params with fallbacks
-  const id = (params.id as string) || '60c72b2f9b1d8a2a4c8b0010';
-  const name = (params.name as string) || 'Raj Construction Services';
+  const id = (params.id as string) || '';
+  const name = (params.name as string) || 'Contractor Profile';
   const avatar = resolveAvatarUrl(params.avatar as string) || '';
-  const coverImage = resolveAvatarUrl(params.coverImage as string) || 'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?q=80&w=800&auto=format&fit=crop';
-  const rating = (params.rating as string) || '4.8';
-  const reviews = (params.reviews as string) || '124';
-  const location = (params.location as string) || 'Mumbai, Maharashtra';
-  const experience = (params.experience as string) || '12+ Years';
-  const specialization = (params.specialization as string) || 'Specialized in residential and commercial construction with quality and timely delivery.';
+  const coverImage = resolveAvatarUrl(params.coverImage as string) || '';
+  const rating = (params.rating as string) || '';
+  const reviews = (params.reviews as string) || '0';
+  const location = (params.location as string) || '';
+  const experience = (params.experience as string) || '';
+  const specialization = (params.specialization as string) || '';
   const projects = (params.projects as string) || '0';
-  const followers = (params.followers as string) || '320';
-  const firmName = (params.firmName as string) || 'BuildWell Construction Group';
-  const phone = (params.phone as string) || '+91 98765 43210';
-  const workerCount = (params.workerCount as string) || '25 Workers Available';
-  const serviceAreas = (params.serviceAreas as string) || 'Mumbai, Navi Mumbai';
-  const skillsList = params.skills ? (params.skills as string).split(',') : ['RCC Work', 'Brickwork', 'Plumbing', 'Electrical', 'Painting', 'Tile Work', 'False Ceiling', 'Carpentry'];
+  const followers = (params.followers as string) || '0';
+  const firmName = (params.firmName as string) || '';
+  const phone = (params.phone as string) || '';
+  const workerCount = (params.workerCount as string) || '';
+  const serviceAreas = (params.serviceAreas as string) || '';
+  const skillsList = params.skills ? (params.skills as string).split(',') : [];
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'projects' | 'media' | 'team' | 'reviews'>('projects');
@@ -208,6 +201,7 @@ export default function ContractorDetailScreen() {
   const [isHiring, setIsHiring] = useState(false);
   const [guestModalVisible, setGuestModalVisible] = useState(false);
   const [guestModalAction, setGuestModalAction] = useState('');
+  const [phoneVerificationVisible, setPhoneVerificationVisible] = useState(false);
 
   // Set default location when professional location becomes available
   useEffect(() => {
@@ -239,6 +233,10 @@ export default function ContractorDetailScreen() {
     }
     if (!currentUser?._id) {
       Alert.alert('Login Required', 'Please log in to hire this professional.');
+      return;
+    }
+    if (!isPhoneVerifiedUser(currentUser)) {
+      setPhoneVerificationVisible(true);
       return;
     }
 
@@ -317,7 +315,7 @@ export default function ContractorDetailScreen() {
   const getLatestReviewByRole = (targetRole: 'Client' | 'Contractor' | 'Architect') => {
     const realReview = reviewsList.find(r => r.from && r.from.role === targetRole);
     if (realReview) {
-      return { name: realReview.from.fullName, role: realReview.from.role, rating: realReview.rating, comment: realReview.reviewText, avatar: resolveAvatarUrl(realReview.from.avatarUrl) || 'https://i.pravatar.cc/100?img=32', date: formatDate(realReview.createdAt) };
+      return { name: realReview.from.fullName, role: realReview.from.role, rating: realReview.rating, comment: realReview.reviewText, avatar: resolveAvatarUrl(realReview.from.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(realReview.from.fullName || 'User')}&background=E2E8F0&color=334155`, date: formatDate(realReview.createdAt) };
     }
     return null;
   };
@@ -619,13 +617,15 @@ export default function ContractorDetailScreen() {
           <View style={styles.avatarRow}>
             <View style={styles.avatarContainer}>
               <Image 
-                source={{ uri: displayAvatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=300&auto=format&fit=crop' }} 
+                source={{ uri: displayAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Contractor')}&background=2563EB&color=fff` }} 
                 style={styles.avatarImage} 
                 contentFit="cover" 
               />
-              <View style={styles.verifiedBadge}>
-                <Feather name="check" size={10} color={COLORS.white} />
-              </View>
+              {professionalData?.isVerified && (
+                <View style={styles.verifiedBadge}>
+                  <Feather name="check" size={10} color={COLORS.white} />
+                </View>
+              )}
             </View>
 
             <View style={styles.statsSummaryContainer}>
@@ -651,9 +651,13 @@ export default function ContractorDetailScreen() {
               <View style={styles.statBox}>
                 <View style={styles.ratingRow}>
                   <Feather name="star" size={12} color={COLORS.gold} />
-                  <Text style={styles.statNumber}> {rating}</Text>
+                  <Text style={styles.statNumber}> {
+                    reviewsList.length > 0
+                      ? (reviewsList.reduce((sum: number, r: any) => sum + r.rating, 0) / reviewsList.length).toFixed(1)
+                      : (parseFloat(rating) > 0 ? rating : 'New')
+                  }</Text>
                 </View>
-                <Text style={styles.statLabel}>({reviewsList.length > 0 ? reviewsList.length : reviews})</Text>
+                <Text style={styles.statLabel}>({reviewsList.length > 0 ? reviewsList.length : (parseFloat(rating) > 0 ? reviews : '0')})</Text>
               </View>
             </View>
           </View>
@@ -707,9 +711,13 @@ export default function ContractorDetailScreen() {
                 <TouchableOpacity 
                   style={[styles.outlineActionBtn, { borderColor: COLORS.green, backgroundColor: COLORS.greenLight }]} 
                   onPress={() => {
-                    if (isGuestUser(currentUser)) {
+                    if (isGuestUser(currentUser) || !currentUser) {
                       setGuestModalAction('Hiring a Contractor');
                       setGuestModalVisible(true);
+                      return;
+                    }
+                    if (!isPhoneVerifiedUser(currentUser)) {
+                      setPhoneVerificationVisible(true);
                       return;
                     }
                     setIsHireModalVisible(true);
@@ -938,7 +946,7 @@ export default function ContractorDetailScreen() {
                   labours.map((worker, idx) => {
                     const workerName = worker.fullName || worker.name;
                     const workerRole = worker.skillType || worker.role;
-                    const workerAvatar = resolveAvatarUrl(worker.avatarUrl || worker.avatar) || 'https://i.pravatar.cc/100?img=32';
+                    const workerAvatar = resolveAvatarUrl(worker.avatarUrl || worker.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(workerName || 'Worker')}&background=E2E8F0&color=334155`;
                     const workerExp = worker.experience || 'No';
                     return (
                       <TouchableOpacity 
@@ -1050,7 +1058,7 @@ export default function ContractorDetailScreen() {
                     date: formatDate(r.createdAt),
                     rating: r.rating,
                     comment: r.reviewText,
-                    avatar: resolveAvatarUrl(r.from?.avatarUrl) || 'https://i.pravatar.cc/100?img=32'
+                    avatar: resolveAvatarUrl(r.from?.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.from?.fullName || 'User')}&background=E2E8F0&color=334155`
                   };
                   return (
                     <View key={idx} style={styles.reviewItemCard}>
@@ -1240,6 +1248,17 @@ export default function ContractorDetailScreen() {
         title="Login required"
         message="Create an account or login to continue."
         actionSource={guestModalAction}
+      />
+
+      <PhoneVerificationModal
+        visible={phoneVerificationVisible}
+        onClose={() => setPhoneVerificationVisible(false)}
+        actionName="hire this contractor"
+        onSuccess={(updatedUser) => {
+          if (updatedUser) setCurrentUser(updatedUser);
+          setPhoneVerificationVisible(false);
+          setIsHireModalVisible(true);
+        }}
       />
     </SafeAreaView>
   );

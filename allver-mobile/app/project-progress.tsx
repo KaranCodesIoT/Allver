@@ -860,15 +860,15 @@ export default function ProjectProgressScreen() {
       params: {
         id: architect._id,
         name: architect.fullName,
-        avatar: resolveAvatarUrl(architect.avatarUrl, architect.updatedAt) || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
-        coverImage: resolveAvatarUrl(architect.cover, architect.updatedAt) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-        rating: (architect.rating || 4.5).toString(),
+        avatar: resolveAvatarUrl(architect.avatarUrl, architect.updatedAt) || '',
+        coverImage: resolveAvatarUrl(architect.cover, architect.updatedAt) || '',
+        rating: (architect.rating || 0).toString(),
         reviews: (architect.reviews || 0).toString(),
         location: architect.city || '',
         experience: architect.experience || 'Entry Level',
         specialization: Array.isArray(architect.specialization) ? architect.specialization.join(', ') : (architect.specialization || 'General Architecture'),
         projects: (architect.projects || 0).toString(),
-        followers: '150',
+        followers: (architect.followersCount || 0).toString(),
         firmName: architect.firmName || 'Independent Architect',
         phone: architect.phoneNumber || architect.whatsappNumber || ''
       }
@@ -885,7 +885,7 @@ export default function ProjectProgressScreen() {
         id: labour._id || labour.id,
         name: labour.fullName,
         role: labour.skillType || 'Labour',
-        avatar: resolveAvatarUrl(labour.avatarUrl, labour.updatedAt) || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=200&auto=format&fit=crop',
+        avatar: resolveAvatarUrl(labour.avatarUrl, labour.updatedAt) || '',
         experience: (labour.experience || '0') + ' Years Experience',
         location: labour.city || '',
         rating: (labour.rating || 0).toString(),
@@ -1509,10 +1509,10 @@ export default function ProjectProgressScreen() {
        ? (workspace.contractor || workspace.professional) 
        : workspace.client)
     : null;
-  const contractorName = partner?.fullName || (params.contractor as string) || 'Raj Construction';
-  const contractorAvatar = resolveAvatarUrl(partner?.avatarUrl) || resolveAvatarUrl(params.contractorAvatar as string) || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80';
-  const contractorRating = partner?.rating?.toString() || (params.contractorRating as string) || '4.7';
-  const contractorReviews = partner?.reviews?.toString() || (params.contractorReviews as string) || '028';
+  const contractorName = partner?.fullName || (params.contractor as string) || 'Contractor';
+  const contractorAvatar = resolveAvatarUrl(partner?.avatarUrl) || resolveAvatarUrl(params.contractorAvatar as string) || '';
+  const contractorRating = partner?.rating?.toString() || (params.contractorRating as string) || '';
+  const contractorReviews = partner?.reviews?.toString() || (params.contractorReviews as string) || '0';
   
   const startDate = workspace ? new Date(workspace.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : (params.startDate as string) || '10 Apr 2024';
   const endDate = (params.endDate as string) || '10 Jul 2024';
@@ -1802,7 +1802,7 @@ export default function ProjectProgressScreen() {
                         return (
                           <View key={target.user._id} style={styles.ratingTargetItem}>
                             <Image 
-                              source={{ uri: resolveAvatarUrl(target.user.avatarUrl) || 'https://i.pravatar.cc/100?img=12' }} 
+                              source={{ uri: resolveAvatarUrl(target.user.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(target.user.fullName || 'User')}&background=1BC47D&color=fff` }} 
                               style={styles.ratingTargetAvatar} 
                               contentFit="cover" 
                             />
@@ -1887,7 +1887,7 @@ export default function ProjectProgressScreen() {
 
                 {workspace.professional?.role === 'Contractor' ? (
                   <View style={styles.teamItem}>
-                    <Image source={{ uri: resolveAvatarUrl(workspace.professional.avatarUrl) || 'https://i.pravatar.cc/100?img=12' }} style={styles.teamAvatar} contentFit="cover" />
+                    <Image source={{ uri: resolveAvatarUrl(workspace.professional.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(workspace.professional.fullName || 'Contractor')}&background=2563EB&color=fff` }} style={styles.teamAvatar} contentFit="cover" />
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={styles.teamMemberName}>{workspace.professional.fullName}</Text>
                       <Text style={styles.teamMemberRole}>Contractor (Hired Professional)</Text>
@@ -1895,7 +1895,7 @@ export default function ProjectProgressScreen() {
                   </View>
                 ) : workspace.contractor ? (
                   <View style={styles.teamItem}>
-                    <Image source={{ uri: resolveAvatarUrl(workspace.contractor.avatarUrl) || 'https://i.pravatar.cc/100?img=12' }} style={styles.teamAvatar} contentFit="cover" />
+                    <Image source={{ uri: resolveAvatarUrl(workspace.contractor.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(workspace.contractor.fullName || 'Contractor')}&background=2563EB&color=fff` }} style={styles.teamAvatar} contentFit="cover" />
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={styles.teamMemberName}>{workspace.contractor.fullName}</Text>
                       <Text style={styles.teamMemberRole}>Contractor · {workspace.contractor.city || 'Partner'}</Text>
@@ -1919,7 +1919,7 @@ export default function ProjectProgressScreen() {
 
                 {workspace.professional?.role === 'Architect' ? (
                   <View style={styles.teamItem}>
-                    <Image source={{ uri: resolveAvatarUrl(workspace.professional.avatarUrl) || 'https://i.pravatar.cc/100?img=47' }} style={styles.teamAvatar} contentFit="cover" />
+                    <Image source={{ uri: resolveAvatarUrl(workspace.professional.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(workspace.professional.fullName || 'Architect')}&background=7C3AED&color=fff` }} style={styles.teamAvatar} contentFit="cover" />
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={styles.teamMemberName}>{workspace.professional.fullName}</Text>
                       <Text style={styles.teamMemberRole}>Architect (Hired Professional)</Text>
@@ -1931,7 +1931,7 @@ export default function ProjectProgressScreen() {
                     onPress={() => navigateToArchitectDetail(workspace.architect)}
                     activeOpacity={0.8}
                   >
-                    <Image source={{ uri: resolveAvatarUrl(workspace.architect.avatarUrl) || 'https://i.pravatar.cc/100?img=47' }} style={styles.teamAvatar} contentFit="cover" />
+                    <Image source={{ uri: resolveAvatarUrl(workspace.architect.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(workspace.architect.fullName || 'Architect')}&background=7C3AED&color=fff` }} style={styles.teamAvatar} contentFit="cover" />
                     <View style={{ flex: 1, marginLeft: 10 }}>
                       <Text style={styles.teamMemberName}>{workspace.architect.fullName}</Text>
                       <Text style={styles.teamMemberRole}>Architect · {workspace.architect.city || 'Independent'}</Text>
@@ -1962,7 +1962,7 @@ export default function ProjectProgressScreen() {
                         onPress={() => navigateToLabourDetail(lab)}
                         activeOpacity={0.8}
                       >
-                        <Image source={{ uri: resolveAvatarUrl(lab.avatarUrl) || 'https://i.pravatar.cc/100?img=60' }} style={styles.teamAvatar} contentFit="cover" />
+                        <Image source={{ uri: resolveAvatarUrl(lab.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(lab.fullName || 'Labourer')}&background=EA580C&color=fff` }} style={styles.teamAvatar} contentFit="cover" />
                         <View style={{ flex: 1, marginLeft: 10 }}>
                           <Text style={styles.teamMemberName}>{lab.fullName}</Text>
                           <Text style={styles.teamMemberRole}>{lab.skillType || 'Labour'} · {lab.city || 'Skilled Worker'}</Text>
@@ -2608,7 +2608,7 @@ export default function ProjectProgressScreen() {
                       style={styles.selectionListItem} 
                       onPress={() => handleAssignArchitect(arch._id, arch.fullName)}
                     >
-                      <Image source={{ uri: resolveAvatarUrl(arch.avatarUrl) || 'https://i.pravatar.cc/100?img=47' }} style={styles.selectionAvatar} contentFit="cover" />
+                      <Image source={{ uri: resolveAvatarUrl(arch.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(arch.fullName || 'Architect')}&background=7C3AED&color=fff` }} style={styles.selectionAvatar} contentFit="cover" />
                       <View style={{ flex: 1, marginLeft: 12 }}>
                         <Text style={styles.selectionName}>{arch.fullName}</Text>
                         <Text style={styles.selectionDetail}>{arch.experience || 'Experienced'} · {arch.city || 'Architect'}</Text>
@@ -2651,7 +2651,7 @@ export default function ProjectProgressScreen() {
                       style={styles.selectionListItem} 
                       onPress={() => handleAssignContractor(contr._id, contr.fullName)}
                     >
-                      <Image source={{ uri: resolveAvatarUrl(contr.avatarUrl) || 'https://i.pravatar.cc/100?img=12' }} style={styles.selectionAvatar} contentFit="cover" />
+                      <Image source={{ uri: resolveAvatarUrl(contr.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(contr.fullName || 'Contractor')}&background=2563EB&color=fff` }} style={styles.selectionAvatar} contentFit="cover" />
                       <View style={{ flex: 1, marginLeft: 12 }}>
                         <Text style={styles.selectionName}>{contr.fullName}</Text>
                         <Text style={styles.selectionDetail}>{contr.experience || 'Experienced'} · {contr.city || 'Contractor'}</Text>
@@ -2694,7 +2694,7 @@ export default function ProjectProgressScreen() {
                       style={styles.selectionListItem} 
                       onPress={() => handleAddLabour(lab._id, lab.fullName)}
                     >
-                      <Image source={{ uri: resolveAvatarUrl(lab.avatarUrl) || 'https://i.pravatar.cc/100?img=60' }} style={styles.selectionAvatar} contentFit="cover" />
+                      <Image source={{ uri: resolveAvatarUrl(lab.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(lab.fullName || 'Labourer')}&background=EA580C&color=fff` }} style={styles.selectionAvatar} contentFit="cover" />
                       <View style={{ flex: 1, marginLeft: 12 }}>
                         <Text style={styles.selectionName}>{lab.fullName}</Text>
                         <Text style={styles.selectionDetail}>{lab.skillType || 'General Labour'} · {lab.city || 'Skilled Worker'}</Text>
@@ -2741,7 +2741,7 @@ export default function ProjectProgressScreen() {
                 {/* Target User Info */}
                 <View style={styles.ratingModalTargetInfo}>
                   <Image 
-                    source={{ uri: resolveAvatarUrl(ratingTarget.user.avatarUrl) || 'https://i.pravatar.cc/100?img=12' }} 
+                    source={{ uri: resolveAvatarUrl(ratingTarget.user.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(ratingTarget.user.fullName || 'User')}&background=1BC47D&color=fff` }} 
                     style={styles.ratingModalAvatar} 
                     contentFit="cover" 
                   />

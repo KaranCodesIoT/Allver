@@ -50,7 +50,7 @@ const ProjectDetailsPage = () => {
     }
 
     return {
-      name: 'Raj Construction Project',
+      name: 'Residential Construction Project',
       location: 'Mumbai',
       status: 'In Progress',
       year: 2026,
@@ -61,27 +61,27 @@ const ProjectDetailsPage = () => {
   const getArchitectInfo = () => {
     const userStr = localStorage.getItem('currentUser');
     if (userStr) {
-      const user = JSON.parse(userStr);
-      if (user.role === 'Architect') {
+      try {
+        const user = JSON.parse(userStr);
         return {
-          fullName: user.fullName || 'Neha Sharma',
-          role: 'Architect',
-          firmName: user.firmName || 'Design Space Architects',
-          rating: 4.8,
-          reviews: 124,
-          avatarUrl: user.avatarUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80',
-          phone: user.phoneNumber || '+91 98765 43210'
+          fullName: user.fullName || 'Professional',
+          role: user.role || 'Architect',
+          firmName: user.firmName || user.businessName || '',
+          rating: user.rating || null,
+          reviews: user.reviewsCount || 0,
+          avatarUrl: user.avatarUrl || '',
+          phone: user.phoneNumber || ''
         };
-      }
+      } catch (e) {}
     }
     return {
-      fullName: 'Neha Sharma',
+      fullName: 'Assigned Architect',
       role: 'Architect',
-      firmName: 'Design Space Architects',
-      rating: 4.8,
-      reviews: 124,
-      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80',
-      phone: '+91 98765 43210'
+      firmName: '',
+      rating: null,
+      reviews: 0,
+      avatarUrl: '',
+      phone: ''
     };
   };
 
@@ -133,8 +133,8 @@ const ProjectDetailsPage = () => {
       contractorName: 'Karan Chaubey',
       clientId: 'mock-client-id',
       clientName: 'OM client',
-      architectId: (isP2 || isP5) ? null : 'mock-architect-id',
-      architectName: (isP2 || isP5) ? '' : 'Neha Sharma',
+      architectId: null,
+      architectName: '',
       labourTeam: [] // array of user objects: { _id, fullName, skillType }
     };
   });
@@ -1666,10 +1666,10 @@ const ProjectDetailsPage = () => {
               <div className="chat-members-sidebar">
                 <h3>Project Space</h3>
                 <div className="member-row active">
-                  <div className="member-avatar">NS</div>
+                  <div className="member-avatar">{(workspaceTeam.architectName || workspaceTeam.contractorName || 'P')[0]}</div>
                   <div className="member-info">
-                    <strong>Neha Sharma (Architect)</strong>
-                    <span className="status-online">Online</span>
+                    <strong>{workspaceTeam.architectName ? `${workspaceTeam.architectName} (Architect)` : workspaceTeam.contractorName ? `${workspaceTeam.contractorName} (Contractor)` : 'Project Space'}</strong>
+                    <span className="status-online">Active Channel</span>
                   </div>
                 </div>
                 

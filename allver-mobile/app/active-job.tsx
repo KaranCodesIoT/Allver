@@ -96,8 +96,8 @@ export default function ActiveJobScreen() {
     date: initialJobData.date || 'Today',
     clientInfo: initialJobData.clientInfo || {
       name: 'Client',
-      phone: '+91 98765 43210',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=150',
+      phone: '',
+      avatar: '',
     },
     route: initialJobData.route || { distance: 1.4, duration: 6 },
     chatId: initialJobData.chatId || null,

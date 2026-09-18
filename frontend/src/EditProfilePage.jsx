@@ -619,7 +619,7 @@ const EditProfilePage = () => {
                       className="ep-input ep-tel-input"
                       style={{ '--focus-color': accentColor }}
                       type="tel"
-                      placeholder="98765 43210"
+                      placeholder="Enter 10-digit number"
                       value={form.phone}
                       onChange={e => handleChange('phone', e.target.value)}
                     />

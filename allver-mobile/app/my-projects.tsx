@@ -38,124 +38,7 @@ const COLORS = {
   tabInactiveText: '#64748B'
 };
 
-const DEFAULT_CLIENT_PROJECTS = [
-  {
-    id: 'p-1',
-    title: 'Home Painting',
-    workerName: 'Sushil Kumar Singh',
-    location: 'Thane',
-    status: 'In Progress',
-    dateLabel: 'Started: 12 Mar 2024',
-    startDateFormatted: '12 Mar 2024',
-    endDateFormatted: '',
-    dateRange: '12 Mar 2024 – Ongoing',
-    priceFormatted: '₹45,000',
-    amount: 45000,
-    amountPaid: 20000,
-    amountDue: 25000,
-    isPaid: false,
-    image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?q=80&w=500&auto=format&fit=crop',
-    workerInfo: {
-      name: 'Sushil Kumar Singh',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop',
-      rating: 4.9,
-      reviewsCount: 42,
-      experience: '4 years experience'
-    },
-    description: 'Complete 2BHK wall painting with primer and waterproofing coats.',
-    review: {
-      rating: 5,
-      quote: '“Great service so far, very punctual and neat execution.”',
-      date: '14 Mar 2024'
-    }
-  },
-  {
-    id: 'p-2',
-    title: 'Kitchen Renovation',
-    workerName: 'Amit Yadav',
-    location: 'Mumbai',
-    status: 'Completed',
-    dateLabel: 'Completed: 10 Feb 2024',
-    startDateFormatted: '10 Jan 2024',
-    endDateFormatted: '10 Feb 2024',
-    dateRange: '10 Jan 2024 – 10 Feb 2024',
-    priceFormatted: '₹1,20,000',
-    amount: 120000,
-    amountPaid: 120000,
-    amountDue: 0,
-    isPaid: true,
-    image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?q=80&w=500&auto=format&fit=crop',
-    workerInfo: {
-      name: 'Amit Yadav',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?q=80&w=200&auto=format&fit=crop',
-      rating: 4.8,
-      reviewsCount: 36,
-      experience: '2 years experience'
-    },
-    description: 'Full kitchen renovation with modular setup and acrylic finishes.',
-    review: {
-      rating: 4.8,
-      quote: '“Excellent work! Very professional and completed on time. Highly recommended.”',
-      date: '12 Feb 2024'
-    }
-  },
-  {
-    id: 'p-3',
-    title: 'Electrical Repair',
-    workerName: 'Ravi Sharma',
-    location: 'Navi Mumbai',
-    status: 'Completed',
-    dateLabel: 'Completed: 22 Jan 2024',
-    startDateFormatted: '20 Jan 2024',
-    endDateFormatted: '22 Jan 2024',
-    dateRange: '20 Jan 2024 – 22 Jan 2024',
-    priceFormatted: '₹12,500',
-    amount: 12500,
-    amountPaid: 12500,
-    amountDue: 0,
-    isPaid: true,
-    image: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=500&auto=format&fit=crop',
-    workerInfo: {
-      name: 'Ravi Sharma',
-      avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?q=80&w=200&auto=format&fit=crop',
-      rating: 4.7,
-      reviewsCount: 28,
-      experience: '3 years experience'
-    },
-    description: 'Distribution box upgrade and short circuit wiring repairs.',
-    review: {
-      rating: 4.7,
-      quote: '“Quick resolution of tripping issue. Highly knowledgeable electrician.”',
-      date: '23 Jan 2024'
-    }
-  },
-  {
-    id: 'p-4',
-    title: 'AC Installation',
-    workerName: 'Imran Khan',
-    location: 'Thane',
-    status: 'Cancelled',
-    dateLabel: 'Cancelled: 05 Jan 2024',
-    startDateFormatted: '05 Jan 2024',
-    endDateFormatted: '05 Jan 2024',
-    dateRange: '05 Jan 2024',
-    priceFormatted: '₹8,000',
-    amount: 8000,
-    amountPaid: 0,
-    amountDue: 0,
-    isPaid: false,
-    image: 'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?q=80&w=500&auto=format&fit=crop',
-    workerInfo: {
-      name: 'Imran Khan',
-      avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?q=80&w=200&auto=format&fit=crop',
-      rating: 4.6,
-      reviewsCount: 19,
-      experience: '2 years experience'
-    },
-    description: 'Split AC dual piping and outdoor compressor bracket mounting.',
-    review: null
-  }
-];
+const DEFAULT_CLIENT_PROJECTS: any[] = [];
 
 export default function MyProjectsScreen() {
   const router = useRouter();
@@ -163,7 +46,7 @@ export default function MyProjectsScreen() {
 
   const [activeFilter, setActiveFilter] = useState<'All' | 'In Progress' | 'Completed'>('All');
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [projects, setProjects] = useState<any[]>(DEFAULT_CLIENT_PROJECTS);
+  const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -350,8 +233,8 @@ export default function MyProjectsScreen() {
 
               {/* Bottom Row: Started/Completed Date & Price */}
               <View style={styles.cardBottomRow}>
-                <Text style={styles.cardDateText}>{item.dateLabel || item.endDateFormatted || 'Completed: 10 Feb 2024'}</Text>
-                <Text style={styles.cardPriceText}>{item.priceFormatted || `₹${Number(item.amount || 0).toLocaleString('en-IN')}`}</Text>
+                <Text style={styles.cardDateText}>{item.dateLabel || item.endDateFormatted || ''}</Text>
+                <Text style={styles.cardPriceText}>{item.priceFormatted || (item.amount ? `₹${Number(item.amount).toLocaleString('en-IN')}` : '')}</Text>
               </View>
             </TouchableOpacity>
           );

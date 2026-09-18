@@ -295,7 +295,7 @@ export default function ProfileScreen() {
         role: realReview.from.role,
         rating: realReview.rating,
         comment: realReview.reviewText,
-        avatar: resolveAvatarUrl(realReview.from.avatarUrl) || 'https://i.pravatar.cc/100?img=32',
+        avatar: resolveAvatarUrl(realReview.from.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(realReview.from.fullName || 'User')}&background=E2E8F0&color=334155`,
         date: formatDate(realReview.createdAt)
       };
     }
@@ -2739,7 +2739,7 @@ export default function ProfileScreen() {
                               location: item.location,
                               rating: item.rating,
                               reviews: item.reviews,
-                              contractorName: user.name || 'BuildWell Contractors'
+                              contractorName: user.name || user.companyName || ''
                             }
                           });
                         }}
@@ -2852,7 +2852,7 @@ export default function ProfileScreen() {
                         date: formatDate(r.createdAt),
                         rating: r.rating,
                         comment: r.reviewText,
-                        avatar: resolveAvatarUrl(r.from?.avatarUrl) || 'https://i.pravatar.cc/100?img=32'
+                        avatar: resolveAvatarUrl(r.from?.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.from?.fullName || 'User')}&background=E2E8F0&color=334155`
                       };
                       return (
                         <View key={idx} style={styles.reviewItemCard}>

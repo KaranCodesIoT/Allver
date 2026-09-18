@@ -7,8 +7,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import SocketService from '../utils/SocketService';
-import { isGuestUser } from '../constants/Auth';
+import { isGuestUser, isPhoneVerifiedUser } from '../constants/Auth';
 import LoginRequiredModal from '../components/LoginRequiredModal';
+import PhoneVerificationModal from '../components/PhoneVerificationModal';
 
 import * as Location from 'expo-location';
 
@@ -44,16 +45,17 @@ export default function LabourDetailScreen() {
 
 
   // Load params with fallbacks
-  const id = (params.id as string) || '60c72b2f9b1d8a2a4c8b0004';
-  const name = (params.name as string) || 'Ramesh Yadav';
-  const role = (params.role as string) || 'Mason';
+  const id = (params.id as string) || '';
+  const name = (params.name as string) || 'Worker Profile';
+  const role = (params.role as string) || 'Labour';
   const avatar = resolveAvatarUrl(params.avatar as string) || '';
-  const experience = (params.experience as string) || '12+ Years Experience';
-  const location = (params.location as string) || 'Mumbai, Maharashtra';
-  const rating = (params.rating as string) || '4.8';
-  const reviews = (params.reviews as string) || '124';
-  const contractorName = (params.contractorName as string) || 'BuildWell Contractors';
+  const experience = (params.experience as string) || '';
+  const location = (params.location as string) || '';
+  const rating = (params.rating as string) || '';
+  const reviews = (params.reviews as string) || '0';
+  const contractorName = (params.contractorName as string) || '';
   const workspaceId = (params.workspaceId as string) || '';
+  const phone = (params.phone as string) || '';
 
   const cleanExperience = (() => {
     let exp = experience || '';
@@ -73,62 +75,11 @@ export default function LabourDetailScreen() {
   const [specializations, setSpecializations] = useState<string[]>([]);
   const [guestModalVisible, setGuestModalVisible] = useState(false);
   const [guestModalAction, setGuestModalAction] = useState('');
+  const [phoneVerificationVisible, setPhoneVerificationVisible] = useState(false);
 
   const [labourWorkSubTab, setLabourWorkSubTab] = useState<'Active' | 'Completed'>('Active');
 
-  const DEFAULT_LABOUR_JOBS = [
-    {
-      id: 'lj-1',
-      title: 'Residential Construction',
-      location: 'Andheri, Mumbai',
-      date: '12 Sep 2026',
-      status: 'In Progress',
-      image: 'https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?auto=format&fit=crop&w=400&q=80',
-    },
-    {
-      id: 'lj-2',
-      title: 'Home Renovation',
-      location: 'Bandra, Mumbai',
-      date: '18 Sep 2026',
-      status: 'Accepted',
-      image: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=400&q=80',
-    },
-    {
-      id: 'lj-3',
-      title: 'Plumbing Repair',
-      location: 'Dadar, Mumbai',
-      date: '20 Sep 2026',
-      status: 'Pending',
-      image: 'https://images.unsplash.com/photo-1585704032915-c3400ca199e7?auto=format&fit=crop&w=400&q=80',
-    },
-    {
-      id: 'lj-4',
-      title: 'Painting Work',
-      location: 'Worli, Mumbai',
-      date: '22 Sep 2026',
-      status: 'Pending',
-      image: 'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?auto=format&fit=crop&w=400&q=80',
-    },
-  ];
 
-  const DEFAULT_LABOUR_COMPLETED_JOBS = [
-    {
-      id: 'lj-c1',
-      title: 'Electrical Wiring & Setup',
-      location: 'Powai, Mumbai',
-      date: '02 Aug 2026',
-      status: 'Completed',
-      image: 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=400&q=80',
-    },
-    {
-      id: 'lj-c2',
-      title: 'Interior Wall Finishing',
-      location: 'Goregaon, Mumbai',
-      date: '24 Jul 2026',
-      status: 'Completed',
-      image: 'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=400&q=80',
-    },
-  ];
 
   const [completedWorkHistory, setCompletedWorkHistory] = useState<any[]>([]);
   const [selectedWorkHistoryJob, setSelectedWorkHistoryJob] = useState<any | null>(null);
@@ -197,12 +148,12 @@ export default function LabourDetailScreen() {
   }, [allWorkspaces]);
 
   const displayName = professionalData?.fullName || name;
-  const displayAvatar = resolveAvatarUrl(professionalData?.avatarUrl || professionalData?.avatar, professionalData?.updatedAt) || avatar;
-  const displayRating = professionalData?.rating?.toString() || rating;
-  const displayReviews = professionalData?.reviews?.toString() || reviews;
+  const displayAvatar = resolveAvatarUrl(professionalData?.avatarUrl || professionalData?.avatar, professionalData?.updatedAt) || avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName || 'Worker')}&background=EA580C&color=fff`;
+  const displayRating = professionalData?.rating?.toString() || rating || '';
+  const displayReviews = professionalData?.reviews?.toString() || reviews || '0';
   const displayLocation = professionalData?.city || location;
   const displayExperience = professionalData?.experience ? `${professionalData.experience} Years Experience` : cleanExperience;
-  const isVerified = professionalData?.isVerified ?? true;
+  const isVerified = Boolean(professionalData?.isVerified);
 
 
 
@@ -465,13 +416,33 @@ export default function LabourDetailScreen() {
     });
   };
 
+  const executeHire = () => {
+    const contactPhone = phone || professionalData?.phoneNumber || professionalData?.phone;
+    if (contactPhone) {
+      Linking.openURL(`tel:${contactPhone}`);
+    } else {
+      Alert.alert(
+        'Direct Messaging',
+        'Direct phone number is private. You can connect and coordinate via direct message.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Chat', onPress: handleStartChat }
+        ]
+      );
+    }
+  };
+
   const handleHire = () => {
     if (isGuestUser(currentUser) || !currentUser) {
       setGuestModalAction('Calling a Worker');
       setGuestModalVisible(true);
       return;
     }
-    Linking.openURL(`tel:+919876543210`);
+    if (!isPhoneVerifiedUser(currentUser)) {
+      setPhoneVerificationVisible(true);
+      return;
+    }
+    executeHire();
   };
 
   return (
@@ -531,8 +502,14 @@ export default function LabourDetailScreen() {
               <Text style={styles.profileRole}>{role}</Text>
               
               <View style={styles.ratingBadge}>
-                <Feather name="star" size={11} color={COLORS.gold} style={{ fill: COLORS.gold }} />
-                <Text style={styles.ratingText}>{displayRating} ({displayReviews} Reviews)</Text>
+                {parseFloat(displayRating) > 0 ? (
+                  <>
+                    <Feather name="star" size={11} color={COLORS.gold} style={{ fill: COLORS.gold }} />
+                    <Text style={styles.ratingText}>{displayRating} ({displayReviews} Reviews)</Text>
+                  </>
+                ) : (
+                  <Text style={styles.ratingText}>New Professional</Text>
+                )}
               </View>
             </View>
           </View>
@@ -824,7 +801,7 @@ export default function LabourDetailScreen() {
                           </View>
                           <View style={styles.workHistoryMetaRow}>
                             <Text style={styles.workHistoryMetaLabel}>Rating:</Text>
-                            <Text style={styles.workHistoryMetaVal}>⭐ {job.rating || 4.8}</Text>
+                            <Text style={styles.workHistoryMetaVal}>{job.rating ? `⭐ ${job.rating}` : 'Verified'}</Text>
                           </View>
                         </View>
 
@@ -1123,6 +1100,15 @@ export default function LabourDetailScreen() {
         title="Login required"
         message="Create an account or login to continue."
         actionSource={guestModalAction}
+      />
+
+      <PhoneVerificationModal
+        visible={phoneVerificationVisible}
+        onClose={() => setPhoneVerificationVisible(false)}
+        onSuccess={() => {
+          executeHire();
+        }}
+        actionTitle="call / hire this worker"
       />
     </SafeAreaView>
   );

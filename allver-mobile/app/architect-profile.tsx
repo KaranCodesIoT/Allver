@@ -551,7 +551,7 @@ export default function ArchitectProfileScreen() {
                   </View>
                   <TextInput 
                     style={styles.phoneInput} 
-                    placeholder="98765 43210" 
+                    placeholder="Enter 10-digit number" 
                     placeholderTextColor={COLORS.textMuted}
                     keyboardType="phone-pad"
                     value={whatsapp}

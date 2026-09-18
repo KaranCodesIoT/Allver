@@ -331,7 +331,7 @@ const ArchitectProfileSetup = () => {
                 <Phone size={18} className="lucide" />
                 <input
                   type="tel"
-                  placeholder="98765 43210"
+                  placeholder="Enter 10-digit number"
                   required
                   value={whatsappNumber}
                   onChange={(e) => setWhatsappNumber(e.target.value)}

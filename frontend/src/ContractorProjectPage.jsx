@@ -79,12 +79,12 @@ const MOCK_PAYMENTS = [
 ];
 
 const MOCK_PROJECT = {
-  id: 'RJ12345',
-  name: '2BHK Interior Project',
+  id: 'PRJ-DEMO',
+  name: 'Residential Renovation Project',
   status: 'In Progress',
-  contractor: { name: 'Raj Construction', avatar: 'RC', avatarColor: '#3b82f6', rating: 4.7, reviews: 126 },
-  startDate: '10 Apr 2024',
-  endDate: '10 Jul 2024',
+  contractor: { name: 'Assigned Contractor', avatar: 'AC', avatarColor: '#3b82f6', rating: null, reviews: 0 },
+  startDate: '—',
+  endDate: '—',
   totalAmount: 850000,
   paidAmount: 500000,
   pendingAmount: 350000
@@ -189,9 +189,15 @@ const ContractorProjectPage = () => {
               <button className="cpm-view-profile-link" onClick={() => navigate('/contractors')}>View Profile</button>
             </div>
             <div className="cpm-rating-row">
-              <Star size={14} fill="#f59e0b" color="#f59e0b" />
-              <strong>{project.contractor.rating}</strong>
-              <span className="cpm-reviews-count">({project.contractor.reviews} Reviews)</span>
+              {project.contractor.rating ? (
+                <>
+                  <Star size={14} fill="#f59e0b" color="#f59e0b" />
+                  <strong>{project.contractor.rating}</strong>
+                  <span className="cpm-reviews-count">({project.contractor.reviews} Reviews)</span>
+                </>
+              ) : (
+                <span className="cpm-reviews-count">New Contractor</span>
+              )}
             </div>
           </div>
           <div className="cpm-header-right">

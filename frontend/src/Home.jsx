@@ -104,96 +104,7 @@ const Home = () => {
   });
 
   const [feedFilter, setFeedFilter] = useState('All');
-  const [feedPosts, setFeedPosts] = useState([
-    {
-      id: 1,
-      contentType: 'Designs',
-      author: {
-        name: 'Ar. Neha Sharma',
-        role: 'Architect',
-        location: 'Mumbai',
-        avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
-        verified: true,
-        verifiedColor: '#10b981'
-      },
-      time: '2h ago',
-      content: 'A modern minimal home design with natural light 🍃\nThoughts on this facade?',
-      images: [
-        'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=400&q=80'
-      ],
-      appreciates: 128,
-      comments: 12,
-      hasAppreciated: false
-    },
-    {
-      id: 2,
-      contentType: 'Progress',
-      author: {
-        name: 'Rohit Buildcon',
-        role: 'Contractor',
-        location: 'Pune',
-        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-        verified: true,
-        verifiedColor: '#3b82f6'
-      },
-      time: '5h ago',
-      content: 'Brickwork progress at our ongoing site.\nQuality work always comes first!',
-      images: [
-        'https://images.unsplash.com/photo-1504307651254-35680f356dfd?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1541888946425-d81bb19240f5?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=400&q=80'
-      ],
-      appreciates: 96,
-      comments: 8,
-      hasAppreciated: false
-    },
-    {
-      id: 3,
-      contentType: 'Teams',
-      author: {
-        name: 'Amit Kumar',
-        role: 'Labour',
-        location: 'Delhi',
-        avatar: 'https://images.unsplash.com/photo-1624561172888-ac93c696e10c?auto=format&fit=crop&w=150&q=80',
-        verified: true,
-        verifiedColor: '#10b981'
-      },
-      time: '1d ago',
-      content: 'Our skilled tiling team completing premium flooring work 💪\nHire us for your next residential project.',
-      images: [
-        'https://images.unsplash.com/photo-1581094288338-2314dddb7ece?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1552566626-52f8b828add9?auto=format&fit=crop&w=400&q=80'
-      ],
-      appreciates: 42,
-      comments: 3,
-      hasAppreciated: false
-    },
-    {
-      id: 4,
-      contentType: 'Projects',
-      author: {
-        name: 'Studio Arch Co.',
-        role: 'Architect',
-        location: 'Bengaluru',
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-        verified: true,
-        verifiedColor: '#10b981'
-      },
-      time: '3h ago',
-      content: 'Completed: 4BHK villa project in Whitefield 🏡\n2,800 sqft • Modern tropical design • 14 months build time.',
-      images: [
-        'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80'
-      ],
-      appreciates: 215,
-      comments: 34,
-      hasAppreciated: false
-    }
-  ]);
+  const [feedPosts, setFeedPosts] = useState([]);
 
   const handleAppreciatePost = (postId) => {
     setFeedPosts(prev => prev.map(post => {
@@ -256,78 +167,7 @@ const Home = () => {
   const [designTabPrice, setDesignTabPrice] = useState('');
   const [activeDetailTab, setActiveDetailTab] = useState('photos'); // 'photos', 'videos', 'quotation'
   const [showFullOverview, setShowFullOverview] = useState(false);
-  const [designsList, setDesignsList] = useState([
-    {
-      id: 'd1',
-      title: 'Modern 2BHK Apartment',
-      location: 'Mumbai, Maharashtra',
-      rating: 4.8,
-      reviewsCount: 124,
-      author: 'Neha Sharma',
-      authorRole: 'Architect',
-      authorEmail: 'neha.sharma@example.com',
-      avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80',
-      mainImage: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-      images: [
-        'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=400&q=80'
-      ],
-      imgCount: '1/3',
-      likes: 128,
-      comments: 24,
-      saved: false,
-      hasLiked: false,
-      overview: 'A modern and minimal 2BHK apartment design with a perfect blend of comfort, functionality and aesthetics. Warm tones, natural light and smart space planning make this home truly beautiful.'
-    },
-    {
-      id: 'd2',
-      title: 'Modern Bedroom Design',
-      location: 'Pune, Maharashtra',
-      rating: 4.7,
-      reviewsCount: 98,
-      author: 'Rohit Mehta',
-      authorRole: 'Architect',
-      authorEmail: 'rohit.mehta@example.com',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80',
-      mainImage: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80',
-      images: [
-        'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=400&q=80'
-      ],
-      imgCount: '1/4',
-      likes: 96,
-      comments: 18,
-      saved: false,
-      hasLiked: false,
-      overview: 'A contemporary bedroom layout maximizing vertical space and storage with premium materials, elegant light fixtures, and modern side tables.'
-    },
-    {
-      id: 'd3',
-      title: 'Minimal Kitchen Design',
-      location: 'Bengaluru, Karnataka',
-      rating: 4.9,
-      reviewsCount: 156,
-      author: 'Priya Nair',
-      authorRole: 'Architect',
-      authorEmail: 'priya.nair@example.com',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-      mainImage: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=800&q=80',
-      images: [
-        'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=400&q=80',
-        'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=400&q=80'
-      ],
-      imgCount: '1/3',
-      likes: 142,
-      comments: 32,
-      saved: false,
-      hasLiked: false,
-      overview: 'Sleek handle-less drawers, built-in kitchen appliances, and elegant marble countertops combine to create a clutter-free, premium cooking experience.'
-    }
-  ]);
+  const [designsList, setDesignsList] = useState([]);
 
   const handleLikeDesign = (designId, e) => {
     if (e) e.stopPropagation();
@@ -368,20 +208,7 @@ const Home = () => {
   const [designersSearch, setDesignersSearch] = useState('');
   const [designersRatingFilter, setDesignersRatingFilter] = useState('');
   const [showRatingFilterDrop, setShowRatingFilterDrop] = useState(false);
-  const [designerChats, setDesignerChats] = useState({
-    'neha.sharma@example.com': [
-      { sender: 'other', text: 'Hello! I specialize in modern, minimal and luxury interior design. How can I help you with your space today?', time: 'Yesterday' }
-    ],
-    'rohit.mehta@example.com': [
-      { sender: 'other', text: 'Hi there! I am an expert in space planning and smart home integration. Let me know if you have any questions!', time: '2 days ago' }
-    ],
-    'priya.nair@example.com': [
-      { sender: 'other', text: 'Greetings! I design contemporary apartment interiors. Feel free to share your project requirements.', time: '3 days ago' }
-    ],
-    'karan.patel@example.com': [
-      { sender: 'other', text: 'Hello! Let me know if you are looking for minimalist and cost-effective design solutions for your dream space.', time: '4 days ago' }
-    ]
-  });
+  const [designerChats, setDesignerChats] = useState({});
 
   const handleSendDesignerMessage = (e) => {
     e.preventDefault();
@@ -428,43 +255,7 @@ const Home = () => {
       });
     }, 1000);
   };
-  const [chatThreads, setChatThreads] = useState([
-    {
-      id: 1,
-      name: 'Rohan Mehta (Architect)',
-      avatar: 'RM',
-      lastMsg: 'I have updated the blueprint drafts for the duplex project.',
-      time: '10:30 AM',
-      messages: [
-        { sender: 'other', text: 'Hi, I received the site measurements. Let me start the layout drafting.', time: 'Yesterday' },
-        { sender: 'me', text: 'Sounds good! Keep the garden space in mind.', time: 'Yesterday' },
-        { sender: 'other', text: 'Yes, definitely. I have updated the blueprint drafts for the duplex project. Let me know when we can review them.', time: '10:30 AM' }
-      ]
-    },
-    {
-      id: 2,
-      name: 'Vikram Singh (Contractor)',
-      avatar: 'VS',
-      lastMsg: 'The cement supplies will arrive on site tomorrow morning.',
-      time: 'Yesterday',
-      messages: [
-        { sender: 'other', text: 'The excavators have completed the grading work.', time: '2 days ago' },
-        { sender: 'me', text: 'Excellent. When is the concrete pouring scheduled?', time: '2 days ago' },
-        { sender: 'other', text: 'The cement supplies will arrive on site tomorrow morning.', time: 'Yesterday' }
-      ]
-    },
-    {
-      id: 3,
-      name: 'Amit Kumar (Mason)',
-      avatar: 'AK',
-      lastMsg: 'I will be available for work from Monday next week.',
-      time: 'May 30',
-      messages: [
-        { sender: 'me', text: 'Hi Amit, do you have experience with slate tiling?', time: 'May 30' },
-        { sender: 'other', text: 'Yes, I have completed three slate tiling projects recently. I will be available for work from Monday next week.', time: 'May 30' }
-      ]
-    }
-  ]);
+  const [chatThreads, setChatThreads] = useState([]);
 
   // Fetch contract requests and workspaces
   const fetchNotificationsAndWorkspaces = async () => {
@@ -854,40 +645,10 @@ const Home = () => {
           setFeaturedPros(prev => ({ ...prev, Contractor: contData.professionals[0] }));
         }
 
-        // Fetch Labour - Auto-seed if none
+        // Fetch Labour
         const labourRes = await fetch('https://allver.onrender.com/api/professionals/Labour');
         const labourData = await labourRes.json();
-        if (!labourData.professionals || labourData.professionals.length === 0) {
-          const regRes = await fetch('https://allver.onrender.com/api/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fullName: 'Amit Kumar',
-              email: 'amit.kumar@example.com',
-              phoneNumber: '9876543211',
-              password: 'password123',
-              role: 'Labour',
-              city: 'Thane'
-            })
-          });
-          if (regRes.ok) {
-            const regData = await regRes.json();
-            const profUpdate = await fetch(`https://allver.onrender.com/api/user/profile/${regData.user._id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                skillType: 'Mason / Tiler',
-                experience: '8 Years',
-                availability: 'Available',
-                shortDesc: 'Specialized in premium stone work, floor tiling, and concrete masonry with 8 years of on-site experience.'
-              })
-            });
-            if (profUpdate.ok) {
-              const updatedData = await profUpdate.json();
-              setFeaturedPros(prev => ({ ...prev, Labour: updatedData.user }));
-            }
-          }
-        } else {
+        if (labourData.professionals && labourData.professionals.length > 0) {
           setFeaturedPros(prev => ({ ...prev, Labour: labourData.professionals[0] }));
         }
       } catch (err) {
@@ -900,101 +661,7 @@ const Home = () => {
         const res = await fetch('https://allver.onrender.com/api/professionals/Architect');
         const data = await res.json();
         let list = data.professionals || [];
-        
-        // Seed if missing
-        if (list.length < 4) {
-          const seedData = [
-            {
-              fullName: 'Neha Sharma',
-              email: 'neha.sharma@example.com',
-              phoneNumber: '9876543212',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Mumbai, Maharashtra',
-              experience: '5+ Years',
-              shortDesc: 'Specializes in modern, minimal and luxury interior design.',
-              rating: 4.8,
-              reviews: 124,
-              projects: 128,
-              avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'
-            },
-            {
-              fullName: 'Rohit Mehta',
-              email: 'rohit.mehta@example.com',
-              phoneNumber: '9876543213',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Pune, Maharashtra',
-              experience: '7+ Years',
-              shortDesc: 'Expert in space planning, modular kitchen and smart homes.',
-              rating: 4.7,
-              reviews: 98,
-              projects: 96,
-              avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'
-            },
-            {
-              fullName: 'Priya Nair',
-              email: 'priya.nair@example.com',
-              phoneNumber: '9876543214',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Bengaluru, Karnataka',
-              experience: '6+ Years',
-              shortDesc: 'Specializes in contemporary and luxury apartment interiors.',
-              rating: 4.9,
-              reviews: 156,
-              projects: 156,
-              avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80'
-            },
-            {
-              fullName: 'Karan Patel',
-              email: 'karan.patel@example.com',
-              phoneNumber: '9876543215',
-              password: 'password123',
-              role: 'Architect',
-              city: 'Hyderabad, Telangana',
-              experience: '4+ Years',
-              shortDesc: 'Modern, minimalist and cost-effective design solutions.',
-              rating: 4.6,
-              reviews: 72,
-              projects: 72,
-              avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80'
-            }
-          ];
-
-          for (const item of seedData) {
-            const exists = list.some(u => u.email === item.email);
-            if (!exists) {
-              const regRes = await fetch('https://allver.onrender.com/api/register', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(item)
-              });
-              if (regRes.ok) {
-                const regData = await regRes.json();
-                await fetch(`https://allver.onrender.com/api/user/profile/${regData.user._id}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    rating: item.rating,
-                    reviews: item.reviews,
-                    projects: item.projects,
-                    experience: item.experience,
-                    shortDesc: item.shortDesc,
-                    avatarUrl: item.avatarUrl,
-                    firmName: item.fullName === 'Neha Sharma' ? 'Neha Sharma Designs' : 'Freelance Architect'
-                  })
-                });
-              }
-            }
-          }
-
-          const refetchRes = await fetch('https://allver.onrender.com/api/professionals/Architect');
-          const refetchData = await refetchRes.json();
-          setDesignersList(refetchData.professionals || []);
-        } else {
-          setDesignersList(list);
-        }
+        setDesignersList(list);
         setDesignersLoading(false);
       } catch (err) {
         console.error('Error fetching designers list:', err);
@@ -1463,11 +1130,11 @@ const Home = () => {
                     <div className="role-illustration-card green" style={{ height: 'auto', padding: '1.75rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                       <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                         <div className="avatar-circle" style={{ width: '48px', height: '48px', fontSize: '1.2rem', backgroundColor: '#10b981', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                          {featuredPros.Architect ? featuredPros.Architect.fullName.charAt(0).toUpperCase() : 'R'}
+                          {featuredPros.Architect ? featuredPros.Architect.fullName.charAt(0).toUpperCase() : 'A'}
                         </div>
                         <div>
                           <h4 style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>
-                            {featuredPros.Architect ? `Ar. ${featuredPros.Architect.fullName}` : 'Ar. Rohit shrivastav'}
+                            {featuredPros.Architect ? `Ar. ${featuredPros.Architect.fullName}` : 'Verified Architect'}
                           </h4>
                           <span style={{ fontSize: '0.85rem', color: '#10b981', fontWeight: '600' }}>Architect</span>
                         </div>
@@ -1515,11 +1182,11 @@ const Home = () => {
                     <div className="role-illustration-card blue" style={{ height: 'auto', padding: '1.75rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                       <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                         <div className="avatar-circle" style={{ width: '48px', height: '48px', fontSize: '1.2rem', backgroundColor: '#3b82f6', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                          {featuredPros.Contractor ? featuredPros.Contractor.fullName.charAt(0).toUpperCase() : 'K'}
+                          {featuredPros.Contractor ? featuredPros.Contractor.fullName.charAt(0).toUpperCase() : 'C'}
                         </div>
                         <div>
                           <h4 style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>
-                            {featuredPros.Contractor ? featuredPros.Contractor.fullName : 'Karan Chaubey'}
+                            {featuredPros.Contractor ? featuredPros.Contractor.fullName : 'Verified Contractor'}
                           </h4>
                           <span style={{ fontSize: '0.85rem', color: '#3b82f6', fontWeight: '600' }}>
                             {featuredPros.Contractor?.contractorType || 'Contractor'}
@@ -1569,11 +1236,11 @@ const Home = () => {
                     <div className="role-illustration-card orange" style={{ height: 'auto', padding: '1.75rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                       <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                         <div className="avatar-circle" style={{ width: '48px', height: '48px', fontSize: '1.2rem', backgroundColor: '#f59e0b', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                          {featuredPros.Labour ? featuredPros.Labour.fullName.charAt(0).toUpperCase() : 'A'}
+                          {featuredPros.Labour ? featuredPros.Labour.fullName.charAt(0).toUpperCase() : 'W'}
                         </div>
                         <div>
                           <h4 style={{ fontSize: '1.15rem', fontWeight: 'bold', color: '#1e293b', margin: 0 }}>
-                            {featuredPros.Labour ? featuredPros.Labour.fullName : 'Amit Kumar'}
+                            {featuredPros.Labour ? featuredPros.Labour.fullName : 'Verified Worker'}
                           </h4>
                           <span style={{ fontSize: '0.85rem', color: '#f59e0b', fontWeight: '600' }}>
                             {featuredPros.Labour?.skillType || 'Labour'}
@@ -1584,7 +1251,7 @@ const Home = () => {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: '#4b5563' }}>
                           <Briefcase size={16} style={{ color: '#f59e0b' }} />
-                          <strong>{featuredPros.Labour?.experience || '8 Years'} Experience</strong>
+                          <strong>{featuredPros.Labour?.experience || 'Skilled'} Experience</strong>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem', color: '#4b5563' }}>
                           <CheckCircle2 size={16} style={{ color: '#f59e0b' }} />
@@ -1781,7 +1448,8 @@ const Home = () => {
 
                 {/* Feed Cards List */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  {filteredFeedPosts.map(post => (
+                  {filteredFeedPosts.length > 0 ? (
+                    filteredFeedPosts.map(post => (
                     <div key={post.id} className="feed-card" style={{ background: 'white', borderRadius: '1rem', border: '1px solid #e2e8f0', padding: '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                       
                       {/* Card Header */}
@@ -1903,7 +1571,16 @@ const Home = () => {
                         </button>
                       </div>
                     </div>
-                  ))}
+                  ))
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '3.5rem 1.5rem', background: 'white', borderRadius: '1rem', border: '1px solid #e2e8f0' }}>
+                      <Share2 size={36} color="#94a3b8" style={{ marginBottom: '12px' }} />
+                      <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem', fontWeight: '700' }}>No Community Updates Yet</h4>
+                      <p style={{ margin: '8px auto 0', color: '#64748b', fontSize: '0.9rem', maxWidth: '440px', lineHeight: '1.5' }}>
+                        When verified architects, contractors, and construction professionals share real-time site progress and design showcases, they will appear here.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1963,11 +1640,18 @@ const Home = () => {
                       {designsList
                         .filter(d => {
                           const textMatch = !designTabSearch || 
-                            d.title.toLowerCase().includes(designTabSearch.toLowerCase()) || 
-                            d.overview.toLowerCase().includes(designTabSearch.toLowerCase());
+                            d.title?.toLowerCase().includes(designTabSearch.toLowerCase()) || 
+                            d.overview?.toLowerCase().includes(designTabSearch.toLowerCase());
                           return textMatch;
-                        })
-                        .map(d => (
+                        }).length > 0 ? (
+                        designsList
+                          .filter(d => {
+                            const textMatch = !designTabSearch || 
+                              d.title?.toLowerCase().includes(designTabSearch.toLowerCase()) || 
+                              d.overview?.toLowerCase().includes(designTabSearch.toLowerCase());
+                            return textMatch;
+                          })
+                          .map(d => (
                           <div 
                             key={d.id} 
                             className="design-showcase-card"
@@ -2015,7 +1699,16 @@ const Home = () => {
                               </div>
                             </div>
                           </div>
-                        ))}
+                        ))
+                      ) : (
+                        <div style={{ textAlign: 'center', padding: '3.5rem 1.5rem', background: 'white', borderRadius: '1rem', border: '1px solid #e2e8f0', width: '100%', gridColumn: '1 / -1' }}>
+                          <LayoutGrid size={36} color="#94a3b8" style={{ marginBottom: '12px' }} />
+                          <h4 style={{ margin: 0, color: '#0f172a', fontSize: '1.1rem', fontWeight: '700' }}>No Architectural Designs Found</h4>
+                          <p style={{ margin: '8px auto 0', color: '#64748b', fontSize: '0.9rem', maxWidth: '440px', lineHeight: '1.5' }}>
+                            Architects and interior designers can publish floor plans, elevations, and completed projects directly from their profile.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                   </div>
@@ -2249,40 +1942,12 @@ const Home = () => {
                         <div className="design-horizontal-section">
                           <div className="design-section-header">
                             <h4>Contractors Who Can Build This Design</h4>
-                            <a href="#" className="view-all-link" onClick={e => e.preventDefault()}>View All &rarr;</a>
+                            <button className="view-all-link" style={{ background: 'none', border: 'none', cursor: 'pointer' }} onClick={() => navigate('/contractors')}>View All &rarr;</button>
                           </div>
 
-                          <div className="design-horizontal-scroll">
-                            <div className="design-contractor-item-card">
-                              <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80" alt="contractor-1" />
-                              <h5>BuildWell Construction</h5>
-                              <div className="rat">
-                                <Star size={11} fill="#f59e0b" color="#f59e0b" />
-                                <strong>4.6</strong> (98)
-                              </div>
-                              <div className="price">Starts at <strong>₹8.5 L</strong></div>
-                              <button className="design-contractor-hire-btn" onClick={() => navigate('/contractors')}>Hire Now</button>
-                            </div>
-                            <div className="design-contractor-item-card">
-                              <img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80" alt="contractor-2" />
-                              <h5>HomeCraft Builders</h5>
-                              <div className="rat">
-                                <Star size={11} fill="#f59e0b" color="#f59e0b" />
-                                <strong>4.5</strong> (76)
-                              </div>
-                              <div className="price">Starts at <strong>₹8.8 L</strong></div>
-                              <button className="design-contractor-hire-btn" onClick={() => navigate('/contractors')}>Hire Now</button>
-                            </div>
-                            <div className="design-contractor-item-card">
-                              <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80" alt="contractor-3" />
-                              <h5>StructureLine</h5>
-                              <div className="rat">
-                                <Star size={11} fill="#f59e0b" color="#f59e0b" />
-                                <strong>4.7</strong> (120)
-                              </div>
-                              <div className="price">Starts at <strong>₹6.2 L</strong></div>
-                              <button className="design-contractor-hire-btn" onClick={() => navigate('/contractors')}>Hire Now</button>
-                            </div>
+                          <div style={{ padding: '1.5rem', textAlign: 'center', backgroundColor: '#f8fafc', borderRadius: '10px', margin: '0.75rem 0' }}>
+                            <p style={{ margin: '0 0 0.5rem 0', color: '#64748b', fontSize: '0.9rem' }}>Browse verified local contractors ready to quote on this design architecture.</p>
+                            <button className="design-contractor-hire-btn" style={{ margin: '0 auto' }} onClick={() => navigate('/contractors')}>Browse Contractors</button>
                           </div>
                         </div>
                       </>
@@ -3619,7 +3284,11 @@ const Home = () => {
                                   <button
                                     onClick={() => {
                                       const contractorObj = workspaceDetail.contractor || workspaceDetail.professional;
-                                      alert(`📞 Contacting Contractor ${contractorObj?.fullName || 'Professional'} at ${contractorObj?.phoneNumber || '9876543210'}`);
+                                      if (contractorObj?.phoneNumber) {
+                                        window.location.href = `tel:${contractorObj.phoneNumber}`;
+                                      } else {
+                                        alert(`Contacting ${contractorObj?.fullName || 'Contractor'} via in-app message...`);
+                                      }
                                     }}
                                     style={{
                                       background: '#475569',
@@ -4325,20 +3994,12 @@ const Home = () => {
               </Link>
             </div>
 
-            {/* Trusted By */}
+            {/* Platform Highlights */}
             <div className="av-trusted-row">
-              <span className="av-trusted-label">Trusted by Professionals</span>
-              <div className="av-avatar-stack">
-                <div className="av-avatar-circle"><img src="https://i.pravatar.cc/150?img=11" alt="user" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit: 'cover'}} /></div>
-                <div className="av-avatar-circle"><img src="https://i.pravatar.cc/150?img=12" alt="user" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit: 'cover'}} /></div>
-                <div className="av-avatar-circle"><img src="https://i.pravatar.cc/150?img=33" alt="user" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit: 'cover'}} /></div>
-                <div className="av-avatar-circle"><img src="https://i.pravatar.cc/150?img=44" alt="user" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit: 'cover'}} /></div>
-                <div className="av-avatar-circle"><img src="https://i.pravatar.cc/150?img=5" alt="user" style={{width:'100%', height:'100%', borderRadius:'50%', objectFit: 'cover'}} /></div>
-                <div className="av-avatar-circle av-avatar-more">+</div>
-              </div>
+              <span className="av-trusted-label">Built for Indian Construction</span>
               <div className="av-stat-inline">
-                <strong>10K+</strong>
-                <span>Happy Users</span>
+                <strong>Direct & Transparent</strong>
+                <span>Zero Hidden Commissions</span>
               </div>
             </div>
           </div>
@@ -4350,10 +4011,9 @@ const Home = () => {
                 <Package size={20} />
               </div>
               <div className="av-floating-text">
-                <strong>Your Project, In Real Time</strong>
-                <p>Track orders, manage deliveries<br/>and stay updated 24/7.</p>
+                <strong>Digital Milestone Tracking</strong>
+                <p>Monitor progress, verify works<br/>and approve stages securely.</p>
               </div>
-              <button className="av-btn-track">Track Order <ArrowRight size={14} /></button>
             </div>
           </div>
         </div>
@@ -4393,35 +4053,35 @@ const Home = () => {
         </div>
       </section>
 
-      {/* ========== STATS BAR ========== */}
+      {/* ========== PLATFORM HIGHLIGHTS BAR ========== */}
       <section className="av-stats-bar">
         <div className="av-stats-inner">
           <div className="av-stat-item">
             <Users size={24} />
             <div>
-              <strong>10K+</strong>
-              <span>Professionals</span>
+              <strong>Verified</strong>
+              <span>Contractors & Architects</span>
             </div>
           </div>
           <div className="av-stat-item">
             <Building2 size={24} />
             <div>
-              <strong>5K+</strong>
-              <span>Projects Completed</span>
+              <strong>Milestone-Based</strong>
+              <span>Digital Progress Tracking</span>
             </div>
           </div>
           <div className="av-stat-item">
             <Package size={24} />
             <div>
-              <strong>15K+</strong>
-              <span>Products Listed</span>
+              <strong>Direct Hiring</strong>
+              <span>No Brokerage Fees</span>
             </div>
           </div>
           <div className="av-stat-item">
             <Globe size={24} />
             <div>
-              <strong>50+</strong>
-              <span>Cities Covered</span>
+              <strong>Pan-India</strong>
+              <span>Platform Access</span>
             </div>
           </div>
         </div>

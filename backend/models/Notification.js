@@ -4,16 +4,63 @@ const notificationSchema = new mongoose.Schema({
   recipientId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: true,
+    index: true
   },
   senderId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false,
+    default: null
+  },
+  type: {
+    type: String,
+    enum: [
+      'BOOKING_REQUEST',
+      'BOOKING_ACCEPTED',
+      'BOOKING_REJECTED',
+      'BOOKING_CANCELLED',
+      'BOOKING_RESCHEDULED',
+      'BOOKING_REMINDER',
+      'PROVIDER_ON_THE_WAY',
+      'PROVIDER_ARRIVED',
+      'JOB_STARTED',
+      'JOB_COMPLETED',
+      'PAYMENT_SUCCESS',
+      'PAYMENT_FAILED',
+      'PAYMENT_REFUNDED',
+      'REVIEW_REQUEST',
+      'NEW_CHAT_MESSAGE',
+      'SYSTEM_ALERT'
+    ],
+    default: 'SYSTEM_ALERT',
+    index: true
+  },
+  title: {
+    type: String,
+    default: 'Allver'
+  },
+  body: {
+    type: String,
+    default: ''
+  },
+  bookingId: {
+    type: String,
+    default: '',
+    index: true
+  },
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
+    default: () => ({})
+  },
+  idempotencyKey: {
+    type: String,
+    default: null,
+    index: true
   },
   text: {
     type: String,
-    required: true
+    default: ''
   },
   workspaceId: {
     type: String,
@@ -50,7 +97,8 @@ const notificationSchema = new mongoose.Schema({
   },
   isRead: {
     type: Boolean,
-    default: false
+    default: false,
+    index: true
   },
   isMarked: {
     type: Boolean,
@@ -58,20 +106,50 @@ const notificationSchema = new mongoose.Schema({
   },
   createdAt: {
     type: Date,
-    default: Date.now
+    default: Date.now,
+    index: true
   }
+}, {
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
 });
+
+notificationSchema.virtual('userId')
+  .get(function() { return this.recipientId; })
+  .set(function(v) { this.recipientId = v; });
+
+notificationSchema.virtual('read')
+  .get(function() { return this.isRead; })
+  .set(function(v) { this.isRead = v; });
 
 notificationSchema.index({ recipientId: 1, createdAt: -1 });
 
 // Pre-save hook to check settings and suppress if disabled
-notificationSchema.pre('save', async function(next) {
+notificationSchema.pre('save', async function() {
   try {
+    // 1. Sync body and text
+    if (this.body && !this.text) {
+      this.text = this.body;
+    } else if (this.text && !this.body) {
+      this.body = this.text;
+    }
+
+    // 2. Auto-map category if booking event
+    if (this.type && this.type !== 'SYSTEM_ALERT') {
+      if (this.type.startsWith('PAYMENT_')) {
+        this.category = 'payments';
+      } else if (this.type === 'NEW_CHAT_MESSAGE') {
+        this.category = 'messages';
+      } else {
+        this.category = 'projectUpdates';
+      }
+    }
+
     const User = mongoose.model('User');
     const recipient = await User.findById(this.recipientId);
-    if (!recipient) return next();
+    if (!recipient) return;
 
-    // 1. Resolve notification category
+    // 3. Resolve notification category
     let resolvedCategory = this.category || 'systemAlerts';
     if (!this.category) {
       const textLower = this.text ? this.text.toLowerCase() : '';
@@ -91,7 +169,7 @@ notificationSchema.pre('save', async function(next) {
       this.category = resolvedCategory;
     }
 
-    // 2. Check recipient's notification settings preferences
+    // 4. Check recipient's notification settings preferences
     if (recipient.notificationSettings) {
       const isEnabled = recipient.notificationSettings[resolvedCategory];
       if (isEnabled === false) {
@@ -99,9 +177,8 @@ notificationSchema.pre('save', async function(next) {
         this.isRead = true; // Mark as read so it doesn't count towards badges
       }
     }
-    next();
   } catch (error) {
-    next(error);
+    console.warn('[Notification] pre-save hook warning:', error.message);
   }
 });
 
@@ -118,7 +195,7 @@ notificationSchema.post('save', async function(doc) {
     // 1. Resolve notification category
     let resolvedCategory = doc.category || 'systemAlerts';
     if (!doc.category) {
-      const textLower = doc.text.toLowerCase();
+      const textLower = (doc.text || doc.body || '').toLowerCase();
       if (textLower.includes('new message') || textLower.includes('💬') || doc.conversationId) {
         resolvedCategory = 'messages';
       } else if (textLower.includes('project invitation') || textLower.includes('📩') || textLower.includes('applied') || textLower.includes('application') || textLower.includes('accepted') || textLower.includes('rejected') || textLower.includes('proposal')) {
@@ -154,10 +231,12 @@ notificationSchema.post('save', async function(doc) {
       let senderName = 'Allver User';
       let senderAvatar = '';
       try {
-        const senderUser = await User.findById(doc.senderId);
-        if (senderUser) {
-          senderName = senderUser.fullName;
-          senderAvatar = senderUser.avatarUrl || '';
+        if (doc.senderId) {
+          const senderUser = await User.findById(doc.senderId);
+          if (senderUser) {
+            senderName = senderUser.fullName;
+            senderAvatar = senderUser.avatarUrl || '';
+          }
         }
       } catch (e) {
         console.error('[FCM Call Push] Error fetching sender details:', e);
@@ -213,7 +292,6 @@ notificationSchema.post('save', async function(doc) {
       targetTokens = [recipient.expoPushToken];
     }
 
-    // Filter out invalid/empty tokens
     // Validate Expo Push Token in a future-proof manner
     const isExpoPushToken = (token) => {
       if (typeof token !== 'string') return false;
@@ -236,31 +314,67 @@ notificationSchema.post('save', async function(doc) {
     let senderName = '';
     let senderAvatar = '';
     try {
-      const senderUser = await User.findById(doc.senderId);
-      if (senderUser) {
-        senderName = senderUser.fullName;
-        senderAvatar = senderUser.avatarUrl || '';
+      if (doc.senderId) {
+        const senderUser = await User.findById(doc.senderId);
+        if (senderUser) {
+          senderName = senderUser.fullName;
+          senderAvatar = senderUser.avatarUrl || '';
+        }
       }
     } catch (e) {
       console.log('Error fetching sender details:', e);
     }
 
-    // 5. Determine title based on category & text
-    let title = 'Allver';
-    const textLower = doc.text.toLowerCase();
-    if (resolvedCategory === 'voice_call' || textLower.includes('incoming voice call') || textLower.includes('📞')) {
-      title = '📞 Incoming Voice Call';
-    } else if (resolvedCategory === 'messages') {
-      title = '💬 New Message';
-    } else if (resolvedCategory === 'projectUpdates') {
-      title = textLower.includes('applied') || textLower.includes('application') ? '👥 New Application' : '📩 Project Invitation';
-    } else if (resolvedCategory === 'contracts') {
-      title = '🏗 New Contract Assigned';
-    } else if (resolvedCategory === 'payments') {
-      title = '💰 Payment Received';
-    } else if (resolvedCategory === 'attendance') {
-      title = '📋 Attendance Marked';
+    // 5. Determine title based on type, explicit title, category & text
+    let title = doc.title && doc.title !== 'Allver' ? doc.title : 'Allver';
+    const textLower = (doc.text || doc.body || '').toLowerCase();
+    if (title === 'Allver') {
+      if (doc.type === 'BOOKING_REQUEST') {
+        title = '⚡ New Booking Request';
+      } else if (doc.type === 'BOOKING_ACCEPTED') {
+        title = '✅ Booking Accepted';
+      } else if (doc.type === 'BOOKING_REJECTED') {
+        title = '❌ Booking Rejected';
+      } else if (doc.type === 'BOOKING_CANCELLED') {
+        title = '🚫 Booking Cancelled';
+      } else if (doc.type === 'BOOKING_RESCHEDULED') {
+        title = '📅 Booking Rescheduled';
+      } else if (doc.type === 'BOOKING_REMINDER') {
+        title = '⏰ Booking Reminder';
+      } else if (doc.type === 'PROVIDER_ON_THE_WAY') {
+        title = '🚗 Provider On The Way';
+      } else if (doc.type === 'PROVIDER_ARRIVED') {
+        title = '📍 Provider Arrived';
+      } else if (doc.type === 'JOB_STARTED') {
+        title = '🛠 Work Started';
+      } else if (doc.type === 'JOB_COMPLETED') {
+        title = '🎉 Job Completed';
+      } else if (doc.type === 'PAYMENT_SUCCESS') {
+        title = '💰 Payment Received';
+      } else if (doc.type === 'PAYMENT_FAILED') {
+        title = '⚠️ Payment Failed';
+      } else if (doc.type === 'PAYMENT_REFUNDED') {
+        title = '💸 Payment Refunded';
+      } else if (doc.type === 'REVIEW_REQUEST') {
+        title = '⭐ Rate Your Service';
+      } else if (doc.type === 'NEW_CHAT_MESSAGE') {
+        title = '💬 New Message';
+      } else if (resolvedCategory === 'voice_call' || textLower.includes('incoming voice call') || textLower.includes('📞')) {
+        title = '📞 Incoming Voice Call';
+      } else if (resolvedCategory === 'messages') {
+        title = '💬 New Message';
+      } else if (resolvedCategory === 'projectUpdates') {
+        title = textLower.includes('applied') || textLower.includes('application') ? '👥 New Application' : '📩 Project Invitation';
+      } else if (resolvedCategory === 'contracts') {
+        title = '🏗 New Contract Assigned';
+      } else if (resolvedCategory === 'payments') {
+        title = '💰 Payment Received';
+      } else if (resolvedCategory === 'attendance') {
+        title = '📋 Attendance Marked';
+      }
     }
+
+    const notificationBody = doc.body || doc.text || '';
 
     // Send push payload to all registered device tokens
     for (const token of targetTokens) {
@@ -270,11 +384,16 @@ notificationSchema.post('save', async function(doc) {
         priority: 'high',
         channelId: 'default',
         title: title,
-        body: doc.text,
+        body: notificationBody,
         badge: badgeCount,
         data: {
           notificationId: doc._id.toString(),
-          text: doc.text,
+          type: doc.type || 'SYSTEM_ALERT',
+          bookingId: doc.bookingId || '',
+          jobId: doc.bookingId || doc.projectId || '',
+          title: title,
+          body: notificationBody,
+          text: notificationBody,
           workspaceId: doc.workspaceId || '',
           conversationId: doc.conversationId || '',
           projectId: doc.projectId || '',
@@ -283,7 +402,8 @@ notificationSchema.post('save', async function(doc) {
           senderId: doc.senderId ? doc.senderId.toString() : '',
           senderName,
           senderAvatar,
-          category: resolvedCategory
+          category: resolvedCategory,
+          metadata: doc.metadata || {}
         },
         android: {
           channelId: 'default',
@@ -310,6 +430,12 @@ notificationSchema.post('save', async function(doc) {
           console.log(`[Push Notification] Successfully sent to ${recipient.fullName} (${token}) [Ticket ID: ${ticket.id}]`);
         } else if (ticket && ticket.status === 'error') {
           console.error(`[Push Notification] Expo Push API Error Ticket for ${recipient.fullName} (${token}):`, ticket.message, ticket.details);
+          if (ticket.details?.error === 'DeviceNotRegistered') {
+            console.log(`[Push Notification] Cleaning up invalid/unregistered token ${token} for user ${recipient._id}`);
+            User.findByIdAndUpdate(recipient._id, {
+              $pull: { expoPushTokens: token }
+            }).catch(e => console.warn('Error pulling invalid token:', e.message));
+          }
         } else if (resData?.errors && resData.errors.length > 0) {
           console.error(`[Push Notification] Expo Push API Top-Level Error for ${recipient.fullName} (${token}):`, resData.errors);
         } else {

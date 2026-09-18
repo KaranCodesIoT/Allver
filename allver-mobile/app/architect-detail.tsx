@@ -8,8 +8,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { BACKEND_URL, resolveAvatarUrl } from '../constants/Config';
 import { useTranslation } from '../utils/i18n';
 import SocketService from '../utils/SocketService';
-import { isGuestUser } from '../constants/Auth';
+import { isGuestUser, isPhoneVerifiedUser } from '../constants/Auth';
 import LoginRequiredModal from '../components/LoginRequiredModal';
+import PhoneVerificationModal from '../components/PhoneVerificationModal';
 
 
 const { width } = Dimensions.get('window');
@@ -43,20 +44,20 @@ export default function ArchitectDetailScreen() {
   const { t } = useTranslation();
 
 
-  // Dynamic values with fallbacks to Neha Sharma (from third screenshot)
-  const architectId = (params.id as string) || '60c72b2f9b1d8a2a4c8b0001';
-  const name = (params.name as string) || 'Ar. Neha Sharma';
+  // Dynamic professional profile values from navigation params
+  const architectId = (params.id as string) || '';
+  const name = (params.name as string) || 'Architect Profile';
   const avatar = resolveAvatarUrl(params.avatar as string) || '';
-  const coverImage = resolveAvatarUrl(params.coverImage as string) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80';
-  const rating = (params.rating as string) || '4.8';
-  const reviews = (params.reviews as string) || '124';
-  const location = (params.location as string) || 'Mumbai, Maharashtra';
-  const experience = (params.experience as string) || '8+ Years';
+  const coverImage = resolveAvatarUrl(params.coverImage as string) || '';
+  const rating = (params.rating as string) || '';
+  const reviews = (params.reviews as string) || '0';
+  const location = (params.location as string) || '';
+  const experience = (params.experience as string) || '';
   const projectsCount = (params.projects as string) || '0';
-  const followersCount = (params.followers as string) || '256';
-  const firmName = (params.firmName as string) || 'Design Space Architects';
-  const phone = (params.phone as string) || '+91 98765 43210';
-  const specializationStr = (params.specialization as string) || 'Specializes in modern, sustainable and luxury architecture.';
+  const followersCount = (params.followers as string) || '0';
+  const firmName = (params.firmName as string) || '';
+  const phone = (params.phone as string) || '';
+  const specializationStr = (params.specialization as string) || '';
   const role = (params.role as string) || 'Architect';
 
   // State
@@ -195,6 +196,7 @@ export default function ArchitectDetailScreen() {
   const [isHiring, setIsHiring] = useState(false);
   const [guestModalVisible, setGuestModalVisible] = useState(false);
   const [guestModalAction, setGuestModalAction] = useState('');
+  const [phoneVerificationVisible, setPhoneVerificationVisible] = useState(false);
 
   // Set default location when professional location becomes available
   useEffect(() => {
@@ -226,6 +228,10 @@ export default function ArchitectDetailScreen() {
     }
     if (!currentUser?._id) {
       Alert.alert('Login Required', 'Please log in to hire this professional.');
+      return;
+    }
+    if (!isPhoneVerifiedUser(currentUser)) {
+      setPhoneVerificationVisible(true);
       return;
     }
 
@@ -304,7 +310,7 @@ export default function ArchitectDetailScreen() {
   const getLatestReviewByRole = (targetRole: 'Client' | 'Contractor' | 'Architect') => {
     const realReview = reviewsList.find(r => r.from && r.from.role === targetRole);
     if (realReview) {
-      return { name: realReview.from.fullName, role: realReview.from.role, rating: realReview.rating, comment: realReview.reviewText, avatar: resolveAvatarUrl(realReview.from.avatarUrl) || 'https://i.pravatar.cc/100?img=32', date: formatDate(realReview.createdAt) };
+      return { name: realReview.from.fullName, role: realReview.from.role, rating: realReview.rating, comment: realReview.reviewText, avatar: resolveAvatarUrl(realReview.from.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(realReview.from.fullName || 'User')}&background=E2E8F0&color=334155`, date: formatDate(realReview.createdAt) };
     }
     return null;
   };
@@ -608,13 +614,15 @@ export default function ArchitectDetailScreen() {
           <View style={styles.avatarRow}>
             <View style={styles.avatarContainer}>
               <Image 
-                source={{ uri: displayAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=300&auto=format&fit=crop' }} 
+                source={{ uri: displayAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Architect')}&background=10B981&color=fff` }} 
                 style={styles.avatarImage} 
                 contentFit="cover" 
               />
-              <View style={styles.verifiedBadge}>
-                <Feather name="check" size={10} color={COLORS.white} />
-              </View>
+              {professionalData?.isVerified && (
+                <View style={styles.verifiedBadge}>
+                  <Feather name="check" size={10} color={COLORS.white} />
+                </View>
+              )}
             </View>
 
             <View style={styles.statsSummaryContainer}>
@@ -640,9 +648,13 @@ export default function ArchitectDetailScreen() {
               <View style={styles.statBox}>
                 <View style={styles.ratingRow}>
                   <Feather name="star" size={12} color={COLORS.gold} />
-                  <Text style={styles.statNumber}> {rating}</Text>
+                  <Text style={styles.statNumber}> {
+                    reviewsList.length > 0
+                      ? (reviewsList.reduce((sum: number, r: any) => sum + r.rating, 0) / reviewsList.length).toFixed(1)
+                      : (parseFloat(rating) > 0 ? rating : 'New')
+                  }</Text>
                 </View>
-                <Text style={styles.statLabel}>({reviewsList.length > 0 ? reviewsList.length : reviews})</Text>
+                <Text style={styles.statLabel}>({reviewsList.length > 0 ? reviewsList.length : (parseFloat(rating) > 0 ? reviews : '0')})</Text>
               </View>
             </View>
           </View>
@@ -698,9 +710,13 @@ export default function ArchitectDetailScreen() {
                   <TouchableOpacity 
                     style={[styles.outlineActionBtn, { borderColor: COLORS.green, backgroundColor: COLORS.greenLight }]} 
                     onPress={() => {
-                      if (isGuestUser(currentUser)) {
+                      if (isGuestUser(currentUser) || !currentUser) {
                         setGuestModalAction('Hiring an Architect');
                         setGuestModalVisible(true);
+                        return;
+                      }
+                      if (!isPhoneVerifiedUser(currentUser)) {
+                        setPhoneVerificationVisible(true);
                         return;
                       }
                       setIsHireModalVisible(true);
@@ -909,7 +925,7 @@ export default function ArchitectDetailScreen() {
                   teamMembers.map((member, idx) => {
                     const memberName = member.fullName || member.name;
                     const memberRole = member.role || member.type;
-                    const memberAvatar = resolveAvatarUrl(member.avatarUrl) || 'https://i.pravatar.cc/100?img=11';
+                    const memberAvatar = resolveAvatarUrl(member.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(memberName || 'Member')}&background=E2E8F0&color=334155`;
                     return (
                       <View key={member._id || idx} style={styles.teamListItem}>
                         <Image source={{ uri: memberAvatar }} style={styles.teamMemberAvatar} contentFit="cover" />
@@ -1017,7 +1033,7 @@ export default function ArchitectDetailScreen() {
                     date: formatDate(r.createdAt),
                     rating: r.rating,
                     comment: r.reviewText,
-                    avatar: resolveAvatarUrl(r.from?.avatarUrl) || 'https://i.pravatar.cc/100?img=32'
+                    avatar: resolveAvatarUrl(r.from?.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.from?.fullName || 'User')}&background=E2E8F0&color=334155`
                   };
                   return (
                     <View key={idx} style={styles.reviewItemCard}>
@@ -1237,6 +1253,17 @@ export default function ArchitectDetailScreen() {
         title="Login required"
         message="Create an account or login to continue."
         actionSource={guestModalAction}
+      />
+
+      <PhoneVerificationModal
+        visible={phoneVerificationVisible}
+        onClose={() => setPhoneVerificationVisible(false)}
+        actionName="hire this architect"
+        onSuccess={(updatedUser) => {
+          if (updatedUser) setCurrentUser(updatedUser);
+          setPhoneVerificationVisible(false);
+          setIsHireModalVisible(true);
+        }}
       />
     </SafeAreaView>
   );

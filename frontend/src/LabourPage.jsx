@@ -481,7 +481,7 @@ const LabourPage = () => {
                       <input
                         required
                         type="tel"
-                        placeholder="e.g. 9876543210"
+                        placeholder="Enter 10-digit mobile number"
                         value={bookingForm.phone}
                         onChange={e => setBookingForm({...bookingForm, phone: e.target.value})}
                         style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.9rem', boxSizing: 'border-box' }}

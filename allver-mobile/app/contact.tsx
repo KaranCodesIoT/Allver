@@ -126,7 +126,7 @@ export default function ContactScreen() {
 
           {/* Support Info Card */}
           <View style={styles.infoCard}>
-            <Text style={styles.cardSectionHeader}>Support</Text>
+            <Text style={styles.cardSectionHeader}>Customer Support</Text>
             <Text style={styles.infoLabel}>Dedicated Support Desk</Text>
             
             <TouchableOpacity
@@ -139,7 +139,26 @@ export default function ContactScreen() {
             </TouchableOpacity>
 
             <Text style={styles.infoSubtext}>
-              For support-related questions, please provide as much relevant information as possible so that our team can assist you.
+              Operating Hours: Monday – Saturday, 9:00 AM to 6:30 PM IST. Typical email turnaround is within 24 to 48 business hours.
+            </Text>
+          </View>
+
+          {/* Grievance & Legal Redressal Card (IT Rules 2021) */}
+          <View style={styles.infoCard}>
+            <Text style={styles.cardSectionHeader}>Grievance & Regulatory Compliance</Text>
+            <Text style={styles.infoLabel}>Grievance Officer (India IT Rules 2021)</Text>
+            
+            <TouchableOpacity
+              style={styles.emailRow}
+              onPress={() => Linking.openURL('mailto:contact@allver.in?subject=Grievance%20Notice').catch(() => {})}
+              activeOpacity={0.8}
+            >
+              <Feather name="shield" size={18} color={COLORS.primary} />
+              <Text style={styles.emailText}>contact@allver.in</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.infoSubtext}>
+              Designated Grievance Redressal Officer for user complaints, platform safety, intellectual property concerns, and regulatory notices under the Information Technology (Intermediary Guidelines) Rules, 2021.
             </Text>
           </View>
 

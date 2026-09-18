@@ -385,10 +385,20 @@ export default function TabLayout() {
       console.log('[Push Notification] Notification tapped by user:', data);
 
       // Reset badge count on notification tap
-      Notifications.setBadgeCountAsync(0).catch(err => console.log('Error resetting badge:', err));
-
       const category = data.category || '';
-      if (category === 'voice_call' || (data.text && data.text.includes('voice call'))) {
+      const bookingId = data.bookingId || data.jobId;
+
+      if (bookingId || data.type?.startsWith('BOOKING_') || data.type?.startsWith('PROVIDER_') || data.type?.startsWith('JOB_')) {
+        console.log('[Push Notification] Tapped booking notification. Navigating to active job:', bookingId);
+        if (bookingId) {
+          router.push({
+            pathname: '/active-job',
+            params: { jobId: bookingId }
+          });
+        } else {
+          router.push('/active-job');
+        }
+      } else if (category === 'voice_call' || (data.text && data.text.includes('voice call'))) {
         console.log('[Push Notification] Tapped incoming voice call notification. Launching call screen...');
         router.push({
           pathname: '/chat-room',

@@ -53,33 +53,7 @@ const isArrayEqual = (a: any[], b: any[], keyProps: string[] = ['_id', 'status',
   return true;
 };
 
-// Custom data matching the mockup screenshot
-const PROJECTS_DATA = [
-  {
-    id: '1',
-    title: 'Luxury Villa Construction',
-    location: 'Jaipur, Rajasthan',
-    status: 'On Track',
-    statusBg: '#DCFCE7',
-    statusColor: '#15803D',
-    progress: 75,
-    workers: 12,
-    dueDate: '12 May',
-    image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?q=80&w=600&auto=format&fit=crop'
-  },
-  {
-    id: '2',
-    title: 'Office Renovation',
-    location: 'Gurugram, Haryana',
-    status: 'In Progress',
-    statusBg: '#DBEAFE',
-    statusColor: '#1D4ED8',
-    progress: 32,
-    workers: 8,
-    dueDate: '28 May',
-    image: 'https://images.unsplash.com/photo-1497366216548-37526070297c?q=80&w=600&auto=format&fit=crop'
-  }
-];
+// Public services directory configuration
 
 const SERVICES_DATA = [
   { id: '1', title: 'Residential\nConstruction', icon: 'home', color: '#EA580C', bgColor: '#FFEDD5', library: 'Feather' },
@@ -738,7 +712,7 @@ export default function DashboardScreen() {
           location: profLocation,
           rating: profRating,
           reviews: profReviews,
-          contractorName: 'BuildWell Constructions'
+          contractorName: prof.contractorName || prof.companyName || ''
         }
       });
     } else if (prof.role === 'Client') {
@@ -1209,48 +1183,22 @@ export default function DashboardScreen() {
                 </View>
               )
             ) : (
-              PROJECTS_DATA.map((proj) => (
-                <View key={proj.id} style={styles.projectCard}>
-                  
-                  {/* Cover Image Area */}
-                  <View style={styles.projectImageWrapper}>
-                    <Image source={{ uri: proj.image }} style={styles.projectImage} />
-                    
-                    {/* Status Overlay */}
-                    <View style={[styles.projectStatusBadge, { backgroundColor: proj.statusBg }]}>
-                      <Text style={[styles.projectStatusText, { color: proj.statusColor }]}>{proj.status}</Text>
-                    </View>
-
-
-                  </View>
-
-                  {/* Body Content */}
-                  <View style={styles.projectCardBody}>
-                    <Text style={styles.projectTitleText}>{proj.title}</Text>
-                    <View style={styles.iconLabelRow}>
-                      <Feather name="map-pin" size={12} color={COLORS.textMuted} style={styles.cardInfoIcon} />
-                      <Text style={styles.projectDetailText}>{proj.location}</Text>
-                    </View>
-                    
-                    <View style={styles.projectDivider} />
-
-                    {/* Statistics metrics */}
-                    <View style={styles.projectMetricsRow}>
-                      <View style={styles.metricItem}>
-                        <FontAwesome5 name="users" size={10} color={COLORS.textMuted} style={styles.metricIcon} />
-                        <Text style={styles.metricText}>{proj.workers} Workers</Text>
-                      </View>
-                      <View style={styles.metricItem}>
-                        <Feather name="calendar" size={11} color={COLORS.textMuted} style={styles.metricIcon} />
-                        <Text style={styles.metricText}>{proj.dueDate} Due</Text>
-                      </View>
-                    </View>
-
-
-
-                  </View>
-                </View>
-              ))
+              <View style={[styles.projectCard, { width: 300, justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+                <Feather name="folder-plus" size={36} color={COLORS.textLight} style={{ marginBottom: 10 }} />
+                <Text style={{ fontSize: 14, fontWeight: '700', color: COLORS.textDark, textAlign: 'center', marginBottom: 6 }}>
+                  No Active Projects Yet
+                </Text>
+                <Text style={{ fontSize: 12, color: COLORS.textMuted, textAlign: 'center', lineHeight: 18, marginBottom: 14 }}>
+                  Post your construction, renovation, or design requirement to receive milestone-tracked quotes from verified professionals.
+                </Text>
+                <TouchableOpacity
+                  style={{ backgroundColor: COLORS.orange, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8 }}
+                  onPress={() => router.push(currentUser ? '/post-project' : '/login')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>Post a Requirement</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </ScrollView>
         </View>
@@ -1354,9 +1302,15 @@ export default function DashboardScreen() {
                         
                         {/* Rating */}
                         <View style={styles.ratingRow}>
-                          <FontAwesome name="star" size={12} color={COLORS.starGold} />
-                          <Text style={styles.ratingValueText}>{profRating}</Text>
-                          <Text style={styles.reviewsCountText}>({profReviews})</Text>
+                          {profRating > 0 ? (
+                            <>
+                              <FontAwesome name="star" size={12} color={COLORS.starGold} />
+                              <Text style={styles.ratingValueText}>{profRating}</Text>
+                              {profReviews > 0 && <Text style={styles.reviewsCountText}>({profReviews})</Text>}
+                            </>
+                          ) : (
+                            <Text style={styles.reviewsCountText}>New</Text>
+                          )}
                         </View>
                       </View>
                     </View>
@@ -1512,16 +1466,28 @@ export default function DashboardScreen() {
                 <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>About Us</Text>
               </TouchableOpacity>
               <Text style={{ fontSize: 10, color: '#9CA3AF' }}>•</Text>
+              <TouchableOpacity onPress={() => router.push('/services')} style={{ paddingVertical: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>Services</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 10, color: '#9CA3AF' }}>•</Text>
+              <TouchableOpacity onPress={() => router.push('/how-it-works')} style={{ paddingVertical: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>How It Works</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 10, color: '#9CA3AF' }}>•</Text>
+              <TouchableOpacity onPress={() => router.push('/faq')} style={{ paddingVertical: 4 }}>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>FAQ</Text>
+              </TouchableOpacity>
+              <Text style={{ fontSize: 10, color: '#9CA3AF' }}>•</Text>
               <TouchableOpacity onPress={() => router.push('/contact')} style={{ paddingVertical: 4 }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>Contact Support</Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>Contact</Text>
               </TouchableOpacity>
               <Text style={{ fontSize: 10, color: '#9CA3AF' }}>•</Text>
               <TouchableOpacity onPress={() => router.push('/privacy-policy')} style={{ paddingVertical: 4 }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>Privacy Policy</Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>Privacy</Text>
               </TouchableOpacity>
               <Text style={{ fontSize: 10, color: '#9CA3AF' }}>•</Text>
               <TouchableOpacity onPress={() => router.push('/terms')} style={{ paddingVertical: 4 }}>
-                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>Terms of Service</Text>
+                <Text style={{ fontSize: 12, fontWeight: '700', color: COLORS.green }}>Terms</Text>
               </TouchableOpacity>
             </View>
             <Text style={{ fontSize: 11, color: '#9CA3AF', textAlign: 'center', marginTop: 12 }}>

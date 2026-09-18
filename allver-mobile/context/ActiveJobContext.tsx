@@ -233,6 +233,7 @@ export const ActiveJobProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     SocketService.on('job_status_changed', onJobStatusChanged);
     SocketService.on('job_payment_completed', onJobStatusChanged);
     SocketService.on('job_cancelled', onJobStatusChanged);
+    SocketService.on('booking_notification', onJobStatusChanged);
 
     return () => {
       subscription.remove();
@@ -241,6 +242,7 @@ export const ActiveJobProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       SocketService.off('job_status_changed', onJobStatusChanged);
       SocketService.off('job_payment_completed', onJobStatusChanged);
       SocketService.off('job_cancelled', onJobStatusChanged);
+      SocketService.off('booking_notification', onJobStatusChanged);
     };
   }, [pathname, segments, checkActiveJob]);
 

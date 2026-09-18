@@ -31,21 +31,21 @@ export default function DesignDetailScreen() {
   const initialTitle = (params.title as string) || 'Modern 2BHK Apartment';
   const initialLocation = (params.location as string) || 'Mumbai, Maharashtra';
   const initialMainImage = (params.image as string) || 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?auto=format&fit=crop&w=800&q=80';
-  const likes = (params.likes as string) || '128';
-  const comments = (params.comments as string) || '24';
-  const rating = (params.rating as string) || '4.8';
+  const likes = (params.likes as string) || '0';
+  const comments = (params.comments as string) || '0';
+  const rating = (params.rating as string) || '';
 
   // Architect Params
-  const initialAuthorId = (params.authorId as string) || '60c72b2f9b1d8a2a4c8b0001';
-  const initialAuthorName = (params.authorName as string) || 'Ar. Neha Sharma';
-  const initialAuthorAvatar = (params.authorAvatar as string) || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=80';
-  const initialAuthorCover = (params.authorCover as string) || 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80';
-  const initialAuthorFirm = (params.authorFirm as string) || 'Design Space Architects';
-  const initialAuthorExperience = (params.authorExperience as string) || '8+ Years';
+  const initialAuthorId = (params.authorId as string) || '';
+  const initialAuthorName = (params.authorName as string) || 'Architect';
+  const initialAuthorAvatar = (params.authorAvatar as string) || '';
+  const initialAuthorCover = (params.authorCover as string) || '';
+  const initialAuthorFirm = (params.authorFirm as string) || '';
+  const initialAuthorExperience = (params.authorExperience as string) || '';
   const authorProjects = (params.authorProjects as string) || '0';
-  const authorFollowers = (params.authorFollowers as string) || '256';
-  const authorPhone = (params.authorPhone as string) || '+91 98765 43210';
-  const authorReviews = (params.authorReviews as string) || '124';
+  const authorFollowers = (params.authorFollowers as string) || '0';
+  const authorPhone = (params.authorPhone as string) || '';
+  const authorReviews = (params.authorReviews as string) || '0';
   const authorRole = (params.authorRole as string) || 'Architect';
 
   const initialImagesList = params.imagesList 
@@ -1288,12 +1288,12 @@ export default function DesignDetailScreen() {
                         authorRole: item.creator?.role || 'Architect',
                         authorAvatar: item.creator?.avatarUrl || '',
                         authorCover: item.creator?.coverImage || '',
-                        authorFirm: item.creator?.firmName || 'Design Space Architects',
-                        authorExperience: item.creator?.experience || '8+ Years',
+                        authorFirm: item.creator?.firmName || '',
+                        authorExperience: item.creator?.experience || '',
                         authorProjects: item.creator?.projects?.toString() || '0',
                         authorFollowers: item.creator?.followersCount?.toString() || '0',
-                        authorPhone: item.creator?.phone || '+91 98765 43210',
-                        authorReviews: '124',
+                        authorPhone: item.creator?.phone || '',
+                        authorReviews: item.creator?.reviews?.toString() || '0',
                         imagesList: (item.mediaUrls || []).join(','),
                         description: item.description || '',
                         quotation: JSON.stringify(item.quotation || { civilStructure: '', flooringTiling: '', electricalPlumbing: '', modularWoodwork: '' }),
@@ -1365,15 +1365,15 @@ export default function DesignDetailScreen() {
                     });
                   }}
                 >
-                  <Image source={{ uri: resolveAvatarUrl(item.avatarUrl) || 'https://i.pravatar.cc/100?img=12' }} style={styles.connectCardAvatar} contentFit="cover" />
-                  <View style={styles.connectVerifiedDot} />
+                  <Image source={{ uri: resolveAvatarUrl(item.avatarUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.fullName || 'Contractor')}&background=2563EB&color=fff` }} style={styles.connectCardAvatar} contentFit="cover" />
+                  {item.isVerified && <View style={styles.connectVerifiedDot} />}
                   <Text style={styles.connectCardName} numberOfLines={1}>{item.fullName}</Text>
                   <View style={styles.connectCardRatingRow}>
                     <Feather name="star" size={9} color={COLORS.gold} />
-                    <Text style={styles.connectCardRatingText}>{item.rating?.toString() || '4.5'}</Text>
-                    <Text style={styles.connectCardReviewText}>({item.reviewsCount || 8})</Text>
+                    <Text style={styles.connectCardRatingText}>{item.rating ? item.rating.toString() : 'New'}</Text>
+                    {item.reviewsCount > 0 && <Text style={styles.connectCardReviewText}>({item.reviewsCount})</Text>}
                   </View>
-                  <Text style={styles.connectCardPrice}>₹{item.minProjectValue || '6.5 L'}+</Text>
+                  <Text style={styles.connectCardPrice}>{item.minProjectValue ? `₹${item.minProjectValue}+` : 'Custom Quote'}</Text>
                   <TouchableOpacity 
                     style={styles.connectHireBtn}
                     onPress={() => {
@@ -1402,28 +1402,11 @@ export default function DesignDetailScreen() {
                 </TouchableOpacity>
               ))
             ) : (
-              [
-                { name: 'BuildWell Construction', rate: '4.6', reviews: '98', price: '8.5 L', avatar: 'https://i.pravatar.cc/100?img=12' },
-                { name: 'HomeCraft Builders', rate: '4.5', reviews: '76', price: '8.8 L', avatar: 'https://i.pravatar.cc/100?img=13' },
-                { name: 'StructureLine', rate: '4.7', reviews: '120', price: '8.2 L', avatar: 'https://i.pravatar.cc/100?img=14' },
-                { name: 'Urban Constructions', rate: '4.4', reviews: '54', price: '7.5 L', avatar: 'https://i.pravatar.cc/100?img=15' },
-              ].map((item, idx) => (
-                <View key={idx} style={styles.connectCard}>
-                  <Image source={{ uri: item.avatar }} style={styles.connectCardAvatar} contentFit="cover" />
-                  <View style={styles.connectVerifiedDot} />
-                  <Text style={styles.connectCardName} numberOfLines={1}>{item.name}</Text>
-                  <View style={styles.connectCardRatingRow}>
-                    <Feather name="star" size={9} color={COLORS.gold} />
-                    <Text style={styles.connectCardRatingText}>{item.rate}</Text>
-                    <Text style={styles.connectCardReviewText}>({item.reviews})</Text>
-                  </View>
-                  <Text style={styles.connectCardPrice}>₹{item.price}+</Text>
-                  <TouchableOpacity style={styles.connectHireBtn}>
-                    <Feather name="message-circle" size={10} color={COLORS.white} style={{ marginRight: 3 }} />
-                    <Text style={styles.connectHireBtnText}>Connect</Text>
-                  </TouchableOpacity>
-                </View>
-              ))
+              <View style={{ paddingVertical: 20, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', minWidth: 260 }}>
+                <Feather name="users" size={24} color={COLORS.textMuted} style={{ marginBottom: 6 }} />
+                <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.textDark, textAlign: 'center' }}>No Matching Contractors Yet</Text>
+                <Text style={{ fontSize: 11, color: COLORS.textMuted, textAlign: 'center', marginTop: 4 }}>Verified local contractors for this design type will appear here.</Text>
+              </View>
             )}
           </ScrollView>
         </View>

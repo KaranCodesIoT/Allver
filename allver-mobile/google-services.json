@@ -12,7 +12,20 @@
           "package_name": "com.allver.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "218434531138-ivj2n9m51f7h5q8hd27g5oknpu6bj795.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.allver.app",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "218434531138-ohla1ujvml63ad6etd8hb2cm5en6k1s0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCGYTbKMrm04MqY4NDQEq1RhU7Bvj8gJZ0"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "218434531138-ohla1ujvml63ad6etd8hb2cm5en6k1s0.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

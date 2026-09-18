@@ -970,6 +970,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 13,
     color: '#1E293B',
+    ...(Platform.OS === 'web' ? {
+      outlineStyle: 'none',
+      outlineWidth: 0,
+      outlineColor: 'transparent',
+    } as any : {}),
   },
   actionBtnCircle: {
     width: 36,

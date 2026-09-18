@@ -107,37 +107,44 @@ export default function PrivacyPolicyScreen() {
 
         {/* Section 3 */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionHeading}>3. Cookies & Storage</Text>
+          <Text style={styles.sectionHeading}>3. Cookies & Tracking Technologies</Text>
           <Text style={styles.bodyText}>
-            Allver may use necessary technologies and storage mechanisms to maintain account sessions, preferences, security, and core platform functionality.
+            Allver uses cookies, web beacons, device identifiers, and similar storage technologies to maintain secure user sessions, remember language and UI preferences, enhance platform speed, and analyze web traffic trends.
           </Text>
           <Text style={[styles.bodyText, { marginTop: 8 }]}>
-            Where third-party services are used to provide specific functionality, those services may process information according to their respective privacy policies.
+            Cookies are small data files placed on your device. You can configure your browser or mobile operating system to refuse all cookies or notify you when a cookie is being sent. However, certain interactive features of Allver may not function properly without essential cookies.
           </Text>
         </View>
 
         {/* Section 4 */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionHeading}>4. Advertising & Data Sharing</Text>
+          <Text style={styles.sectionHeading}>4. Third-Party Advertising & Google AdSense Disclosures</Text>
           <Text style={styles.bodyText}>
-            Allver does not sell or rent your personal information to third parties.
+            Allver (allver.in) partners with third-party advertising vendors, including Google AdSense, to serve advertisements when you visit our website.
           </Text>
-          <Text style={[styles.bodyText, { marginTop: 8 }]}>
-            We do not use your personal information for third-party advertising networks except where such services are specifically disclosed and required for a particular feature.
-          </Text>
-          <Text style={[styles.bodyText, { marginTop: 8 }]}>
-            We may share information with service providers where necessary to operate, maintain, secure, or improve Allver.
+          
+          <Text style={[styles.subHeading, { marginTop: 12 }]}>Google AdSense & DoubleClick Cookie</Text>
+          <View style={styles.bulletList}>
+            <Text style={styles.bulletItem}>• Third-party vendors, including Google, use cookies to serve ads based on a user's prior visits to allver.in or other websites across the Internet.</Text>
+            <Text style={styles.bulletItem}>• Google's use of advertising cookies enables it and its partners to serve personalized advertisements to users based on their visits to our website and other websites on the Internet.</Text>
+            <Text style={styles.bulletItem}>• Users may opt out of personalized advertising by visiting Google Ads Settings at https://www.google.com/settings/ads.</Text>
+            <Text style={styles.bulletItem}>• Alternatively, you can opt out of a third-party vendor's use of cookies for personalized advertising by visiting the Network Advertising Initiative or AboutAds at https://www.aboutads.info/choices.</Text>
+          </View>
+
+          <Text style={[styles.subHeading, { marginTop: 12 }]}>Log Files & Web Analytics</Text>
+          <Text style={styles.bodyText}>
+            Like most digital web platforms, Allver gathers certain standard internet log information automatically. This may include Internet Protocol (IP) addresses, browser type, Internet Service Provider (ISP), referring and exit pages, operating system, date/time stamps, and on-site clickstream data. This information is utilized strictly to analyze usage patterns, secure platform infrastructure, and administer website performance.
           </Text>
         </View>
 
         {/* Section 5 */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionHeading}>5. Third-Party Services</Text>
+          <Text style={styles.sectionHeading}>5. Third-Party Service Providers</Text>
           <Text style={styles.bodyText}>
-            Allver may use third-party service providers for services such as hosting, storage, authentication, communication, analytics, or media delivery.
+            Allver may employ vetted third-party companies and individuals to facilitate core platform operations, including cloud hosting, database storage, user authentication, map geocoding services (Google Maps API), transactional SMS gateways, and payment processing.
           </Text>
           <Text style={[styles.bodyText, { marginTop: 8 }]}>
-            These providers may process information only as necessary to provide their services to Allver and are subject to their applicable terms and privacy policies.
+            These third parties have access to personal information solely to perform specific tasks on our behalf and are legally obligated under confidentiality terms not to disclose or use your data for any other independent purpose.
           </Text>
         </View>
 
